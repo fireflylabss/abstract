@@ -2,6 +2,7 @@ mod main_view;
 mod notes;
 mod rename;
 mod save;
+mod search_ui;
 mod sidebar;
 mod spaces_ui;
 mod tour_ui;
@@ -164,6 +165,7 @@ pub(crate) struct AbstractApp {
     _save_task: Option<Task<()>>,
     _io_task: Option<Task<()>>,
     _bounds_task: Option<Task<()>>,
+    search: Option<search_ui::SearchPalette>,
     _watcher: Option<SpaceWatcher>,
     _watch_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -229,6 +231,7 @@ impl AbstractApp {
             _save_task: None,
             _io_task: None,
             _bounds_task: None,
+            search: None,
             _watcher: None,
             _watch_task: None,
             _subs: vec![on_change, on_quit, on_bounds, on_activation, on_appearance],
@@ -271,6 +274,9 @@ impl Render for AbstractApp {
             .on_action(cx.listener(|this, _: &OpenSpace, window, cx| this.open_space(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleSpaces, _, cx| this.toggle_spaces(cx)))
             .on_action(cx.listener(|this, _: &StartTour, window, cx| this.start_tour(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &SearchNotes, window, cx| this.open_search(window, cx)),
+            )
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
             .child(self.render_sidebar(cx))
             .child(self.render_main(window, cx))

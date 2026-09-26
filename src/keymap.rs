@@ -19,6 +19,7 @@ actions!(
         OpenSpace,
         ToggleSpaces,
         StartTour,
+        SearchNotes,
         Quit,
     ]
 );
@@ -40,6 +41,10 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-\\", ToggleSidebar, c),
         KeyBinding::new("ctrl-shift-backspace", DeleteNote, c),
         KeyBinding::new("cmd-shift-backspace", DeleteNote, c),
+        KeyBinding::new("ctrl-p", SearchNotes, c),
+        KeyBinding::new("cmd-p", SearchNotes, c),
+        KeyBinding::new("ctrl-shift-f", SearchNotes, c),
+        KeyBinding::new("cmd-shift-f", SearchNotes, c),
         KeyBinding::new("f2", RenameNote, c),
         KeyBinding::new("f1", StartTour, c),
         KeyBinding::new("cmd-q", Quit, c),

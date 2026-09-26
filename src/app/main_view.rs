@@ -36,6 +36,15 @@ impl AbstractApp {
                     |s, m| s.child(m),
                 ),
             )
+            .child(
+                icon_btn(
+                    "search",
+                    "icons/search.svg",
+                    format!("Buscar notas ({MOD}+P)").into(),
+                    false,
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.open_search(window, cx))),
+            )
             .child(div().flex_1())
             .child(rise(
                 self.ring(
@@ -118,6 +127,7 @@ impl AbstractApp {
         };
 
         div()
+            .relative()
             .flex_1()
             .min_w_0()
             .h_full()
@@ -125,5 +135,8 @@ impl AbstractApp {
             .flex_col()
             .child(toolbar)
             .child(body)
+            .when_some(self.search.as_ref(), |el, _| {
+                el.child(self.render_search(cx))
+            })
     }
 }

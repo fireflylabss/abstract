@@ -5,6 +5,7 @@ mod chrome;
 mod editor;
 mod keymap;
 mod md;
+mod search;
 mod spaces;
 mod store;
 mod theme;

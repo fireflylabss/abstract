@@ -12,6 +12,7 @@ Local-first: your notes are plain `.md` files living in real folders on disk. No
 - **Autosave** — writes are debounced as you type; a note's file is created on the first keystroke and named after its first heading.
 - **Spaces** — keep several note directories and switch between them from the sidebar.
 - **Sidebar tree** — folders and notes with inline rename, plus one-click new note / new folder.
+- **Global search** — `Ctrl`/`Cmd`+`P` (or `Ctrl`/`Cmd`+`Shift`+`F`) opens a search palette over note titles and bodies; empty query lists the most recently edited notes.
 - **External-edit aware** — the space folder is watched live (inotify/FSEvents), so edits, new files and deletions from other apps show up without focusing the window; a pending save still never silently clobbers outside edits.
 - **Session restore** — reopens your notes, window geometry and sidebar state where you left off.
 - **Monochrome themes** — light/dark cycling, tuned for writing.
@@ -22,7 +23,7 @@ Local-first: your notes are plain `.md` files living in real folders on disk. No
 
 Standard editing keys, `Ctrl` (Linux) / `Cmd` (macOS) + `B`/`I`/`Z`/`Shift+Z`; word jumps `Ctrl+←/→` (Linux) / `Alt+←/→` (macOS). Tour: `Enter`/`→` next, `←` back, `Esc` skip.
 
-Shortcuts are `Ctrl` on Linux and `Cmd` on macOS: `Ctrl/Cmd+N` new note, `Ctrl/Cmd+Shift+N` new folder, `Ctrl/Cmd+O` switch space, `Ctrl/Cmd+S` save now, `Ctrl/Cmd+Shift+L` cycle theme, `Ctrl/Cmd+\` toggle sidebar, `Ctrl/Cmd+Shift+Backspace` delete note, `F2` rename, `F1` tour, `Cmd+Q` quit (macOS).
+Shortcuts are `Ctrl` on Linux and `Cmd` on macOS: `Ctrl/Cmd+N` new note, `Ctrl/Cmd+Shift+N` new folder, `Ctrl/Cmd+O` switch space, `Ctrl/Cmd+S` save now, `Ctrl/Cmd+Shift+L` cycle theme, `Ctrl/Cmd+\` toggle sidebar, `Ctrl/Cmd+Shift+Backspace` delete note, `Ctrl/Cmd+P` (or `Ctrl/Cmd+Shift+F`) search notes, `F2` rename, `F1` tour, `Cmd+Q` quit (macOS).
 
 ## Install
 
