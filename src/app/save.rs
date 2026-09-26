@@ -160,6 +160,45 @@ impl AbstractApp {
             return;
         }
         self.rescan_tree(cx);
+        self.check_open_file(cx);
+    }
+
+    /// Watch the space folder: filesystem events trigger a tree rescan and a
+    /// stat of the open file (debounced). Falls back to activation polling.
+    pub(crate) fn start_watch(&mut self, cx: &mut Context<Self>) {
+        self._watcher = None;
+        self._watch_task = None;
+        let (watcher, mut rx) = match crate::watch::watch(&self.dir) {
+            Ok(v) => v,
+            Err(err) => {
+                eprintln!("abstract: cannot watch space: {err}");
+                return;
+            }
+        };
+        self._watcher = Some(watcher);
+        self._watch_task = Some(cx.spawn(async move |this, cx| {
+            use futures::StreamExt;
+            while rx.next().await.is_some() {
+                cx.background_executor()
+                    .timer(Duration::from_millis(300))
+                    .await;
+                // Drain the burst that piled up during the debounce.
+                while rx.try_recv().is_ok() {}
+                if this
+                    .update(cx, |this, cx| {
+                        this.rescan_tree(cx);
+                        this.check_open_file(cx);
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// Stat the open file: reload on external change, notice on removal.
+    pub(crate) fn check_open_file(&mut self, cx: &mut Context<Self>) {
         let Some(cur) = &self.current else { return };
         let file = cur.file.clone();
         cx.spawn(async move |this, cx| {

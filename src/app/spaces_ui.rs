@@ -37,6 +37,7 @@ impl AbstractApp {
         self.spaces = spaces;
         self.spaces_open = false;
         self.dir = self.spaces.current().to_path_buf();
+        self.start_watch(cx);
         self.tree.clear();
         self.expanded.clear();
         self.current = None;

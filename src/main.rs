@@ -10,6 +10,7 @@ mod store;
 mod theme;
 mod tour;
 mod vault;
+mod watch;
 
 use gpui_kit::component::Root;
 use gpui_kit::*;

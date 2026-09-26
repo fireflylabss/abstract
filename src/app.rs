@@ -25,6 +25,7 @@ use crate::store::{self, Session, SessionNote, SessionWindow, Settings};
 use crate::theme::{self, Palette, PaletteAccess, ThemePref};
 use crate::tour;
 use crate::vault::{self, NodeKind};
+use crate::watch::SpaceWatcher;
 
 /// Locks `m`, recovering the guard if a previous holder panicked.
 pub(crate) fn guard<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -163,6 +164,8 @@ pub(crate) struct AbstractApp {
     _save_task: Option<Task<()>>,
     _io_task: Option<Task<()>>,
     _bounds_task: Option<Task<()>>,
+    _watcher: Option<SpaceWatcher>,
+    _watch_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
 }
 impl AbstractApp {
@@ -226,6 +229,8 @@ impl AbstractApp {
             _save_task: None,
             _io_task: None,
             _bounds_task: None,
+            _watcher: None,
+            _watch_task: None,
             _subs: vec![on_change, on_quit, on_bounds, on_activation, on_appearance],
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
