@@ -38,6 +38,8 @@ pub struct Analysis {
     pub lines: Vec<(Range<usize>, Kind)>,
     /// Sorted by `hidden.start`.
     pub conceals: Vec<Conceal>,
+    /// `[[wiki-links]]` found outside code spans/blocks.
+    pub wiki_links: Vec<crate::links::WikiLink>,
 }
 
 pub struct Analyzer {
@@ -74,6 +76,7 @@ impl Analyzer {
             flags: vec![0; len],
             lines,
             conceals: Vec::new(),
+            wiki_links: Vec::new(),
         };
         if len == 0 {
             return out;
@@ -276,6 +279,33 @@ impl Analyzer {
             });
         }
 
+        // Wiki-links last: zero prior flags, drop overlapping conceals
+        // (tree-sitter may have read `[[x]]` as a shortcut_link), then mark
+        // the visible part LINK and conceal the bracket syntax around it.
+        out.wiki_links = crate::links::parse(text, |o| {
+            out.flags[o] & CODE != 0 || matches!(out.lines[out.line_of(o)].1, Kind::Code)
+        });
+        for l in std::mem::take(&mut out.wiki_links) {
+            for f in &mut out.flags[l.range.clone()] {
+                *f = 0;
+            }
+            out.conceals
+                .retain(|c| c.hidden.end <= l.range.start || c.hidden.start >= l.range.end);
+            let visible = l.alias.clone().unwrap_or_else(|| l.target.clone());
+            out.mark(visible.clone(), LINK);
+            let mut pre = l.range.start..visible.start;
+            if l.alias.is_some() {
+                pre = l.target.end..visible.start;
+                out.mark(l.range.start..l.target.end, MARK);
+                out.conceal(l.range.clone(), l.range.start..l.target.end);
+            }
+            out.mark(pre.clone(), MARK);
+            out.conceal(l.range.clone(), pre);
+            out.mark(visible.end..l.range.end, MARK);
+            out.conceal(l.range.clone(), visible.end..l.range.end);
+            out.wiki_links.push(l);
+        }
+
         out.conceals.retain(|c| !c.hidden.is_empty());
         out.conceals.sort_by_key(|c| c.hidden.start);
         out
@@ -443,6 +473,21 @@ mod tests {
         assert!(at("b*") & BOLD != 0);
         assert!(at("u_") & UNDERLINE != 0 && at("u_") & BOLD == 0);
         assert!(at("s~") & STRIKE != 0);
+    }
+
+    #[test]
+    fn wiki_link_conceals_brackets() {
+        let t = "see [[Foo|bar]] ok";
+        let a = Analyzer::new().analyze(t);
+        assert_eq!(a.wiki_links.len(), 1);
+        let bar = t.find("bar").unwrap();
+        // Cursor elsewhere: only the alias shows.
+        assert_eq!(shown(t, 0), "see bar ok");
+        assert!(a.flags[bar] & LINK != 0);
+        // Cursor inside the link reveals the full syntax.
+        assert_eq!(shown(t, bar), "see [[Foo|bar]] ok");
+        // Plain target link shows the target.
+        assert_eq!(shown("x [[Foo]] y", 0), "x Foo y");
     }
 
     #[test]

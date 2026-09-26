@@ -4,6 +4,7 @@ mod buffer;
 mod chrome;
 mod editor;
 mod keymap;
+mod links;
 mod md;
 mod search;
 mod spaces;

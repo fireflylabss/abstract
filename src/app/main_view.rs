@@ -110,18 +110,23 @@ impl AbstractApp {
                         .relative()
                         .flex_1()
                         .min_w_0()
+                        .min_h_0()
                         .h_full()
-                        .child(rise(
+                        .flex()
+                        .flex_col()
+                        .child(div().flex_1().min_h_0().w_full().child(rise(
                             div().size_full().child(self.editor.clone()),
                             ("editor-in", self.open_gen),
                             420,
                             0.,
                             10.,
-                        ))
+                        )))
+                        .when_some(self.render_backlinks(cx), |s, m| s.child(m))
                         .when_some(
                             self.mark(2, Anchor::TopLeft, point(px(70.), px(70.)), cx),
                             |s, m| s.child(m),
-                        ),
+                        )
+                        .when_some(self.render_completion(cx), |s, m| s.child(m)),
                 )
                 .into_any_element()
         };

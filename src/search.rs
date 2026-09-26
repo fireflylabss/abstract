@@ -45,7 +45,7 @@ pub(crate) fn match_range(hay: &str, needle_lower: &str) -> Option<Range<usize>>
 }
 
 /// First `# heading`, else the file stem — mirrors `title_of`'s semantics.
-fn file_title(path: &Path, text: &str) -> String {
+pub(crate) fn file_title(path: &Path, text: &str) -> String {
     text.lines()
         .map(|l| l.trim().trim_start_matches('#').trim())
         .find(|l| !l.is_empty())
@@ -75,7 +75,7 @@ fn snippet_of(line: &str, needle_lower: &str) -> String {
 
 /// Every `.md` under `root`, skipping dotfile/dotted-dir names, sorted by
 /// mtime descending.
-fn collect(root: &Path, out: &mut Vec<(PathBuf, SystemTime)>) {
+pub(crate) fn collect(root: &Path, out: &mut Vec<(PathBuf, SystemTime)>) {
     let Ok(rd) = std::fs::read_dir(root) else {
         return;
     };

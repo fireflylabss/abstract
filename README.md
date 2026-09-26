@@ -12,6 +12,7 @@ Local-first: your notes are plain `.md` files living in real folders on disk. No
 - **Autosave** — writes are debounced as you type; a note's file is created on the first keystroke and named after its first heading.
 - **Spaces** — keep several note directories and switch between them from the sidebar.
 - **Sidebar tree** — folders and notes with inline rename, plus one-click new note / new folder.
+- **Wiki-links** — `[[note]]` links between notes with `[[` autocomplete; `Ctrl`/`Cmd`+click follows a link (creating the note if missing), and a "Referenciada por" panel lists backlinks.
 - **Global search** — `Ctrl`/`Cmd`+`P` (or `Ctrl`/`Cmd`+`Shift`+`F`) opens a search palette over note titles and bodies; empty query lists the most recently edited notes.
 - **External-edit aware** — the space folder is watched live (inotify/FSEvents), so edits, new files and deletions from other apps show up without focusing the window; a pending save still never silently clobbers outside edits.
 - **Session restore** — reopens your notes, window geometry and sidebar state where you left off.

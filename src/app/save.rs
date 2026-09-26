@@ -55,6 +55,7 @@ impl AbstractApp {
                 if changed {
                     self.rescan_tree(cx);
                 }
+                self.refresh_backlinks(cx);
             }
             Err(err) => {
                 eprintln!("abstract: failed to save note: {err}");
@@ -188,6 +189,7 @@ impl AbstractApp {
                     .update(cx, |this, cx| {
                         this.rescan_tree(cx);
                         this.check_open_file(cx);
+                        this.refresh_backlinks(cx);
                     })
                     .is_err()
                 {

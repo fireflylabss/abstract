@@ -55,6 +55,8 @@ impl AbstractApp {
             file: Arc::new(Mutex::new(file)),
             synced,
         });
+        self.clear_completion(cx);
+        self.refresh_backlinks(cx);
         self.open_gen += 1;
         self.save = SaveState::Saved;
         self.words = text.split_whitespace().count();

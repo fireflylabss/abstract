@@ -46,6 +46,7 @@ actions!(
         Cut,
         Paste,
         Enter,
+        Escape,
         Tab,
         Undo,
         Redo,
@@ -99,6 +100,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-v", Paste, c),
         KeyBinding::new("cmd-v", Paste, c),
         KeyBinding::new("enter", Enter, c),
+        KeyBinding::new("escape", Escape, c),
         KeyBinding::new("shift-enter", Enter, c),
         KeyBinding::new("tab", Tab, c),
         KeyBinding::new("ctrl-z", Undo, c),
@@ -115,6 +117,19 @@ pub fn bind_keys(cx: &mut App) {
 
 pub struct Changed;
 
+/// Secondary-click (Ctrl/`Cmd`) on a `[[wiki-link]]` target.
+pub struct OpenLink(pub String);
+
+/// Navigation keys while the `[[…]]` autocomplete popup is open.
+pub enum CompletionMove {
+    Up,
+    Down,
+    Accept,
+    Cancel,
+}
+
+pub struct CompletionKey(pub CompletionMove);
+
 pub struct LiveEditor {
     focus: FocusHandle,
     buf: Buffer,
@@ -127,9 +142,13 @@ pub struct LiveEditor {
     layout: Option<Layout>,
     /// Drawn caret position in content coordinates; glides toward the target.
     caret: Option<Point<f32>>,
+    /// Wiki-link completion popup is open: arrows/enter/escape route to it.
+    completing: bool,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
+impl EventEmitter<OpenLink> for LiveEditor {}
+impl EventEmitter<CompletionKey> for LiveEditor {}
 
 impl Focusable for LiveEditor {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -152,6 +171,7 @@ impl LiveEditor {
             selecting: false,
             layout: None,
             caret: None,
+            completing: false,
         }
     }
 
@@ -185,6 +205,39 @@ impl LiveEditor {
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         window.focus(&self.focus, cx);
+    }
+
+    pub fn set_completing(&mut self, on: bool) {
+        self.completing = on;
+    }
+
+    /// `[[prefix` immediately left of the cursor → `(prefix range, prefix)`.
+    /// Aborted by `]]`, `|` or another `[` between the brackets and the caret.
+    pub fn wiki_prefix(&self) -> Option<(Range<usize>, String)> {
+        let c = self.buf.cursor();
+        if !self.buf.sel().is_empty() {
+            return None;
+        }
+        let line = self.line_range(c);
+        let seg = &self.buf.text()[line.start..c];
+        let i = seg.rfind("[[")? + line.start;
+        let inner = &self.buf.text()[i + 2..c];
+        if inner.contains("]]") || inner.contains('|') || inner.contains('[') {
+            return None;
+        }
+        Some((i + 2..c, inner.to_string()))
+    }
+
+    /// Replace the completion prefix with `target]]`.
+    pub fn complete_wiki(&mut self, range: Range<usize>, target: &str, cx: &mut Context<Self>) {
+        self.edit(range, &format!("{target}]]"), None, cx);
+    }
+
+    /// Caret bottom-left in editor-element coordinates (popup anchor).
+    pub fn caret_anchor(&self) -> Option<Point<f32>> {
+        let l = self.layout.as_ref()?;
+        let (p, lh) = l.position(self.buf.cursor())?;
+        Some(point(p.x, p.y - l.scroll + lh))
     }
 
     // ── Editing ──────────────────────────────────────────────────────────
@@ -293,6 +346,18 @@ impl LiveEditor {
     }
 
     fn mouse_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // Ctrl/Cmd+click opens the link instead of moving the caret.
+        if ev.modifiers.secondary()
+            && let Some(off) = self.offset_at(ev.position)
+            && let Some(l) = self
+                .analysis
+                .wiki_links
+                .iter()
+                .find(|l| l.range.contains(&off))
+        {
+            cx.emit(OpenLink(self.buf.text()[l.target.clone()].to_string()));
+            return;
+        }
         window.focus(&self.focus, cx);
         let Some(off) = self.offset_at(ev.position) else {
             return;
@@ -502,8 +567,20 @@ impl Render for LiveEditor {
             .on_action(cx.listener(|this, _: &SelectWordRight, _, cx| {
                 this.select_to(this.buf.word_right(this.buf.cursor()), cx)
             }))
-            .on_action(cx.listener(|this, _: &Up, _, cx| this.vertical(false, false, cx)))
-            .on_action(cx.listener(|this, _: &Down, _, cx| this.vertical(true, false, cx)))
+            .on_action(cx.listener(|this, _: &Up, _, cx| {
+                if this.completing {
+                    cx.emit(CompletionKey(CompletionMove::Up));
+                } else {
+                    this.vertical(false, false, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &Down, _, cx| {
+                if this.completing {
+                    cx.emit(CompletionKey(CompletionMove::Down));
+                } else {
+                    this.vertical(true, false, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &SelectUp, _, cx| this.vertical(false, true, cx)))
             .on_action(cx.listener(|this, _: &SelectDown, _, cx| this.vertical(true, true, cx)))
             .on_action(cx.listener(|this, _: &Home, _, cx| {
@@ -547,9 +624,18 @@ impl Render for LiveEditor {
                 }
             }))
             .on_action(cx.listener(|this, _: &Enter, _, cx| {
-                let line = this.line_range(this.buf.cursor());
-                this.buf.enter(line);
-                this.changed(cx);
+                if this.completing {
+                    cx.emit(CompletionKey(CompletionMove::Accept));
+                } else {
+                    let line = this.line_range(this.buf.cursor());
+                    this.buf.enter(line);
+                    this.changed(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &Escape, _, cx| {
+                if this.completing {
+                    cx.emit(CompletionKey(CompletionMove::Cancel));
+                }
             }))
             .on_action(cx.listener(|this, _: &Tab, _, cx| this.insert("  ", cx)))
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(true, cx)))
