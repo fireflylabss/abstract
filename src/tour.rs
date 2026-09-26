@@ -4,8 +4,9 @@
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
+use crate::app::AbstractApp;
+use crate::assets::rise;
 use crate::theme::PaletteAccess;
-use crate::{AbstractApp, rise};
 
 actions!(abstract_tour, [TourNext, TourBack, TourSkip]);
 
