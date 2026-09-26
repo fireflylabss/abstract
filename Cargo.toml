@@ -23,6 +23,23 @@ tree-sitter-md = "=0.5.3"
 trash = "5"
 unicode-segmentation = "1"
 
+[package.metadata.deb]
+depends = "libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libxcb1, libfontconfig1"
+section = "editors"
+assets = [
+    [
+        "target/x86_64-unknown-linux-gnu/release/abstract-editor",
+        "usr/bin/",
+        "755",
+    ],
+    ["README.md", "usr/share/doc/abstract-editor/README.md", "644"],
+    [
+        "assets/abstract-editor.desktop",
+        "usr/share/applications/abstract-editor.desktop",
+        "644",
+    ],
+]
+
 [profile.release]
 opt-level = 3
 lto = "thin"

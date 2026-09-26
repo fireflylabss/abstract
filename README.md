@@ -39,6 +39,13 @@ cargo install --path .
 abstract-editor
 ```
 
+### Releases
+
+Prebuilt artifacts are attached to each [GitHub Release](https://github.com/horizzon3507/abstract-editor/releases):
+
+- `abstract-editor-<version>-linux-x86_64.tar.gz` and a `.deb` package for Debian/Ubuntu.
+- `abstract-<version>-macos-aarch64.app.zip` / `...-macos-x86_64.app.zip` — bare `abstract.app` bundles plus a raw-binary tarball. The app is ad-hoc signed, so on first launch either right-click → **Open**, or run `xattr -dr com.apple.quarantine abstract.app`.
+
 ### macOS
 
 Install the Xcode Command Line Tools — no other system dependencies:

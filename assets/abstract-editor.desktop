@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=abstract
+Comment=Minimal local-first markdown notes editor
+Exec=abstract-editor
+Terminal=false
+Categories=Office;TextEditor;
