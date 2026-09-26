@@ -1,5 +1,6 @@
 mod app;
 mod assets;
+mod buffer;
 mod chrome;
 mod editor;
 mod keymap;

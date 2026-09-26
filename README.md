@@ -20,7 +20,7 @@ Local-first: your notes are plain `.md` files living in real folders on disk. No
 
 ## Keyboard
 
-Standard editing keys, `Ctrl` + arrows for word jumps, `Ctrl+B` bold, `Ctrl+I` italic, `Ctrl+Z`/`Ctrl+Shift+Z` undo/redo. Tour: `Enter`/`→` next, `←` back, `Esc` skip.
+Standard editing keys, `Ctrl` (Linux) / `Cmd` (macOS) + `B`/`I`/`Z`/`Shift+Z`; word jumps `Ctrl+←/→` (Linux) / `Alt+←/→` (macOS). Tour: `Enter`/`→` next, `←` back, `Esc` skip.
 
 Shortcuts are `Ctrl` on Linux and `Cmd` on macOS: `Ctrl/Cmd+N` new note, `Ctrl/Cmd+Shift+N` new folder, `Ctrl/Cmd+O` switch space, `Ctrl/Cmd+S` save now, `Ctrl/Cmd+Shift+L` cycle theme, `Ctrl/Cmd+\` toggle sidebar, `Ctrl/Cmd+Shift+Backspace` delete note, `F2` rename, `F1` tour, `Cmd+Q` quit (macOS).
 

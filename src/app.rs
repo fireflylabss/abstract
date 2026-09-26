@@ -271,3 +271,95 @@ impl Render for AbstractApp {
             .child(self.render_main(window, cx))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{NoteFile, title_of, write_note};
+    use crate::vault;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn title_of_picks_first_heading_text() {
+        assert_eq!(title_of("# Foo").as_ref(), "Foo");
+        assert_eq!(title_of("\n\n  ## Bar baz  \nmore").as_ref(), "Bar baz");
+        let long = "x".repeat(100);
+        assert_eq!(title_of(&long).chars().count(), 80);
+        assert_eq!(title_of("").as_ref(), "Sem título");
+        assert_eq!(title_of("\n\n").as_ref(), "Sem título");
+    }
+
+    fn note(path: PathBuf) -> Arc<Mutex<NoteFile>> {
+        Arc::new(Mutex::new(NoteFile {
+            path,
+            mtime: None,
+            deleted: false,
+        }))
+    }
+
+    #[test]
+    fn write_note_syncs_filename_to_title() {
+        let dir =
+            std::env::temp_dir().join(format!("abstract-app-test-sync-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = note(dir.join("Sem título.md"));
+        let lock = Arc::new(Mutex::new(()));
+        assert!(write_note(&lock, &file, true, "# Hello").unwrap());
+        let expected = dir.join(format!("{}.md", vault::stem_for_title("Hello")));
+        assert!(expected.exists());
+        assert_eq!(file.lock().unwrap().path, expected);
+        assert!(file.lock().unwrap().mtime.is_some());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn write_note_unsynced_overwrites_in_place() {
+        let dir =
+            std::env::temp_dir().join(format!("abstract-app-test-unsynced-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("x.md");
+        std::fs::write(&path, "old").unwrap();
+        let file = note(path.clone());
+        let lock = Arc::new(Mutex::new(()));
+        assert!(!write_note(&lock, &file, false, "# Hello").unwrap());
+        assert_eq!(file.lock().unwrap().path, path);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# Hello");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn write_note_deleted_writes_nothing() {
+        let dir =
+            std::env::temp_dir().join(format!("abstract-app-test-deleted-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = Arc::new(Mutex::new(NoteFile {
+            path: dir.join("gone.md"),
+            mtime: None,
+            deleted: true,
+        }));
+        let lock = Arc::new(Mutex::new(()));
+        assert!(!write_note(&lock, &file, true, "# Hello").unwrap());
+        assert!(!dir.join("gone.md").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn write_note_synced_rename_avoids_collision() {
+        let dir = std::env::temp_dir().join(format!(
+            "abstract-app-test-collision-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Hello.md"), "other").unwrap();
+        let path = dir.join("x.md");
+        std::fs::write(&path, "old").unwrap();
+        let file = note(path.clone());
+        let lock = Arc::new(Mutex::new(()));
+        assert!(write_note(&lock, &file, true, "# Hello").unwrap());
+        let new_path = file.lock().unwrap().path.clone();
+        assert_ne!(new_path, dir.join("Hello.md"));
+        assert!(new_path.exists());
+        assert!(!path.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

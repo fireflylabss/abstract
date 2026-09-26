@@ -3,11 +3,10 @@
 //! render large) and conceals markdown syntax the selection is not touching.
 
 use std::ops::Range;
-use std::time::{Duration, Instant};
 
 use gpui_kit::*;
-use unicode_segmentation::UnicodeSegmentation;
 
+use crate::buffer::Buffer;
 use crate::md::{self, Analysis, Analyzer, Kind};
 use crate::theme::Palette;
 
@@ -62,6 +61,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-backspace", Backspace, c),
         KeyBinding::new("delete", Delete, c),
         KeyBinding::new("ctrl-backspace", DeleteWordLeft, c),
+        KeyBinding::new("alt-backspace", DeleteWordLeft, c),
         KeyBinding::new("left", Left, c),
         KeyBinding::new("right", Right, c),
         KeyBinding::new("up", Up, c),
@@ -72,42 +72,52 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-down", SelectDown, c),
         KeyBinding::new("ctrl-left", WordLeft, c),
         KeyBinding::new("ctrl-right", WordRight, c),
+        KeyBinding::new("alt-left", WordLeft, c),
+        KeyBinding::new("alt-right", WordRight, c),
         KeyBinding::new("ctrl-shift-left", SelectWordLeft, c),
         KeyBinding::new("ctrl-shift-right", SelectWordRight, c),
+        KeyBinding::new("alt-shift-left", SelectWordLeft, c),
+        KeyBinding::new("alt-shift-right", SelectWordRight, c),
         KeyBinding::new("home", Home, c),
         KeyBinding::new("end", End, c),
         KeyBinding::new("shift-home", SelectHome, c),
         KeyBinding::new("shift-end", SelectEnd, c),
         KeyBinding::new("ctrl-home", DocStart, c),
         KeyBinding::new("ctrl-end", DocEnd, c),
+        KeyBinding::new("cmd-up", DocStart, c),
+        KeyBinding::new("cmd-down", DocEnd, c),
+        KeyBinding::new("cmd-left", Home, c),
+        KeyBinding::new("cmd-right", End, c),
+        KeyBinding::new("cmd-shift-left", SelectHome, c),
+        KeyBinding::new("cmd-shift-right", SelectEnd, c),
         KeyBinding::new("ctrl-a", SelectAll, c),
+        KeyBinding::new("cmd-a", SelectAll, c),
         KeyBinding::new("ctrl-c", Copy, c),
+        KeyBinding::new("cmd-c", Copy, c),
         KeyBinding::new("ctrl-x", Cut, c),
+        KeyBinding::new("cmd-x", Cut, c),
         KeyBinding::new("ctrl-v", Paste, c),
+        KeyBinding::new("cmd-v", Paste, c),
         KeyBinding::new("enter", Enter, c),
         KeyBinding::new("shift-enter", Enter, c),
         KeyBinding::new("tab", Tab, c),
         KeyBinding::new("ctrl-z", Undo, c),
+        KeyBinding::new("cmd-z", Undo, c),
         KeyBinding::new("ctrl-shift-z", Redo, c),
+        KeyBinding::new("cmd-shift-z", Redo, c),
         KeyBinding::new("ctrl-y", Redo, c),
         KeyBinding::new("ctrl-b", Bold, c),
+        KeyBinding::new("cmd-b", Bold, c),
         KeyBinding::new("ctrl-i", Italic, c),
+        KeyBinding::new("cmd-i", Italic, c),
     ]);
 }
 
 pub struct Changed;
 
-struct Snapshot {
-    text: String,
-    sel: Range<usize>,
-}
-
 pub struct LiveEditor {
     focus: FocusHandle,
-    text: String,
-    sel: Range<usize>,
-    reversed: bool,
-    marked: Option<Range<usize>>,
+    buf: Buffer,
     analyzer: Analyzer,
     analysis: Analysis,
     scroll_y: f32,
@@ -117,9 +127,6 @@ pub struct LiveEditor {
     layout: Option<Layout>,
     /// Drawn caret position in content coordinates; glides toward the target.
     caret: Option<Point<f32>>,
-    undo: Vec<Snapshot>,
-    redo: Vec<Snapshot>,
-    last_typed: Option<Instant>,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
@@ -136,10 +143,7 @@ impl LiveEditor {
         let analysis = analyzer.analyze("");
         Self {
             focus: cx.focus_handle(),
-            text: String::new(),
-            sel: 0..0,
-            reversed: false,
-            marked: None,
+            buf: Buffer::new(),
             analyzer,
             analysis,
             scroll_y: 0.,
@@ -148,45 +152,31 @@ impl LiveEditor {
             selecting: false,
             layout: None,
             caret: None,
-            undo: Vec::new(),
-            redo: Vec::new(),
-            last_typed: None,
         }
     }
 
     pub fn text(&self) -> &str {
-        &self.text
+        self.buf.text()
     }
 
     /// Replace the whole buffer without emitting `Changed` (loading a note).
     pub fn set_text(&mut self, text: String, cx: &mut Context<Self>) {
-        self.text = text;
-        self.sel = 0..0;
-        self.reversed = false;
-        self.marked = None;
+        self.buf.set_text(text);
         self.scroll_y = 0.;
         self.caret = None;
-        self.undo.clear();
-        self.redo.clear();
-        self.last_typed = None;
-        self.analysis = self.analyzer.analyze(&self.text);
+        self.analysis = self.analyzer.analyze(self.buf.text());
         cx.notify();
     }
 
     /// (cursor byte offset, scroll_y) for session restore.
     pub fn view_state(&self) -> (usize, f32) {
-        (self.cursor(), self.scroll_y)
+        (self.buf.cursor(), self.scroll_y)
     }
 
     /// Restore cursor + scroll after (re)loading text: collapsed selection
     /// clamped to a char boundary, no autoscroll jump.
     pub fn restore_view(&mut self, cursor: usize, scroll_y: f32, cx: &mut Context<Self>) {
-        let mut c = cursor.min(self.text.len());
-        while c > 0 && !self.text.is_char_boundary(c) {
-            c -= 1;
-        }
-        self.sel = c..c;
-        self.reversed = false;
+        self.buf.restore_cursor(cursor);
         self.scroll_y = scroll_y.max(0.);
         self.caret = None;
         self.autoscroll = false;
@@ -195,14 +185,6 @@ impl LiveEditor {
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         window.focus(&self.focus, cx);
-    }
-
-    fn cursor(&self) -> usize {
-        if self.reversed {
-            self.sel.start
-        } else {
-            self.sel.end
-        }
     }
 
     // ── Editing ──────────────────────────────────────────────────────────
@@ -214,32 +196,12 @@ impl LiveEditor {
         select: Option<Range<usize>>,
         cx: &mut Context<Self>,
     ) {
-        let typing = range.is_empty() && new.chars().count() == 1 && new != "\n";
-        let coalesce = typing
-            && self
-                .last_typed
-                .is_some_and(|t| t.elapsed() < Duration::from_millis(800));
-        if !coalesce {
-            self.undo.push(Snapshot {
-                text: self.text.clone(),
-                sel: self.sel.clone(),
-            });
-            if self.undo.len() > 300 {
-                self.undo.remove(0);
-            }
-        }
-        self.last_typed = typing.then(Instant::now);
-        self.redo.clear();
-        self.text.replace_range(range.clone(), new);
-        let end = range.start + new.len();
-        self.sel = select.unwrap_or(end..end);
-        self.reversed = false;
-        self.marked = None;
+        self.buf.edit(range, new, select);
         self.changed(cx);
     }
 
     fn changed(&mut self, cx: &mut Context<Self>) {
-        self.analysis = self.analyzer.analyze(&self.text);
+        self.analysis = self.analyzer.analyze(self.buf.text());
         self.autoscroll = true;
         self.goal_x = None;
         cx.emit(Changed);
@@ -247,87 +209,37 @@ impl LiveEditor {
     }
 
     fn insert(&mut self, s: &str, cx: &mut Context<Self>) {
-        self.edit(self.sel.clone(), s, None, cx);
-    }
-
-    fn restore(&mut self, from_undo: bool, cx: &mut Context<Self>) {
-        let (src, dst) = if from_undo {
-            (&mut self.undo, &mut self.redo)
-        } else {
-            (&mut self.redo, &mut self.undo)
-        };
-        let Some(snap) = src.pop() else { return };
-        dst.push(Snapshot {
-            text: std::mem::replace(&mut self.text, snap.text),
-            sel: self.sel.clone(),
-        });
-        self.sel = snap.sel.start.min(self.text.len())..snap.sel.end.min(self.text.len());
-        self.reversed = false;
-        self.marked = None;
-        self.last_typed = None;
+        self.buf.insert(s);
         self.changed(cx);
     }
 
+    fn restore(&mut self, from_undo: bool, cx: &mut Context<Self>) {
+        if self.buf.restore(from_undo) {
+            self.changed(cx);
+        }
+    }
+
     fn wrap(&mut self, marker: &str, cx: &mut Context<Self>) {
-        let r = self.sel.clone();
-        let inner = self.text[r.clone()].to_string();
-        let start = r.start + marker.len();
-        let new = format!("{marker}{inner}{marker}");
-        self.edit(r, &new, Some(start..start + inner.len()), cx);
+        self.buf.wrap(marker);
+        self.changed(cx);
     }
 
     // ── Movement ─────────────────────────────────────────────────────────
 
     fn move_to(&mut self, off: usize, cx: &mut Context<Self>) {
-        self.sel = off..off;
-        self.reversed = false;
+        self.buf.move_to(off);
         self.after_move(cx);
     }
 
     fn select_to(&mut self, off: usize, cx: &mut Context<Self>) {
-        if self.reversed {
-            self.sel.start = off;
-        } else {
-            self.sel.end = off;
-        }
-        if self.sel.end < self.sel.start {
-            self.reversed = !self.reversed;
-            self.sel = self.sel.end..self.sel.start;
-        }
+        self.buf.select_to(off);
         self.after_move(cx);
     }
 
     fn after_move(&mut self, cx: &mut Context<Self>) {
         self.autoscroll = true;
         self.goal_x = None;
-        self.last_typed = None;
         cx.notify();
-    }
-
-    fn prev_boundary(&self, off: usize) -> usize {
-        self.text[..off]
-            .grapheme_indices(true)
-            .next_back()
-            .map_or(0, |(i, _)| i)
-    }
-
-    fn next_boundary(&self, off: usize) -> usize {
-        self.text[off..]
-            .graphemes(true)
-            .next()
-            .map_or(self.text.len(), |g| off + g.len())
-    }
-
-    fn word_left(&self, off: usize) -> usize {
-        let s = self.text[..off].trim_end_matches(|c: char| !c.is_alphanumeric());
-        s.trim_end_matches(char::is_alphanumeric).len()
-    }
-
-    fn word_right(&self, off: usize) -> usize {
-        let s = &self.text[off..];
-        let a = s.len() - s.trim_start_matches(|c: char| !c.is_alphanumeric()).len();
-        let r = &s[a..];
-        off + a + (r.len() - r.trim_start_matches(char::is_alphanumeric).len())
     }
 
     fn line_range(&self, off: usize) -> Range<usize> {
@@ -335,9 +247,9 @@ impl LiveEditor {
     }
 
     fn vertical_target(&mut self, down: bool) -> usize {
-        let c = self.cursor();
+        let c = self.buf.cursor();
         let Some(layout) = &self.layout else {
-            return if down { self.text.len() } else { 0 };
+            return if down { self.buf.text().len() } else { 0 };
         };
         let Some((p, lh)) = layout.position(c) else {
             return c;
@@ -347,7 +259,7 @@ impl LiveEditor {
         if y < 0. {
             0
         } else if y > layout.content_h {
-            self.text.len()
+            self.buf.text().len()
         } else {
             layout.hit(x, y)
         }
@@ -374,7 +286,7 @@ impl LiveEditor {
         Some(if y < 0. {
             0
         } else if y > l.content_h {
-            self.text.len()
+            self.buf.text().len()
         } else {
             l.hit(x, y)
         })
@@ -390,13 +302,17 @@ impl LiveEditor {
             self.select_to(off, cx);
         } else if ev.click_count == 2 {
             let (a, b) = (
-                self.word_left(self.next_boundary(off).min(self.text.len())),
-                self.word_right(off),
+                self.buf
+                    .word_left(self.buf.next_boundary(off).min(self.buf.text().len())),
+                self.buf.word_right(off),
             );
-            self.sel = a.min(off)..b.max(off);
+            self.buf.move_to(a.min(off));
+            self.buf.select_to(b.max(off));
             self.after_move(cx);
         } else if ev.click_count >= 3 {
-            self.sel = self.line_range(off);
+            let line = self.line_range(off);
+            self.buf.move_to(line.start);
+            self.buf.select_to(line.end);
             self.after_move(cx);
         } else {
             self.move_to(off, cx);
@@ -417,27 +333,6 @@ impl LiveEditor {
         self.autoscroll = false;
         cx.notify();
     }
-
-    // ── UTF-16 bridging for the platform input handler ───────────────────
-
-    fn to_utf16(&self, off: usize) -> usize {
-        self.text[..off.min(self.text.len())].encode_utf16().count()
-    }
-
-    fn offset_from_utf16(&self, off16: usize) -> usize {
-        let mut n = 0;
-        for (i, ch) in self.text.char_indices() {
-            if n >= off16 {
-                return i;
-            }
-            n += ch.len_utf16();
-        }
-        self.text.len()
-    }
-
-    fn range_from_utf16(&self, r: &Range<usize>) -> Range<usize> {
-        self.offset_from_utf16(r.start)..self.offset_from_utf16(r.end)
-    }
 }
 
 impl EntityInputHandler for LiveEditor {
@@ -448,9 +343,9 @@ impl EntityInputHandler for LiveEditor {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<String> {
-        let r = self.range_from_utf16(&range);
-        actual.replace(self.to_utf16(r.start)..self.to_utf16(r.end));
-        Some(self.text[r].to_string())
+        let r = self.buf.range_from_utf16(&range);
+        actual.replace(self.buf.to_utf16(r.start)..self.buf.to_utf16(r.end));
+        Some(self.buf.text()[r].to_string())
     }
 
     fn selected_text_range(
@@ -460,19 +355,19 @@ impl EntityInputHandler for LiveEditor {
         _: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
         Some(UTF16Selection {
-            range: self.to_utf16(self.sel.start)..self.to_utf16(self.sel.end),
-            reversed: self.reversed,
+            range: self.buf.to_utf16(self.buf.sel().start)..self.buf.to_utf16(self.buf.sel().end),
+            reversed: self.buf.reversed(),
         })
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        self.marked
-            .as_ref()
-            .map(|r| self.to_utf16(r.start)..self.to_utf16(r.end))
+        self.buf
+            .marked()
+            .map(|r| self.buf.to_utf16(r.start)..self.buf.to_utf16(r.end))
     }
 
     fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
-        self.marked = None;
+        self.buf.set_marked(None);
     }
 
     fn replace_text_in_range(
@@ -483,9 +378,9 @@ impl EntityInputHandler for LiveEditor {
         cx: &mut Context<Self>,
     ) {
         let r = range
-            .map(|r| self.range_from_utf16(&r))
-            .or(self.marked.clone())
-            .unwrap_or(self.sel.clone());
+            .map(|r| self.buf.range_from_utf16(&r))
+            .or(self.buf.marked())
+            .unwrap_or(self.buf.sel());
         self.edit(r, new, None, cx);
     }
 
@@ -498,11 +393,12 @@ impl EntityInputHandler for LiveEditor {
         cx: &mut Context<Self>,
     ) {
         let r = range
-            .map(|r| self.range_from_utf16(&r))
-            .or(self.marked.clone())
-            .unwrap_or(self.sel.clone());
+            .map(|r| self.buf.range_from_utf16(&r))
+            .or(self.buf.marked())
+            .unwrap_or(self.buf.sel());
         self.edit(r.clone(), new, None, cx);
-        self.marked = (!new.is_empty()).then(|| r.start..r.start + new.len());
+        self.buf
+            .set_marked((!new.is_empty()).then(|| r.start..r.start + new.len()));
         if let Some(s) = new_sel {
             // `new_sel` is UTF-16 relative to the inserted text.
             let rel = |u: usize| {
@@ -515,7 +411,8 @@ impl EntityInputHandler for LiveEditor {
                     .find(|(n, _)| *n >= u)
                     .map_or(new.len(), |(_, i)| i)
             };
-            self.sel = r.start + rel(s.start)..r.start + rel(s.end);
+            self.buf
+                .set_sel(r.start + rel(s.start)..r.start + rel(s.end));
         }
         cx.notify();
     }
@@ -527,7 +424,7 @@ impl EntityInputHandler for LiveEditor {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let off = self.offset_from_utf16(range.start);
+        let off = self.buf.offset_from_utf16(range.start);
         let l = self.layout.as_ref()?;
         let (p, lh) = l.position(off)?;
         Some(Bounds::new(
@@ -545,7 +442,7 @@ impl EntityInputHandler for LiveEditor {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<usize> {
-        self.offset_at(p).map(|o| self.to_utf16(o))
+        self.offset_at(p).map(|o| self.buf.to_utf16(o))
     }
 }
 
@@ -560,100 +457,86 @@ impl Render for LiveEditor {
             .size_full()
             .cursor_text()
             .on_action(cx.listener(|this, _: &Backspace, _, cx| {
-                if this.sel.is_empty() {
-                    let c = this.cursor();
-                    let p = this.prev_boundary(c);
-                    this.edit(p..c, "", None, cx);
-                } else {
-                    this.insert("", cx);
-                }
+                this.buf.backspace();
+                this.changed(cx);
             }))
             .on_action(cx.listener(|this, _: &Delete, _, cx| {
-                if this.sel.is_empty() {
-                    let c = this.cursor();
-                    let n = this.next_boundary(c);
-                    this.edit(c..n, "", None, cx);
-                } else {
-                    this.insert("", cx);
-                }
+                this.buf.delete();
+                this.changed(cx);
             }))
             .on_action(cx.listener(|this, _: &DeleteWordLeft, _, cx| {
-                let c = this.cursor();
-                let from = if this.sel.is_empty() {
-                    this.word_left(c)
-                } else {
-                    this.sel.start
-                };
-                this.edit(from..this.sel.end.max(c), "", None, cx);
+                this.buf.delete_word_left();
+                this.changed(cx);
             }))
             .on_action(cx.listener(|this, _: &Left, _, cx| {
-                let t = if this.sel.is_empty() {
-                    this.prev_boundary(this.cursor())
+                let t = if this.buf.sel().is_empty() {
+                    this.buf.prev_boundary(this.buf.cursor())
                 } else {
-                    this.sel.start
+                    this.buf.sel().start
                 };
                 this.move_to(t, cx);
             }))
             .on_action(cx.listener(|this, _: &Right, _, cx| {
-                let t = if this.sel.is_empty() {
-                    this.next_boundary(this.cursor())
+                let t = if this.buf.sel().is_empty() {
+                    this.buf.next_boundary(this.buf.cursor())
                 } else {
-                    this.sel.end
+                    this.buf.sel().end
                 };
                 this.move_to(t, cx);
             }))
             .on_action(cx.listener(|this, _: &SelectLeft, _, cx| {
-                this.select_to(this.prev_boundary(this.cursor()), cx)
+                this.select_to(this.buf.prev_boundary(this.buf.cursor()), cx)
             }))
             .on_action(cx.listener(|this, _: &SelectRight, _, cx| {
-                this.select_to(this.next_boundary(this.cursor()), cx)
+                this.select_to(this.buf.next_boundary(this.buf.cursor()), cx)
             }))
             .on_action(cx.listener(|this, _: &WordLeft, _, cx| {
-                this.move_to(this.word_left(this.cursor()), cx)
+                this.move_to(this.buf.word_left(this.buf.cursor()), cx)
             }))
             .on_action(cx.listener(|this, _: &WordRight, _, cx| {
-                this.move_to(this.word_right(this.cursor()), cx)
+                this.move_to(this.buf.word_right(this.buf.cursor()), cx)
             }))
             .on_action(cx.listener(|this, _: &SelectWordLeft, _, cx| {
-                this.select_to(this.word_left(this.cursor()), cx)
+                this.select_to(this.buf.word_left(this.buf.cursor()), cx)
             }))
             .on_action(cx.listener(|this, _: &SelectWordRight, _, cx| {
-                this.select_to(this.word_right(this.cursor()), cx)
+                this.select_to(this.buf.word_right(this.buf.cursor()), cx)
             }))
             .on_action(cx.listener(|this, _: &Up, _, cx| this.vertical(false, false, cx)))
             .on_action(cx.listener(|this, _: &Down, _, cx| this.vertical(true, false, cx)))
             .on_action(cx.listener(|this, _: &SelectUp, _, cx| this.vertical(false, true, cx)))
             .on_action(cx.listener(|this, _: &SelectDown, _, cx| this.vertical(true, true, cx)))
             .on_action(cx.listener(|this, _: &Home, _, cx| {
-                this.move_to(this.line_range(this.cursor()).start, cx)
+                this.move_to(this.line_range(this.buf.cursor()).start, cx)
             }))
             .on_action(cx.listener(|this, _: &End, _, cx| {
-                this.move_to(this.line_range(this.cursor()).end, cx)
+                this.move_to(this.line_range(this.buf.cursor()).end, cx)
             }))
             .on_action(cx.listener(|this, _: &SelectHome, _, cx| {
-                this.select_to(this.line_range(this.cursor()).start, cx)
+                this.select_to(this.line_range(this.buf.cursor()).start, cx)
             }))
             .on_action(cx.listener(|this, _: &SelectEnd, _, cx| {
-                this.select_to(this.line_range(this.cursor()).end, cx)
+                this.select_to(this.line_range(this.buf.cursor()).end, cx)
             }))
             .on_action(cx.listener(|this, _: &DocStart, _, cx| this.move_to(0, cx)))
-            .on_action(cx.listener(|this, _: &DocEnd, _, cx| this.move_to(this.text.len(), cx)))
+            .on_action(
+                cx.listener(|this, _: &DocEnd, _, cx| this.move_to(this.buf.text().len(), cx)),
+            )
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| {
-                this.sel = 0..this.text.len();
-                this.reversed = false;
+                this.buf.select_all();
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &Copy, _, cx| {
-                if !this.sel.is_empty() {
+                if !this.buf.sel().is_empty() {
                     cx.write_to_clipboard(ClipboardItem::new_string(
-                        this.text[this.sel.clone()].to_string(),
+                        this.buf.text()[this.buf.sel()].to_string(),
                     ));
                 }
             }))
             .on_action(cx.listener(|this, _: &Cut, _, cx| {
-                if !this.sel.is_empty() {
+                if !this.buf.sel().is_empty() {
                     cx.write_to_clipboard(ClipboardItem::new_string(
-                        this.text[this.sel.clone()].to_string(),
+                        this.buf.text()[this.buf.sel()].to_string(),
                     ));
                     this.insert("", cx);
                 }
@@ -664,15 +547,9 @@ impl Render for LiveEditor {
                 }
             }))
             .on_action(cx.listener(|this, _: &Enter, _, cx| {
-                let line = this.line_range(this.cursor());
-                match md::list_prefix(&this.text[line.clone()]) {
-                    // Enter on an empty item ends the list.
-                    Some((len, _)) if line.len() == len && this.sel.is_empty() => {
-                        this.edit(line.start..line.end, "", None, cx)
-                    }
-                    Some((_, next)) => this.insert(&format!("\n{next}"), cx),
-                    None => this.insert("\n", cx),
-                }
+                let line = this.line_range(this.buf.cursor());
+                this.buf.enter(line);
+                this.changed(cx);
             }))
             .on_action(cx.listener(|this, _: &Tab, _, cx| this.insert("  ", cx)))
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(true, cx)))
@@ -911,11 +788,11 @@ impl Element for EditorElement {
         let col_x = ((width - col_w) / 2.).max(0.);
         // Unfocused: everything renders; focused: the selection reveals syntax.
         let reveal = if ed.focus.is_focused(window) {
-            ed.sel.clone()
+            ed.buf.sel()
         } else {
             usize::MAX..usize::MAX
         };
-        let text = &ed.text;
+        let text = ed.buf.text();
         let a = &ed.analysis;
 
         let mut lines = Vec::with_capacity(a.lines.len());
@@ -986,7 +863,7 @@ impl Element for EditorElement {
         };
 
         if ed.autoscroll
-            && let Some((p, lh)) = layout.position(ed.cursor())
+            && let Some((p, lh)) = layout.position(ed.buf.cursor())
         {
             let margin = (view_h * 0.15).min(80.);
             if p.y - layout.scroll < margin {
@@ -1015,7 +892,7 @@ impl Element for EditorElement {
         let pal = *cx.global::<Palette>();
         let (focus, sel, cursor, caret) = {
             let ed = self.0.read(cx);
-            (ed.focus.clone(), ed.sel.clone(), ed.cursor(), ed.caret)
+            (ed.focus.clone(), ed.buf.sel(), ed.buf.cursor(), ed.caret)
         };
         let focused = focus.is_focused(window);
         window.handle_input(&focus, ElementInputHandler::new(bounds, self.0.clone()), cx);
