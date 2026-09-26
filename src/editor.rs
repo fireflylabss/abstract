@@ -362,6 +362,22 @@ impl LiveEditor {
         let Some(off) = self.offset_at(ev.position) else {
             return;
         };
+        // Plain click on a `[ ]`/`[x]` marker toggles the task.
+        if ev.click_count == 1
+            && !ev.modifiers.shift
+            && !ev.modifiers.alt
+            && let Some(t) = self.analysis.tasks.iter().find(|t| t.marker.contains(&off))
+        {
+            let cur = self.buf.cursor();
+            self.buf.edit(
+                t.marker.clone(),
+                if t.checked { "[ ]" } else { "[x]" },
+                None,
+            );
+            self.buf.restore_cursor(cur);
+            self.changed(cx);
+            return;
+        }
         self.selecting = true;
         if ev.modifiers.shift {
             self.select_to(off, cx);
@@ -788,10 +804,25 @@ fn run(pal: &Palette, kind: Kind, flags: u16, len: usize) -> TextRun {
     if flags & md::ITALIC != 0 {
         f.style = FontStyle::Italic;
     }
+    if kind == Kind::Code {
+        if flags & md::KEYWORD != 0 {
+            f.weight = FontWeight::SEMIBOLD;
+        } else if flags & md::COMMENT != 0 {
+            f.style = FontStyle::Italic;
+        }
+    }
     let color = if flags & md::MARK != 0 {
         pal.mark
-    } else if flags & md::MUTED != 0 {
+    } else if flags & (md::MUTED | md::DONE) != 0 {
         pal.muted
+    } else if kind == Kind::Code && flags & md::KEYWORD != 0 {
+        pal.code_kw
+    } else if kind == Kind::Code && flags & md::STRING != 0 {
+        pal.code_str
+    } else if kind == Kind::Code && flags & md::COMMENT != 0 {
+        pal.code_comment
+    } else if kind == Kind::Code && flags & md::NUMBER != 0 {
+        pal.code_num
     } else if heading || flags & md::LINK != 0 {
         pal.head
     } else if kind == Kind::Quote {
@@ -807,9 +838,11 @@ fn run(pal: &Palette, kind: Kind, flags: u16, len: usize) -> TextRun {
         }
     });
     let strikethrough =
-        (flags & md::STRIKE != 0 && flags & md::MARK == 0).then(|| StrikethroughStyle {
-            thickness: px(1.),
-            color: None,
+        (flags & (md::STRIKE | md::DONE) != 0 && flags & md::MARK == 0).then(|| {
+            StrikethroughStyle {
+                thickness: px(1.),
+                color: None,
+            }
         });
     let background_color =
         (flags & md::CODE != 0 && kind != Kind::Code).then(|| hsla(pal.inline_code_bg));

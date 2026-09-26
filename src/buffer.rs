@@ -455,6 +455,14 @@ mod tests {
     }
 
     #[test]
+    fn enter_after_checked_task_continues_unchecked() {
+        let mut b = buf_with("- [x] foo");
+        b.move_to(9);
+        b.enter(0..9);
+        assert_eq!(b.text(), "- [x] foo\n- [ ] ");
+    }
+
+    #[test]
     fn set_text_resets_state() {
         let mut b = buf_with("abc");
         b.move_to(1);

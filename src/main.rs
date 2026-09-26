@@ -2,6 +2,7 @@ mod app;
 mod assets;
 mod buffer;
 mod chrome;
+mod code;
 mod editor;
 mod keymap;
 mod links;
