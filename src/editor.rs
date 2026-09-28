@@ -318,11 +318,11 @@ impl LiveEditor {
         self.edit(range, &new, Some(select), cx);
     }
 
-    /// `text` as a block of its own: a newline first unless at line start.
+    /// `text` as a block of its own, after a blank line (a `---` right under
+    /// text would turn that text into a setext heading).
     fn insert_block(&mut self, text: &str, inner: Option<usize>, cx: &mut Context<Self>) {
         let r = self.buf.sel();
-        let at_start = r.start == self.line_range(r.start).start;
-        let lead = if at_start { "" } else { "\n" };
+        let lead = md::block_lead(&self.buf.text()[..r.start]);
         let new = format!("{lead}{text}");
         let select = inner.map(|i| {
             let o = r.start + lead.len() + i;

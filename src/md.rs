@@ -476,6 +476,18 @@ pub const IMAGE_EXTS: &[&str] = &[
     "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tif", "tiff",
 ];
 
+/// Newlines to insert at the end of `before` so a new block starts after a
+/// blank line (or at the top of the document).
+pub fn block_lead(before: &str) -> &'static str {
+    if before.is_empty() || before.ends_with("\n\n") {
+        ""
+    } else if before.ends_with('\n') {
+        "\n"
+    } else {
+        "\n\n"
+    }
+}
+
 /// `line` with its heading/list/quote prefix replaced by `prefix` (indent
 /// kept). Applying the prefix a line already has removes it.
 pub fn set_block_prefix(line: &str, prefix: &str) -> String {
@@ -645,6 +657,14 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn block_lead_leaves_a_blank_line() {
+        assert_eq!(block_lead(""), "");
+        assert_eq!(block_lead("alpha"), "\n\n");
+        assert_eq!(block_lead("alpha\n"), "\n");
+        assert_eq!(block_lead("alpha\n\n"), "");
     }
 
     #[test]
