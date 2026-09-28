@@ -262,13 +262,15 @@ impl AbstractApp {
 
     pub(crate) fn rename_note_file(&mut self, old: PathBuf, new: PathBuf, cx: &mut Context<Self>) {
         let lock = self.write_lock.clone();
+        let space = self.dir.clone();
+        let open = self.current.as_ref().map(|c| c.path());
         let current = self
             .current
             .as_ref()
             .filter(|c| c.path() == old)
             .map(|c| c.file.clone());
         cx.spawn(async move |this, cx| {
-            let ok = cx
+            let (ok, linked) = cx
                 .background_executor()
                 .spawn({
                     let old = old.clone();
@@ -276,7 +278,7 @@ impl AbstractApp {
                     let current = current.clone();
                     async move {
                         let _w = guard(&lock);
-                        if let Some(f) = &current {
+                        let moved = if let Some(f) = &current {
                             // Pending new note: the file does not exist yet, just
                             // update the planned path.
                             let mut f = guard(f);
@@ -291,11 +293,25 @@ impl AbstractApp {
                             true
                         } else {
                             false
-                        }
+                        };
+                        let linked = moved
+                            && crate::links::relink(
+                                &space,
+                                &new,
+                                &stem_of(&old),
+                                open.as_deref(),
+                                false,
+                            );
+                        (moved, linked)
                     }
                 })
                 .await;
             this.update(cx, |this, cx| {
+                if linked {
+                    let (from, to) = (stem_of(&old), stem_of(&new));
+                    this.editor
+                        .update(cx, |ed, cx| ed.retarget_links(&from, &to, cx));
+                }
                 if ok {
                     // Manual rename recomputes synced against the buffer.
                     if let (Some(cur), Some(f)) = (this.current.as_mut(), current)

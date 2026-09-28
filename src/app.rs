@@ -102,13 +102,15 @@ enum SaveState {
     Failed,
 }
 /// One serialized on-disk update: rename to the title stem when synced, then
-/// write. Returns whether the visible tree changed (created or renamed).
+/// write. A rename also relinks `[[old stem]]` in the other notes of `space`.
+/// Returns whether the visible tree changed (created or renamed).
 /// Blocking; runs on the background executor under the app's write lock.
 fn write_note(
     lock: &Arc<Mutex<()>>,
     file: &Arc<Mutex<NoteFile>>,
     synced: bool,
     text: &str,
+    space: Option<&Path>,
 ) -> std::io::Result<bool> {
     let _write = guard(lock);
     let mut f = guard(file);
@@ -127,6 +129,12 @@ fn write_note(
     if target != from {
         if !existed || std::fs::rename(&from, &target).is_ok() {
             f.path = target.clone();
+            let old = stem_of(&from);
+            if let Some(space) = space
+                && !vault::is_placeholder_stem(&old)
+            {
+                crate::links::relink(space, &target, &old, None, true);
+            }
         } else {
             // Rename failed: still save under the old name.
             target = from.clone();
@@ -364,11 +372,29 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = note(dir.join("Sem título.md"));
         let lock = Arc::new(Mutex::new(()));
-        assert!(write_note(&lock, &file, true, "# Hello").unwrap());
+        assert!(write_note(&lock, &file, true, "# Hello", None).unwrap());
         let expected = dir.join(format!("{}.md", vault::stem_for_title("Hello")));
         assert!(expected.exists());
         assert_eq!(file.lock().unwrap().path, expected);
         assert!(file.lock().unwrap().mtime.is_some());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn write_note_synced_rename_relinks_space() {
+        let dir =
+            std::env::temp_dir().join(format!("abstract-app-test-relink-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Projeto.md");
+        std::fs::write(&path, "# Projeto").unwrap();
+        std::fs::write(dir.join("other.md"), "see [[Projeto]]").unwrap();
+        let file = note(path);
+        let lock = Arc::new(Mutex::new(()));
+        assert!(write_note(&lock, &file, true, "# Plano", Some(&dir)).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("other.md")).unwrap(),
+            "see [[Plano]]"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -381,7 +407,7 @@ mod tests {
         std::fs::write(&path, "old").unwrap();
         let file = note(path.clone());
         let lock = Arc::new(Mutex::new(()));
-        assert!(!write_note(&lock, &file, false, "# Hello").unwrap());
+        assert!(!write_note(&lock, &file, false, "# Hello", None).unwrap());
         assert_eq!(file.lock().unwrap().path, path);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "# Hello");
         std::fs::remove_dir_all(&dir).unwrap();
@@ -398,7 +424,7 @@ mod tests {
             deleted: true,
         }));
         let lock = Arc::new(Mutex::new(()));
-        assert!(!write_note(&lock, &file, true, "# Hello").unwrap());
+        assert!(!write_note(&lock, &file, true, "# Hello", None).unwrap());
         assert!(!dir.join("gone.md").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -420,7 +446,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = note(dir.join("x.md"));
         let lock = Arc::new(Mutex::new(()));
-        assert!(write_note(&lock, &file, true, "   \n").unwrap());
+        assert!(write_note(&lock, &file, true, "   \n", None).unwrap());
         assert_eq!(file.lock().unwrap().path, dir.join("Sem título.md"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -437,7 +463,7 @@ mod tests {
         std::fs::write(&path, "old").unwrap();
         let file = note(path.clone());
         let lock = Arc::new(Mutex::new(()));
-        assert!(write_note(&lock, &file, true, "# Hello").unwrap());
+        assert!(write_note(&lock, &file, true, "# Hello", None).unwrap());
         let new_path = file.lock().unwrap().path.clone();
         assert_ne!(new_path, dir.join("Hello.md"));
         assert!(new_path.exists());

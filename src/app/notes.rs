@@ -203,13 +203,14 @@ impl AbstractApp {
         let file = cur.file.clone();
         let synced = cur.synced;
         let lock = self.write_lock.clone();
+        let space = self.dir.clone();
         let text = self.current_text(cx);
         cx.spawn(async move |this, cx| {
             let gone = cx
                 .background_executor()
                 .spawn(async move {
                     if pending {
-                        let _ = write_note(&lock, &file, synced, &text);
+                        let _ = write_note(&lock, &file, synced, &text, Some(&space));
                     }
                     let mut f = guard(&file);
                     f.deleted = true;
