@@ -159,40 +159,57 @@ pub(crate) fn retarget(
         .collect()
 }
 
+/// Rewrites `[[old]]` links to `new` in the note at `path`. Returns whether
+/// the file changed.
+pub(crate) fn retarget_file(path: &Path, old: &str, new: &str) -> std::io::Result<bool> {
+    let mut text = std::fs::read_to_string(path)?;
+    let links = crate::md::Analyzer::new().analyze(&text).wiki_links;
+    let edits = retarget(&text, &links, old, new);
+    if edits.is_empty() {
+        return Ok(false);
+    }
+    for (r, s) in edits {
+        text.replace_range(r, &s);
+    }
+    crate::store::write_atomic(path, text.as_bytes())?;
+    Ok(true)
+}
+
 /// Rewrites `[[old]]` links to the stem of `renamed` in every note under
-/// `root` except `renamed` and `open` (the editor buffer, retargeted by the
-/// caller). Nothing is written, and `false` returned, when another note
-/// carries either stem. `strict` (automatic renames while typing a title)
-/// also refuses when a link already targets the new stem.
+/// `root`, `renamed` included, except `open` (the editor buffer, retargeted
+/// by the caller). Returns `None`, writing nothing, when another note carries
+/// either stem; otherwise the number of notes that could not be rewritten.
+/// `strict` (automatic renames while typing a title) also refuses when a link
+/// already targets the new stem.
 pub(crate) fn relink(
     root: &Path,
     renamed: &Path,
     old: &str,
     open: Option<&Path>,
     strict: bool,
-) -> bool {
+) -> Option<usize> {
     let new = renamed
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
     let (old_l, new_l) = (old.trim().to_lowercase(), new.to_lowercase());
-    if old == new || old_l.is_empty() || new.contains(['|', ']', '[', '\n']) {
-        return old == new;
+    if old == new {
+        return Some(0);
+    }
+    if old_l.is_empty() || new.contains(['|', ']', '[', '\n']) {
+        return None;
     }
     let mut files = Vec::new();
     crate::search::collect(root, &mut files);
     let mut analyzer = crate::md::Analyzer::new();
     let mut edits = Vec::new();
     for (path, _) in files {
-        if path == renamed {
-            continue;
-        }
         let stem = path
             .file_stem()
             .map(|s| s.to_string_lossy().to_lowercase())
             .unwrap_or_default();
-        if stem == old_l || stem == new_l {
-            return false;
+        if path != renamed && (stem == old_l || stem == new_l) {
+            return None;
         }
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
@@ -200,11 +217,12 @@ pub(crate) fn relink(
         let links = analyzer.analyze(&text).wiki_links;
         if strict
             && old_l != new_l
+            && path != renamed
             && links
                 .iter()
                 .any(|l| text[l.target.clone()].to_lowercase() == new_l)
         {
-            return false;
+            return None;
         }
         if Some(path.as_path()) == open {
             continue;
@@ -214,15 +232,17 @@ pub(crate) fn relink(
             edits.push((path, text, e));
         }
     }
+    let mut failed = 0;
     for (path, mut text, e) in edits {
         for (r, s) in e {
             text.replace_range(r, &s);
         }
         if let Err(err) = crate::store::write_atomic(&path, text.as_bytes()) {
             eprintln!("abstract: cannot relink {}: {err}", path.display());
+            failed += 1;
         }
     }
-    true
+    Some(failed)
 }
 
 /// Note stems starting with `prefix` (case-insensitive), sorted, max 8.
@@ -344,21 +364,21 @@ mod tests {
         let dir = space("relink");
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         let new = dir.join("Plano.md");
-        std::fs::write(&new, "# Plano\n").unwrap();
+        std::fs::write(&new, "# Plano\nme: [[Projeto]]\n").unwrap();
         std::fs::write(dir.join("a.md"), "see [[projeto]]\n").unwrap();
         std::fs::write(dir.join("sub/b.md"), "[[Projeto|p]] and [[Other]]\n").unwrap();
         std::fs::write(dir.join("open.md"), "[[Projeto]]\n").unwrap();
-        assert!(relink(
-            &dir,
-            &new,
-            "Projeto",
-            Some(&dir.join("open.md")),
-            false
-        ));
+        assert_eq!(
+            relink(&dir, &new, "Projeto", Some(&dir.join("open.md")), false),
+            Some(0)
+        );
         let read = |p: &str| std::fs::read_to_string(dir.join(p)).unwrap();
         assert_eq!(read("a.md"), "see [[Plano]]\n");
         assert_eq!(read("sub/b.md"), "[[Plano|p]] and [[Other]]\n");
         assert_eq!(read("open.md"), "[[Projeto]]\n");
+        assert_eq!(read("Plano.md"), "# Plano\nme: [[Plano]]\n");
+        assert!(retarget_file(&dir.join("open.md"), "Projeto", "Plano").unwrap());
+        assert_eq!(read("open.md"), "[[Plano]]\n");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -370,7 +390,7 @@ mod tests {
         std::fs::write(&new, "").unwrap();
         std::fs::write(dir.join("sub/Projeto.md"), "").unwrap();
         std::fs::write(dir.join("a.md"), "[[Projeto]]\n").unwrap();
-        assert!(!relink(&dir, &new, "Projeto", None, false));
+        assert_eq!(relink(&dir, &new, "Projeto", None, false), None);
         assert_eq!(
             std::fs::read_to_string(dir.join("a.md")).unwrap(),
             "[[Projeto]]\n"
@@ -378,12 +398,12 @@ mod tests {
 
         std::fs::remove_file(dir.join("sub/Projeto.md")).unwrap();
         std::fs::write(dir.join("b.md"), "[[plano]] dangling\n").unwrap();
-        assert!(!relink(&dir, &new, "Projeto", None, true));
+        assert_eq!(relink(&dir, &new, "Projeto", None, true), None);
         assert_eq!(
             std::fs::read_to_string(dir.join("a.md")).unwrap(),
             "[[Projeto]]\n"
         );
-        assert!(relink(&dir, &new, "Projeto", None, false));
+        assert_eq!(relink(&dir, &new, "Projeto", None, false), Some(0));
         assert_eq!(
             std::fs::read_to_string(dir.join("a.md")).unwrap(),
             "[[Plano]]\n"

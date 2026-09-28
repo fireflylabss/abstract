@@ -264,6 +264,7 @@ impl AbstractApp {
         let lock = self.write_lock.clone();
         let space = self.dir.clone();
         let open = self.current.as_ref().map(|c| c.path());
+        let open_file = self.current.as_ref().map(|c| c.file.clone());
         let current = self
             .current
             .as_ref()
@@ -276,6 +277,7 @@ impl AbstractApp {
                     let old = old.clone();
                     let new = new.clone();
                     let current = current.clone();
+                    let open = open.clone();
                     async move {
                         let _w = guard(&lock);
                         let moved = if let Some(f) = &current {
@@ -294,23 +296,37 @@ impl AbstractApp {
                         } else {
                             false
                         };
-                        let linked = moved
-                            && crate::links::relink(
+                        let linked = if moved {
+                            crate::links::relink(
                                 &space,
                                 &new,
                                 &stem_of(&old),
                                 open.as_deref(),
                                 false,
-                            );
+                            )
+                        } else {
+                            None
+                        };
                         (moved, linked)
                     }
                 })
                 .await;
             this.update(cx, |this, cx| {
-                if linked {
+                if let Some(failed) = linked {
                     let (from, to) = (stem_of(&old), stem_of(&new));
-                    this.editor
-                        .update(cx, |ed, cx| ed.retarget_links(&from, &to, cx));
+                    let still_open = match (&this.current, &open_file) {
+                        (Some(c), Some(f)) => Arc::ptr_eq(&c.file, f),
+                        _ => false,
+                    };
+                    if still_open {
+                        this.editor
+                            .update(cx, |ed, cx| ed.retarget_links(&from, &to, cx));
+                    } else if let Some(prev) = open.filter(|p| *p != old) {
+                        this.relink_closed(prev, from, to, cx);
+                    }
+                    if failed > 0 {
+                        this.notice = Some(t(Key::RelinkFailed).into());
+                    }
                 }
                 if ok {
                     // Manual rename recomputes synced against the buffer.
@@ -332,6 +348,30 @@ impl AbstractApp {
                 this.rescan_tree(cx);
             })
             .ok();
+        })
+        .detach();
+    }
+
+    /// Retargets links in a note that was open when a rename started and has
+    /// since been closed, after its pending save.
+    fn relink_closed(&mut self, path: PathBuf, from: String, to: String, cx: &mut Context<Self>) {
+        let lock = self.write_lock.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let _w = guard(&lock);
+                    crate::links::retarget_file(&path, &from, &to)
+                })
+                .await;
+            if let Err(err) = result {
+                eprintln!("abstract: cannot relink: {err}");
+                this.update(cx, |this, cx| {
+                    this.notice = Some(t(Key::RelinkFailed).into());
+                    cx.notify();
+                })
+                .ok();
+            }
         })
         .detach();
     }
