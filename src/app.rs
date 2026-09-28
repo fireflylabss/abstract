@@ -133,7 +133,7 @@ fn write_note(
             if let Some(space) = space
                 && !vault::is_placeholder_stem(&old)
             {
-                crate::links::relink(space, &target, &old, None, true);
+                crate::links::relink(space, &target, &old, Some(&target), true);
             }
         } else {
             // Rename failed: still save under the old name.

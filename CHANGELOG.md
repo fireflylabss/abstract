@@ -6,6 +6,12 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Renaming a note also rewrites links to itself inside that note, and links
+  in a note you switch away from while the rename is running.
+- If some links can't be rewritten after a rename, a notice says so instead
+  of failing silently.
+
 ## [0.1.2] - 2026-09-28
 
 ### Added
