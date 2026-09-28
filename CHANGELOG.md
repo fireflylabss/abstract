@@ -6,12 +6,6 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-- Renaming a note also rewrites links to itself inside that note, and links
-  in a note you switch away from while the rename is running.
-- If some links can't be rewritten after a rename, a notice says so instead
-  of failing silently.
-
 ## [0.1.2] - 2026-09-28
 
 ### Added
@@ -38,6 +32,10 @@ All notable changes to abstract are documented here. The format follows
   Callout toggles one.
 
 ### Fixed
+- Renaming a note also rewrites links to itself inside that note, and links
+  in a note you switch away from while the rename is running.
+- If some links can't be rewritten after a rename, a notice says so instead
+  of failing silently.
 - First-run tour: the Skip / Back / Next buttons rendered without their
   labels, and the bubble was centered on top of the control it pointed at.
 - Tour shortcuts now show `Cmd` on macOS instead of `Ctrl`.
