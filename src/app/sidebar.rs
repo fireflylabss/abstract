@@ -90,6 +90,24 @@ impl AbstractApp {
             })
             .active(|s| s.bg(rgb(pal.active)));
         if !editing {
+            let dragged = files_menu::DraggedRow {
+                path: path.clone(),
+                kind,
+                name: row.name.clone().into(),
+            };
+            pill = pill.on_drag(dragged, |d, _, _, cx| cx.new(|_| d.clone()));
+            if folder {
+                pill = pill
+                    .drag_over::<files_menu::DraggedRow>(move |s, _, _, _| {
+                        s.bg(rgb(pal.active)).text_color(rgb(pal.fg))
+                    })
+                    .on_drop(cx.listener({
+                        let path = path.clone();
+                        move |this, d: &files_menu::DraggedRow, _, cx| {
+                            this.move_into(d, path.clone(), cx)
+                        }
+                    }));
+            }
             pill = pill.on_click(cx.listener({
                 let path = path.clone();
                 move |this, _, window, cx| match kind {
@@ -200,6 +218,12 @@ impl AbstractApp {
                     .map(|ix| {
                         let row = &rows[ix.min(rows.len().saturating_sub(1))];
                         let pill = this.render_row(ix, row, current.as_deref(), cx);
+                        let (path, kind) = (row.path.clone(), row.kind);
+                        let weak = cx.entity().downgrade();
+                        let pill =
+                            div().size_full().child(pill.context_menu(move |m, _, _| {
+                                Self::row_menu(&weak, &path, kind, m)
+                            }));
                         div().h(px(32.)).px(px(8.)).pb(px(2.)).child(rise(
                             pill,
                             ("note-in", ix),
@@ -332,8 +356,15 @@ impl AbstractApp {
                     )
                     .child(
                         div()
+                            .id("notes-head")
                             .h(px(28.))
                             .flex_none()
+                            .drag_over::<files_menu::DraggedRow>(move |s, _, _, _| {
+                                s.bg(rgb(pal.active)).text_color(rgb(pal.fg))
+                            })
+                            .on_drop(cx.listener(|this, d: &files_menu::DraggedRow, _, cx| {
+                                this.move_into(d, this.dir.clone(), cx)
+                            }))
                             .flex()
                             .items_center()
                             .justify_between()

@@ -64,6 +64,7 @@ impl AbstractApp {
         self.open_gen += 1;
         self.save = SaveState::Saved;
         self.words = text.split_whitespace().count();
+        self.sync_editor_dirs(cx);
         // `set_text` emits no `Changed`, so nothing is re-saved.
         self.editor.update(cx, |ed, cx| {
             ed.set_text(text, cx);
@@ -72,6 +73,7 @@ impl AbstractApp {
             }
             ed.focus(window, cx);
         });
+        self.refresh_images(cx);
         cx.notify();
     }
 

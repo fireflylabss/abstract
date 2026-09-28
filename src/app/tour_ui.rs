@@ -1,5 +1,17 @@
 use super::*;
 
+impl tour::TourHost for AbstractApp {
+    fn tour_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        AbstractApp::tour_next(self, window, cx);
+    }
+    fn tour_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        AbstractApp::tour_back(self, window, cx);
+    }
+    fn tour_skip(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        AbstractApp::tour_skip(self, window, cx);
+    }
+}
+
 impl AbstractApp {
     // ── Tour ──────────────────────────────────────────────────────────────
 

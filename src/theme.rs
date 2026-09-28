@@ -32,6 +32,10 @@ pub struct Palette {
     pub caret: u32,
     /// rgba, alpha included.
     pub selection: u32,
+    /// `==marked==` text background, rgba.
+    pub highlight: u32,
+    /// Callout accents by `md::Tone`: note, tip, warning, danger.
+    pub callout: [u32; 4],
 }
 
 impl Global for Palette {}
@@ -63,6 +67,8 @@ pub const DARK: Palette = Palette {
     rule: 0x2e2e2e,
     caret: 0xf2f2f2,
     selection: 0xffffff26,
+    highlight: 0xe5c07b40,
+    callout: [0x6ea8fe, 0x5fc88f, 0xe5b454, 0xf0736b],
 };
 
 /// Warm monochrome, light.
@@ -92,6 +98,8 @@ pub const LIGHT: Palette = Palette {
     rule: 0xdcdcda,
     caret: 0x111111,
     selection: 0x0000001f,
+    highlight: 0xffd84a80,
+    callout: [0x2f6fd6, 0x1f8a52, 0xa66a00, 0xc4372f],
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -6,6 +6,38 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-28
+
+### Added
+- Right-click menus. In the editor: cut, copy, paste, paste as plain text,
+  select all, add wiki/external link, search the selection, plus Format,
+  Paragraph and Insert submenus. In the sidebar: open, new note/folder here,
+  rename, duplicate, copy path / relative path / note link, reveal in the file
+  manager, open with the default app and move to Trash.
+- Paste images from the clipboard and drop files onto the editor. Images are
+  saved to an `attachments/` folder next to the note and inserted as
+  `![](attachments/…)`; other files become links.
+- Markdown images (`![alt](path)` and `![[image.png]]`) render inline below
+  their line; the syntax shows again when the selection touches it.
+- Insert > Image opens a file picker.
+- Drag notes and folders in the sidebar onto a folder (or the "Notes" header)
+  to move them; a moved note's relative image paths are updated.
+- Note status button in the toolbar: save state, words, characters, reading
+  time, selection word count, last modified, reveal and copy path.
+- `==highlight==` (Format > Highlight, `Cmd/Ctrl+Shift+H`) and hidden
+  `%%comments%%` (Format > Hidden comment, `Cmd/Ctrl+/`), which render dimmed;
+  both hide their delimiters until the selection touches them.
+- Callouts: `> [!note]`, `[!tip]`, `[!warning]` and `[!danger]` (plus their
+  usual aliases) render as a tinted box with a coloured title. Paragraph >
+  Callout toggles one.
+
+### Fixed
+- First-run tour: the Skip / Back / Next buttons rendered without their
+  labels, and the bubble was centered on top of the control it pointed at.
+- Tour shortcuts now show `Cmd` on macOS instead of `Ctrl`.
+- The `>` of a block quote's second and later lines is concealed like the
+  first one's.
+
 ## [0.1.1] - 2026-09-26
 
 ### Added
@@ -44,6 +76,7 @@ First public release.
   `SHA256SUMS`.
 - AUR packages `abstract-editor` (source) and `abstract-editor-bin`.
 
-[Unreleased]: https://github.com/fireflylabss/abstract/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/fireflylabss/abstract/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/fireflylabss/abstract/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/fireflylabss/abstract/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/fireflylabss/abstract/releases/tag/v0.1.0

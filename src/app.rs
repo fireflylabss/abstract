@@ -1,3 +1,5 @@
+mod attach_ui;
+mod files_menu;
 mod links_ui;
 mod main_view;
 mod notes;
@@ -8,13 +10,14 @@ mod sidebar;
 mod spaces_ui;
 mod tour_ui;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
 use gpui_kit::component::input::{self, Input, InputEvent, InputState};
+use gpui_kit::component::menu::ContextMenuExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
@@ -22,7 +25,7 @@ use crate::assets::{SANS, ease_out_quint, icon, icon_btn, rise};
 use crate::chrome::{
     chrome_left_pad, drag_fallback, session_window, titlebar_drag, window_controls,
 };
-use crate::editor::{Changed, CompletionKey, LiveEditor, OpenLink};
+use crate::editor::{Attach, Changed, CompletionKey, LiveEditor, OpenLink};
 use crate::i18n::{self, Key, t, tf};
 use crate::keymap::*;
 use crate::spaces::{self, Spaces};
@@ -164,6 +167,9 @@ pub(crate) struct AbstractApp {
     open_gen: usize,
     save: SaveState,
     words: usize,
+    status_open: bool,
+    /// Last seen mtime of each image the editor has shown (`None`: missing).
+    image_stamps: HashMap<PathBuf, Option<SystemTime>>,
     /// Serializes on-disk ops on the open note (rename + write + trash mark).
     write_lock: Arc<Mutex<()>>,
     _save_task: Option<Task<()>>,
@@ -202,6 +208,9 @@ impl AbstractApp {
                     .ok();
             })
             .detach();
+        });
+        let on_attach = cx.subscribe(&editor, |this: &mut Self, _, ev: &Attach, cx| {
+            this.attach(ev.0.clone(), cx);
         });
         let on_quit = cx.on_app_quit(|this, cx| {
             this.flush_blocking(cx);
@@ -246,6 +255,8 @@ impl AbstractApp {
             open_gen: 0,
             save: SaveState::Saved,
             words: 0,
+            status_open: false,
+            image_stamps: HashMap::new(),
             write_lock: Arc::new(Mutex::new(())),
             _save_task: None,
             _io_task: None,
@@ -260,6 +271,7 @@ impl AbstractApp {
                 on_change,
                 on_completion,
                 on_link,
+                on_attach,
                 on_quit,
                 on_bounds,
                 on_activation,
@@ -306,6 +318,12 @@ impl Render for AbstractApp {
             .on_action(cx.listener(|this, _: &StartTour, window, cx| this.start_tour(window, cx)))
             .on_action(
                 cx.listener(|this, _: &SearchNotes, window, cx| this.open_search(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &SearchSelection, window, cx| {
+                this.search_selection(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &InsertImage, window, cx| this.insert_image(window, cx)),
             )
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
             .child(self.render_sidebar(cx))

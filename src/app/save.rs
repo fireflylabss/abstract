@@ -190,6 +190,7 @@ impl AbstractApp {
                         this.rescan_tree(cx);
                         this.check_open_file(cx);
                         this.refresh_backlinks(cx);
+                        this.refresh_images(cx);
                     })
                     .is_err()
                 {

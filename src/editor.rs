@@ -3,11 +3,16 @@
 //! render large) and conceals markdown syntax the selection is not touching.
 
 use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
 use gpui_kit::*;
 
 use crate::assets::{MONO, SANS};
+use crate::attach::Incoming;
 use crate::buffer::Buffer;
+use crate::i18n::{Key, t};
 use crate::md::{self, Analysis, Analyzer, Kind};
 use crate::theme::Palette;
 
@@ -50,6 +55,24 @@ actions!(
         Redo,
         Bold,
         Italic,
+        PastePlain,
+        Strike,
+        InlineCode,
+        Highlight,
+        Comment,
+        Callout,
+        WikiLink,
+        ExternalLink,
+        Heading1,
+        Heading2,
+        Heading3,
+        PlainText,
+        BulletList,
+        NumberedList,
+        TaskList,
+        Quote,
+        CodeBlock,
+        Divider,
     ]
 );
 
@@ -110,6 +133,18 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-b", Bold, c),
         KeyBinding::new("ctrl-i", Italic, c),
         KeyBinding::new("cmd-i", Italic, c),
+        KeyBinding::new("ctrl-shift-v", PastePlain, c),
+        KeyBinding::new("cmd-shift-v", PastePlain, c),
+        KeyBinding::new("ctrl-shift-x", Strike, c),
+        KeyBinding::new("cmd-shift-x", Strike, c),
+        KeyBinding::new("ctrl-e", InlineCode, c),
+        KeyBinding::new("cmd-e", InlineCode, c),
+        KeyBinding::new("ctrl-shift-h", Highlight, c),
+        KeyBinding::new("cmd-shift-h", Highlight, c),
+        KeyBinding::new("ctrl-/", Comment, c),
+        KeyBinding::new("cmd-/", Comment, c),
+        KeyBinding::new("ctrl-k", ExternalLink, c),
+        KeyBinding::new("cmd-k", ExternalLink, c),
     ]);
 }
 
@@ -128,6 +163,10 @@ pub enum CompletionMove {
 
 pub struct CompletionKey(pub CompletionMove);
 
+/// Images/files pasted or dropped: the app stores them and calls
+/// `insert_text` with the markdown that references them.
+pub struct Attach(pub Vec<Incoming>);
+
 pub struct LiveEditor {
     focus: FocusHandle,
     buf: Buffer,
@@ -142,11 +181,16 @@ pub struct LiveEditor {
     caret: Option<Point<f32>>,
     /// Wiki-link completion popup is open: arrows/enter/escape route to it.
     completing: bool,
+    /// Folder of the open note and the space root: relative image sources
+    /// resolve against them.
+    note_dir: Option<PathBuf>,
+    root: Option<PathBuf>,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
 impl EventEmitter<OpenLink> for LiveEditor {}
 impl EventEmitter<CompletionKey> for LiveEditor {}
+impl EventEmitter<Attach> for LiveEditor {}
 
 impl Focusable for LiveEditor {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -170,7 +214,262 @@ impl LiveEditor {
             layout: None,
             caret: None,
             completing: false,
+            note_dir: None,
+            root: None,
         }
+    }
+
+    pub fn set_dirs(&mut self, note_dir: Option<PathBuf>, root: PathBuf, cx: &mut Context<Self>) {
+        if self.note_dir != note_dir || self.root.as_ref() != Some(&root) {
+            self.note_dir = note_dir;
+            self.root = Some(root);
+            cx.notify();
+        }
+    }
+
+    pub fn selected_text(&self) -> &str {
+        &self.buf.text()[self.buf.sel()]
+    }
+
+    /// Insert at the selection as one undoable edit, emitting `Changed`.
+    pub fn insert_text(&mut self, s: &str, cx: &mut Context<Self>) {
+        self.insert(s, cx);
+    }
+
+    /// Every file the note's images may load from.
+    pub fn image_paths(&self) -> Vec<PathBuf> {
+        let a = &self.analysis;
+        a.images
+            .iter()
+            .flat_map(|im| self.image_candidates(im))
+            .collect()
+    }
+
+    /// Rewrite relative image sources after the note moved folders.
+    pub fn rebase_images(&mut self, old_dir: &Path, new_dir: &Path, cx: &mut Context<Self>) {
+        let edits = crate::attach::rebase(self.buf.text(), &self.analysis.images, old_dir, new_dir);
+        if edits.is_empty() {
+            return;
+        }
+        let mut sel = self.buf.sel();
+        for (r, new) in edits {
+            let shift = |o: usize| {
+                if o >= r.end {
+                    o + new.len() - r.len()
+                } else {
+                    o.min(r.start + new.len())
+                }
+            };
+            sel = shift(sel.start)..shift(sel.end);
+            self.buf.edit(r.clone(), &new, Some(sel.clone()));
+        }
+        self.changed(cx);
+    }
+
+    fn image_candidates(&self, im: &md::ImageRef) -> Vec<PathBuf> {
+        let Some(dir) = &self.note_dir else {
+            return Vec::new();
+        };
+        let root = self.root.as_ref().unwrap_or(dir);
+        crate::attach::candidates(&self.buf.text()[im.src.clone()], im.embed, dir, root)
+    }
+
+    fn paste(&mut self, plain: bool, cx: &mut Context<Self>) {
+        let Some(item) = cx.read_from_clipboard() else {
+            return;
+        };
+        if !plain {
+            let mut files = Vec::new();
+            let mut images = Vec::new();
+            let mut text = false;
+            for e in item.entries() {
+                match e {
+                    ClipboardEntry::ExternalPaths(p) => {
+                        files.extend(p.paths().iter().cloned().map(Incoming::Path));
+                    }
+                    ClipboardEntry::Image(img) => images.push(Incoming::Image {
+                        bytes: img.bytes.clone(),
+                        ext: img.format.extension(),
+                    }),
+                    ClipboardEntry::String(s) => text |= !s.text.trim().is_empty(),
+                }
+            }
+            // Copied files win; then text (rich copies often carry a bitmap
+            // too); a bare bitmap (screenshot) becomes an attachment.
+            if !files.is_empty() {
+                cx.emit(Attach(files));
+                return;
+            }
+            if !text && !images.is_empty() {
+                images.truncate(1);
+                cx.emit(Attach(images));
+                return;
+            }
+        }
+        if let Some(t) = item.text() {
+            self.insert(&t.replace("\r\n", "\n"), cx);
+        }
+    }
+
+    fn drop_paths(&mut self, paths: &ExternalPaths, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus, cx);
+        if let Some(off) = self.offset_at(window.mouse_position()) {
+            self.move_to(off, cx);
+        }
+        let items = paths.paths().iter().cloned().map(Incoming::Path).collect();
+        cx.emit(Attach(items));
+    }
+
+    /// `[[sel]]` / `[sel](…)` with the caret where typing continues.
+    fn link(&mut self, wiki: bool, cx: &mut Context<Self>) {
+        let r = self.buf.sel();
+        let inner = self.buf.text()[r.clone()].to_string();
+        let (new, caret) = if wiki {
+            (format!("[[{inner}]]"), r.start + 2 + inner.len())
+        } else {
+            (format!("[{inner}]()"), r.start + 3 + inner.len())
+        };
+        self.edit(r, &new, Some(caret..caret), cx);
+    }
+
+    /// Line-aligned range covering the selection (a selection ending at a
+    /// line start leaves that line out).
+    fn selected_lines(&self) -> (Range<usize>, bool) {
+        let sel = self.buf.sel();
+        let a = &self.analysis;
+        let first = a.line_of(sel.start);
+        let last = a.line_of(if sel.end > sel.start {
+            sel.end - 1
+        } else {
+            sel.end
+        });
+        (
+            a.lines[first].0.start..a.lines[last].0.end,
+            first == last && sel.is_empty(),
+        )
+    }
+
+    /// Turn the selected lines into a `> [!note]` callout, or back.
+    fn callout(&mut self, cx: &mut Context<Self>) {
+        let (range, caret) = self.selected_lines();
+        let new = md::toggle_callout(&self.buf.text()[range.clone()]);
+        let end = range.start + new.len();
+        let select = if caret { end..end } else { range.start..end };
+        self.edit(range, &new, Some(select), cx);
+    }
+
+    /// Replace the block prefix (heading, list, quote) of every selected line.
+    fn block_prefix(&mut self, prefix: &str, cx: &mut Context<Self>) {
+        let sel = self.buf.sel();
+        let a = &self.analysis;
+        let first = a.line_of(sel.start);
+        // A selection ending at a line start leaves that line unselected.
+        let last = a.line_of(if sel.end > sel.start {
+            sel.end - 1
+        } else {
+            sel.end
+        });
+        let range = a.lines[first].0.start..a.lines[last].0.end;
+        let old = &self.buf.text()[range.clone()];
+        let new = old
+            .split('\n')
+            .map(|l| md::set_block_prefix(l, prefix))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let select = if first == last && sel.is_empty() {
+            let c = (sel.start + new.len()).saturating_sub(old.len());
+            let c = c.clamp(range.start, range.start + new.len());
+            c..c
+        } else {
+            range.start..range.start + new.len()
+        };
+        self.edit(range, &new, Some(select), cx);
+    }
+
+    /// `text` as a block of its own, after a blank line (a `---` right under
+    /// text would turn that text into a setext heading).
+    fn insert_block(&mut self, text: &str, inner: Option<usize>, cx: &mut Context<Self>) {
+        let r = self.buf.sel();
+        let lead = md::block_lead(&self.buf.text()[..r.start]);
+        let new = format!("{lead}{text}");
+        let select = inner.map(|i| {
+            let o = r.start + lead.len() + i;
+            o..o
+        });
+        self.edit(r, &new, select, cx);
+    }
+
+    fn code_block(&mut self, cx: &mut Context<Self>) {
+        let inner = self.selected_text().to_string();
+        let text = format!("```\n{inner}\n```\n");
+        self.insert_block(&text, Some(4 + inner.len()), cx);
+    }
+
+    fn right_click(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus, cx);
+        if let Some(off) = self.offset_at(ev.position) {
+            let sel = self.buf.sel();
+            if !(sel.start <= off && off <= sel.end && !sel.is_empty()) {
+                self.move_to(off, cx);
+            }
+        }
+    }
+
+    fn context_menu(
+        menu: PopupMenu,
+        editor: &WeakEntity<Self>,
+        window: &mut Window,
+        cx: &mut Context<PopupMenu>,
+    ) -> PopupMenu {
+        let Some(editor) = editor.upgrade() else {
+            return menu;
+        };
+        let focus = editor.read(cx).focus.clone();
+        let has_sel = !editor.read(cx).buf.sel().is_empty();
+        let (f1, f2, f3) = (focus.clone(), focus.clone(), focus.clone());
+        menu.action_context(focus)
+            .menu_with_disabled(t(Key::Cut), Box::new(Cut), !has_sel)
+            .menu_with_disabled(t(Key::Copy), Box::new(Copy), !has_sel)
+            .menu(t(Key::Paste), Box::new(Paste))
+            .menu(t(Key::PastePlain), Box::new(PastePlain))
+            .menu(t(Key::SelectAll), Box::new(SelectAll))
+            .separator()
+            .menu(t(Key::AddWikiLink), Box::new(WikiLink))
+            .menu(t(Key::AddLink), Box::new(ExternalLink))
+            .menu_with_disabled(
+                t(Key::SearchSelection),
+                Box::new(crate::keymap::SearchSelection),
+                !has_sel,
+            )
+            .separator()
+            .submenu(t(Key::Format), window, cx, move |m, _, _| {
+                m.action_context(f1.clone())
+                    .menu(t(Key::Bold), Box::new(Bold))
+                    .menu(t(Key::Italic), Box::new(Italic))
+                    .menu(t(Key::Strikethrough), Box::new(Strike))
+                    .menu(t(Key::InlineCode), Box::new(InlineCode))
+                    .menu(t(Key::Highlight), Box::new(Highlight))
+                    .menu(t(Key::Comment), Box::new(Comment))
+            })
+            .submenu(t(Key::Paragraph), window, cx, move |m, _, _| {
+                m.action_context(f2.clone())
+                    .menu(t(Key::Heading1), Box::new(Heading1))
+                    .menu(t(Key::Heading2), Box::new(Heading2))
+                    .menu(t(Key::Heading3), Box::new(Heading3))
+                    .menu(t(Key::PlainText), Box::new(PlainText))
+                    .separator()
+                    .menu(t(Key::BulletList), Box::new(BulletList))
+                    .menu(t(Key::NumberedList), Box::new(NumberedList))
+                    .menu(t(Key::TaskList), Box::new(TaskList))
+                    .menu(t(Key::Quote), Box::new(Quote))
+                    .menu(t(Key::Callout), Box::new(Callout))
+            })
+            .submenu(t(Key::Insert), window, cx, move |m, _, _| {
+                m.action_context(f3.clone())
+                    .menu(t(Key::InsertImage), Box::new(crate::keymap::InsertImage))
+                    .menu(t(Key::CodeBlock), Box::new(CodeBlock))
+                    .menu(t(Key::Divider), Box::new(Divider))
+            })
     }
 
     pub fn text(&self) -> &str {
@@ -664,11 +963,8 @@ impl Render for LiveEditor {
                     this.insert("", cx);
                 }
             }))
-            .on_action(cx.listener(|this, _: &Paste, _, cx| {
-                if let Some(t) = cx.read_from_clipboard().and_then(|i| i.text()) {
-                    this.insert(&t.replace("\r\n", "\n"), cx);
-                }
-            }))
+            .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(false, cx)))
+            .on_action(cx.listener(|this, _: &PastePlain, _, cx| this.paste(true, cx)))
             .on_action(cx.listener(|this, _: &Enter, _, cx| {
                 if this.completing {
                     cx.emit(CompletionKey(CompletionMove::Accept));
@@ -688,6 +984,26 @@ impl Render for LiveEditor {
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(false, cx)))
             .on_action(cx.listener(|this, _: &Bold, _, cx| this.wrap("**", cx)))
             .on_action(cx.listener(|this, _: &Italic, _, cx| this.wrap("*", cx)))
+            .on_action(cx.listener(|this, _: &Strike, _, cx| this.wrap("~~", cx)))
+            .on_action(cx.listener(|this, _: &InlineCode, _, cx| this.wrap("`", cx)))
+            .on_action(cx.listener(|this, _: &Highlight, _, cx| this.wrap("==", cx)))
+            .on_action(cx.listener(|this, _: &Comment, _, cx| this.wrap("%%", cx)))
+            .on_action(cx.listener(|this, _: &Callout, _, cx| this.callout(cx)))
+            .on_action(cx.listener(|this, _: &WikiLink, _, cx| this.link(true, cx)))
+            .on_action(cx.listener(|this, _: &ExternalLink, _, cx| this.link(false, cx)))
+            .on_action(cx.listener(|this, _: &Heading1, _, cx| this.block_prefix("# ", cx)))
+            .on_action(cx.listener(|this, _: &Heading2, _, cx| this.block_prefix("## ", cx)))
+            .on_action(cx.listener(|this, _: &Heading3, _, cx| this.block_prefix("### ", cx)))
+            .on_action(cx.listener(|this, _: &PlainText, _, cx| this.block_prefix("", cx)))
+            .on_action(cx.listener(|this, _: &BulletList, _, cx| this.block_prefix("- ", cx)))
+            .on_action(cx.listener(|this, _: &NumberedList, _, cx| this.block_prefix("1. ", cx)))
+            .on_action(cx.listener(|this, _: &TaskList, _, cx| this.block_prefix("- [ ] ", cx)))
+            .on_action(cx.listener(|this, _: &Quote, _, cx| this.block_prefix("> ", cx)))
+            .on_action(cx.listener(|this, _: &CodeBlock, _, cx| this.code_block(cx)))
+            .on_action(cx.listener(|this, _: &Divider, _, cx| this.insert_block("---\n", None, cx)))
+            .on_mouse_down(MouseButton::Right, cx.listener(Self::right_click))
+            .on_drop(cx.listener(Self::drop_paths))
+            .drag_over::<ExternalPaths>(|s, _, _, cx| s.bg(rgb(cx.global::<Palette>().hover)))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_mouse_up(
@@ -700,6 +1016,10 @@ impl Render for LiveEditor {
             )
             .on_scroll_wheel(cx.listener(Self::scroll))
             .child(EditorElement(cx.entity()))
+            .context_menu({
+                let editor = cx.entity().downgrade();
+                move |menu, window, cx| Self::context_menu(menu, &editor, window, cx)
+            })
     }
 }
 
@@ -720,6 +1040,10 @@ struct LineBox {
     bullet: Option<(md::Bullet, u8)>,
     /// Task checkbox bounds in content coordinates (for hit-testing).
     check: Option<Bounds<f32>>,
+    /// Rendered `![](…)` images below the line's text, content coordinates.
+    images: Vec<(Arc<RenderImage>, Bounds<f32>)>,
+    /// Callout accent, and whether this is the block's first / last line.
+    callout: Option<(u32, bool, bool)>,
 }
 
 impl LineBox {
@@ -805,6 +1129,44 @@ impl Layout {
     }
 }
 
+const IMAGE_MAX_H: f32 = 520.;
+
+/// First candidate that decodes; `None` while one is still loading (the
+/// asset cache notifies the view when it lands) or when none exists.
+fn load_image(
+    candidates: &[PathBuf],
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<Arc<RenderImage>> {
+    for p in candidates {
+        let res = Resource::Path(Arc::from(p.as_path()));
+        match window.use_asset::<ImgResourceLoader>(&res, cx) {
+            Some(Ok(img)) => return Some(img),
+            Some(Err(_)) => continue,
+            None => return None,
+        }
+    }
+    None
+}
+
+/// `segs` minus `hole`.
+fn cut(segs: Vec<Range<usize>>, hole: &Range<usize>) -> Vec<Range<usize>> {
+    let mut out = Vec::with_capacity(segs.len());
+    for s in segs {
+        if s.end <= hole.start || s.start >= hole.end {
+            out.push(s);
+            continue;
+        }
+        if s.start < hole.start {
+            out.push(s.start..hole.start);
+        }
+        if s.end > hole.end {
+            out.push(hole.end..s.end);
+        }
+    }
+    out
+}
+
 fn metrics(kind: Kind) -> (f32, f32, f32, f32) {
     // (font size, line height, space above, space below)
     match kind {
@@ -821,7 +1183,12 @@ fn hsla(c: u32) -> Hsla {
     rgb(c).into()
 }
 
-fn run(pal: &Palette, kind: Kind, flags: u16, len: usize) -> TextRun {
+fn tone_color(pal: &Palette, tone: md::Tone) -> u32 {
+    pal.callout[tone as usize]
+}
+
+/// `accent` is the callout colour of the line, if it is in one.
+fn run(pal: &Palette, kind: Kind, flags: u16, accent: Option<u32>, len: usize) -> TextRun {
     let heading = matches!(kind, Kind::Heading(_));
     let code = kind == Kind::Code || flags & md::CODE != 0;
     let mut f = font(if code { MONO } else { SANS });
@@ -859,7 +1226,9 @@ fn run(pal: &Palette, kind: Kind, flags: u16, len: usize) -> TextRun {
         pal.code_num
     } else if heading || flags & md::LINK != 0 {
         pal.head
-    } else if kind == Kind::Quote {
+    } else if let Some(c) = accent.filter(|_| flags & md::CALLOUT != 0) {
+        c
+    } else if kind == Kind::Quote && accent.is_none() {
         pal.quote
     } else {
         pal.body
@@ -878,8 +1247,13 @@ fn run(pal: &Palette, kind: Kind, flags: u16, len: usize) -> TextRun {
                 color: None,
             }
         });
-    let background_color =
-        (flags & md::CODE != 0 && kind != Kind::Code).then(|| hsla(pal.inline_code_bg));
+    let background_color = if flags & md::CODE != 0 && kind != Kind::Code {
+        Some(hsla(pal.inline_code_bg))
+    } else if flags & md::HIGHLIGHT != 0 && flags & md::MARK == 0 {
+        Some(rgba(pal.highlight).into())
+    } else {
+        None
+    };
     TextRun {
         len,
         font: f,
@@ -933,6 +1307,16 @@ impl Element for EditorElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<Layout> {
+        let wanted: Vec<Vec<PathBuf>> = {
+            let ed = self.0.read(cx);
+            ed.analysis
+                .images
+                .iter()
+                .map(|im| ed.image_candidates(im))
+                .collect()
+        };
+        let loaded: Vec<Option<Arc<RenderImage>>> =
+            wanted.iter().map(|c| load_image(c, window, cx)).collect();
         let ed = self.0.read(cx);
         let pal = *cx.global::<Palette>();
         let width = f32::from(bounds.size.width);
@@ -953,7 +1337,19 @@ impl Element for EditorElement {
         let mut display = String::new();
         let mut runs = Vec::new();
         let mut items = a.items.iter().peekable();
+        let mut callouts = a.callouts.iter().peekable();
         for (ix, (buf, kind)) in a.lines.iter().enumerate() {
+            while matches!(callouts.peek(), Some(c) if c.lines.end <= ix) {
+                callouts.next();
+            }
+            let callout = callouts.peek().filter(|c| c.lines.contains(&ix)).map(|c| {
+                (
+                    tone_color(&pal, c.tone),
+                    c.lines.start == ix,
+                    c.lines.end == ix + 1,
+                )
+            });
+            let accent = callout.map(|c| c.0);
             let (fs, lh, above, below) = metrics(*kind);
             // A line can carry several markers (e.g. "- 1. x"); the
             // innermost item decides the indent and the painted bullet.
@@ -967,13 +1363,30 @@ impl Element for EditorElement {
             }
             display.clear();
             runs.clear();
+            let line_images: Vec<(&md::ImageRef, &Arc<RenderImage>)> = a
+                .images
+                .iter()
+                .zip(&loaded)
+                .filter(|(im, _)| buf.start <= im.range.start && im.range.start <= buf.end)
+                .filter_map(|(im, img)| img.as_ref().map(|img| (im, img)))
+                .collect();
             let segs = if text.is_empty() && ix == 0 {
                 let placeholder = crate::i18n::t(crate::i18n::Key::EditorPlaceholder);
                 display.push_str(placeholder);
-                runs.push(run(&pal, *kind, md::MARK, placeholder.len()));
+                runs.push(run(&pal, *kind, md::MARK, accent, placeholder.len()));
                 std::iter::once(0..0).collect()
             } else {
-                let segs = a.visible(buf.clone(), &reveal);
+                let mut segs = a.visible(buf.clone(), &reveal);
+                // A displayed image replaces its source until the selection
+                // touches it.
+                for (im, _) in &line_images {
+                    if !(im.range.start <= reveal.end && reveal.start <= im.range.end) {
+                        segs = cut(segs, &im.range);
+                    }
+                }
+                if segs.is_empty() {
+                    segs.push(buf.start..buf.start);
+                }
                 for s in &segs {
                     let mut i = s.start;
                     while i < s.end {
@@ -982,7 +1395,7 @@ impl Element for EditorElement {
                         while j < s.end && a.flags[j] == f {
                             j += 1;
                         }
-                        runs.push(run(&pal, *kind, f, j - i));
+                        runs.push(run(&pal, *kind, f, accent, j - i));
                         display.push_str(&text[i..j]);
                         i = j;
                     }
@@ -1009,8 +1422,30 @@ impl Element for EditorElement {
                 .ok()
                 .and_then(|mut v| v.pop())
                 .unwrap_or_default();
-            let rows_h = (wrapped.wrap_boundaries.len() + 1) as f32 * lh;
             let top = y + above;
+            let text_h = if display.is_empty() && !line_images.is_empty() {
+                0.
+            } else {
+                (wrapped.wrap_boundaries.len() + 1) as f32 * lh
+            };
+            let mut images = Vec::new();
+            let mut iy = top + text_h + if text_h > 0. { 6. } else { 0. };
+            let max_w = col_w - indent;
+            for (_, img) in &line_images {
+                let s = img.size(0);
+                let (w, h) = (s.width.0 as f32, s.height.0 as f32);
+                if w <= 0. || h <= 0. {
+                    continue;
+                }
+                let k = (max_w / w).min(IMAGE_MAX_H / h).min(1.);
+                let b = Bounds {
+                    origin: point(col_x + indent, iy),
+                    size: size(w * k, h * k),
+                };
+                iy += b.size.height + 8.;
+                images.push(((*img).clone(), b));
+            }
+            let rows_h = if images.is_empty() { text_h } else { iy - top };
             y = top + rows_h + below;
             lines.push(LineBox {
                 buf: buf.clone(),
@@ -1024,6 +1459,8 @@ impl Element for EditorElement {
                 wrapped,
                 bullet,
                 check: None,
+                images,
+                callout,
             });
         }
         let content_h = y + PAD_TOP;
@@ -1106,6 +1543,31 @@ impl Element for EditorElement {
                         ),
                         hsla(pal.code_bg),
                     )),
+                    Kind::Quote if let Some((c, first, last)) = line.callout => {
+                        let pad = |edge: bool| if edge { 6. } else { 0. };
+                        let top = line.top - pad(first);
+                        let h = line.rows_h + pad(first) + pad(last);
+                        let tint = rgba((c << 8) | 0x1a);
+                        window.paint_quad(
+                            fill(
+                                Bounds::new(
+                                    at(layout.col_x - 6., top),
+                                    size(px(layout.col_w + 12.), px(h)),
+                                ),
+                                tint,
+                            )
+                            .corner_radii(Corners {
+                                top_left: px(if first { 6. } else { 0. }),
+                                top_right: px(if first { 6. } else { 0. }),
+                                bottom_left: px(if last { 6. } else { 0. }),
+                                bottom_right: px(if last { 6. } else { 0. }),
+                            }),
+                        );
+                        window.paint_quad(fill(
+                            Bounds::new(at(layout.col_x - 6., top), size(px(3.), px(h))),
+                            hsla(c),
+                        ));
+                    }
                     Kind::Quote => window.paint_quad(fill(
                         Bounds::new(
                             at(layout.col_x + 2., line.top),
@@ -1230,6 +1692,15 @@ impl Element for EditorElement {
                 line.wrapped
                     .paint(origin, px(line.lh), TextAlign::Left, None, window, cx)
                     .ok();
+                for (img, b) in &line.images {
+                    let r = Bounds::new(
+                        at(b.origin.x, b.origin.y),
+                        size(px(b.size.width), px(b.size.height)),
+                    );
+                    window
+                        .paint_image(r, r, Corners::all(px(6.)), img.clone(), 0, false)
+                        .ok();
+                }
             }
 
             if focused && let (Some(p), Some((_, lh))) = (next_caret, target) {

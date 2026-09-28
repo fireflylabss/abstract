@@ -135,6 +135,57 @@ pub enum Key {
     TourDone,
     TourStepOf,
     TourStepAria,
+    Cut,
+    Copy,
+    Paste,
+    PastePlain,
+    SelectAll,
+    AddWikiLink,
+    AddLink,
+    SearchSelection,
+    Format,
+    Bold,
+    Italic,
+    Strikethrough,
+    InlineCode,
+    Highlight,
+    Comment,
+    Paragraph,
+    Heading1,
+    Heading2,
+    Heading3,
+    PlainText,
+    BulletList,
+    NumberedList,
+    TaskList,
+    Quote,
+    Callout,
+    Insert,
+    InsertImage,
+    CodeBlock,
+    Divider,
+    AttachFailed,
+    Open,
+    NewNoteHere,
+    NewFolderHere,
+    Duplicate,
+    CopyPath,
+    CopyRelativePath,
+    CopyNoteLink,
+    Reveal,
+    OpenDefault,
+    NameTaken,
+    NoteStatus,
+    Saved,
+    Characters,
+    ReadingTime,
+    SelectionWords,
+    Modified,
+    NotSavedYet,
+    JustNow,
+    MinutesAgo,
+    HoursAgo,
+    DaysAgo,
 }
 
 impl Key {
@@ -194,6 +245,57 @@ impl Key {
         Key::TourDone,
         Key::TourStepOf,
         Key::TourStepAria,
+        Key::Cut,
+        Key::Copy,
+        Key::Paste,
+        Key::PastePlain,
+        Key::SelectAll,
+        Key::AddWikiLink,
+        Key::AddLink,
+        Key::SearchSelection,
+        Key::Format,
+        Key::Bold,
+        Key::Italic,
+        Key::Strikethrough,
+        Key::InlineCode,
+        Key::Highlight,
+        Key::Comment,
+        Key::Paragraph,
+        Key::Heading1,
+        Key::Heading2,
+        Key::Heading3,
+        Key::PlainText,
+        Key::BulletList,
+        Key::NumberedList,
+        Key::TaskList,
+        Key::Quote,
+        Key::Callout,
+        Key::Insert,
+        Key::InsertImage,
+        Key::CodeBlock,
+        Key::Divider,
+        Key::AttachFailed,
+        Key::Open,
+        Key::NewNoteHere,
+        Key::NewFolderHere,
+        Key::Duplicate,
+        Key::CopyPath,
+        Key::CopyRelativePath,
+        Key::CopyNoteLink,
+        Key::Reveal,
+        Key::OpenDefault,
+        Key::NameTaken,
+        Key::NoteStatus,
+        Key::Saved,
+        Key::Characters,
+        Key::ReadingTime,
+        Key::SelectionWords,
+        Key::Modified,
+        Key::NotSavedYet,
+        Key::JustNow,
+        Key::MinutesAgo,
+        Key::HoursAgo,
+        Key::DaysAgo,
     ];
 }
 
@@ -237,28 +339,85 @@ fn en(k: Key) -> &'static str {
         Key::LangSystem => "System",
         Key::Tour1Title => "Spaces are real folders",
         Key::Tour1Body => {
-            "Each space is a folder on your disk. Switch spaces or open another folder here (Ctrl+O)."
+            "Each space is a folder on your disk. Switch spaces or open another folder here ({MOD}+O)."
         }
         Key::Tour2Title => "Notes and folders",
         Key::Tour2Body => {
-            "Create notes with Ctrl+N and organize them in folders. Everything becomes a plain .md file."
+            "Create notes with {MOD}+N and organize them in folders. Everything becomes a plain .md file."
         }
         Key::Tour3Title => "Write in Markdown",
         Key::Tour3Body => "The first line becomes the title — and the file name.",
         Key::Tour4Title => "Auto-save",
         Key::Tour4Body => {
-            "Everything saves by itself. Ctrl+S saves right away; deleting sends to Trash."
+            "Everything saves by itself. {MOD}+S saves right away; deleting sends to Trash."
         }
         Key::Tour5Title => "Light, dark or system",
-        Key::Tour5Body => "Switch the theme with Ctrl+Shift+L.",
+        Key::Tour5Body => "Switch the theme with {MOD}+Shift+L.",
         Key::Tour6Title => "Focus mode",
-        Key::Tour6Body => "Hide the sidebar with Ctrl+\\. F1 reopens this tour.",
+        Key::Tour6Body => "Hide the sidebar with {MOD}+\\. F1 reopens this tour.",
         Key::TourSkip => "Skip",
         Key::TourBack => "Back",
         Key::TourNext => "Next",
         Key::TourDone => "Done",
         Key::TourStepOf => "{step} of {n}",
         Key::TourStepAria => "Step {step} of {n}: {title}",
+        Key::Cut => "Cut",
+        Key::Copy => "Copy",
+        Key::Paste => "Paste",
+        Key::PastePlain => "Paste as plain text",
+        Key::SelectAll => "Select all",
+        Key::AddWikiLink => "Add note link",
+        Key::AddLink => "Add external link",
+        Key::SearchSelection => "Search for selection",
+        Key::Format => "Format",
+        Key::Bold => "Bold",
+        Key::Italic => "Italic",
+        Key::Strikethrough => "Strikethrough",
+        Key::InlineCode => "Code",
+        Key::Highlight => "Highlight",
+        Key::Comment => "Hidden comment",
+        Key::Paragraph => "Paragraph",
+        Key::Heading1 => "Heading 1",
+        Key::Heading2 => "Heading 2",
+        Key::Heading3 => "Heading 3",
+        Key::PlainText => "Body text",
+        Key::BulletList => "Bulleted list",
+        Key::NumberedList => "Numbered list",
+        Key::TaskList => "Checklist",
+        Key::Quote => "Quote",
+        Key::Callout => "Callout",
+        Key::Insert => "Insert",
+        Key::InsertImage => "Image…",
+        Key::CodeBlock => "Code block",
+        Key::Divider => "Divider",
+        Key::AttachFailed => "Could not attach file",
+        Key::Open => "Open",
+        Key::NewNoteHere => "New note here",
+        Key::NewFolderHere => "New folder here",
+        Key::Duplicate => "Duplicate",
+        Key::CopyPath => "Copy path",
+        Key::CopyRelativePath => "Copy relative path",
+        Key::CopyNoteLink => "Copy note link",
+        Key::Reveal => {
+            if cfg!(target_os = "macos") {
+                "Show in Finder"
+            } else {
+                "Show in file manager"
+            }
+        }
+        Key::OpenDefault => "Open with default app",
+        Key::NameTaken => "Something with that name already exists there",
+        Key::NoteStatus => "Note details",
+        Key::Saved => "Saved",
+        Key::Characters => "{n} characters",
+        Key::ReadingTime => "{n} min read",
+        Key::SelectionWords => "{n} selected",
+        Key::Modified => "Modified {when}",
+        Key::NotSavedYet => "Not saved yet",
+        Key::JustNow => "just now",
+        Key::MinutesAgo => "{n} min ago",
+        Key::HoursAgo => "{n} h ago",
+        Key::DaysAgo => "{n} d ago",
     }
 }
 
@@ -302,28 +461,85 @@ fn pt(k: Key) -> &'static str {
         Key::LangSystem => "Sistema",
         Key::Tour1Title => "Espaços são pastas reais",
         Key::Tour1Body => {
-            "Cada espaço é uma pasta no seu disco. Troque de espaço ou abra outra pasta aqui (Ctrl+O)."
+            "Cada espaço é uma pasta no seu disco. Troque de espaço ou abra outra pasta aqui ({MOD}+O)."
         }
         Key::Tour2Title => "Notas e pastas",
         Key::Tour2Body => {
-            "Crie notas com Ctrl+N e organize em pastas. Tudo vira arquivo .md comum."
+            "Crie notas com {MOD}+N e organize em pastas. Tudo vira arquivo .md comum."
         }
         Key::Tour3Title => "Escreva em Markdown",
         Key::Tour3Body => "A primeira linha vira o título — e o nome do arquivo.",
         Key::Tour4Title => "Salvamento automático",
         Key::Tour4Body => {
-            "Tudo é salvo sozinho. Ctrl+S salva na hora; apagar envia para a Lixeira."
+            "Tudo é salvo sozinho. {MOD}+S salva na hora; apagar envia para a Lixeira."
         }
         Key::Tour5Title => "Claro, escuro ou sistema",
-        Key::Tour5Body => "Alterne o tema com Ctrl+Shift+L.",
+        Key::Tour5Body => "Alterne o tema com {MOD}+Shift+L.",
         Key::Tour6Title => "Modo foco",
-        Key::Tour6Body => "Esconda a barra lateral com Ctrl+\\. F1 reabre este tour.",
+        Key::Tour6Body => "Esconda a barra lateral com {MOD}+\\. F1 reabre este tour.",
         Key::TourSkip => "Pular",
         Key::TourBack => "Voltar",
         Key::TourNext => "Próximo",
         Key::TourDone => "Concluir",
         Key::TourStepOf => "{step} de {n}",
         Key::TourStepAria => "Passo {step} de {n}: {title}",
+        Key::Cut => "Recortar",
+        Key::Copy => "Copiar",
+        Key::Paste => "Colar",
+        Key::PastePlain => "Colar como texto simples",
+        Key::SelectAll => "Selecionar tudo",
+        Key::AddWikiLink => "Adicionar link de nota",
+        Key::AddLink => "Adicionar link externo",
+        Key::SearchSelection => "Buscar pela seleção",
+        Key::Format => "Formatar",
+        Key::Bold => "Negrito",
+        Key::Italic => "Itálico",
+        Key::Strikethrough => "Tachado",
+        Key::InlineCode => "Código",
+        Key::Highlight => "Marca-texto",
+        Key::Comment => "Comentário oculto",
+        Key::Paragraph => "Parágrafo",
+        Key::Heading1 => "Título 1",
+        Key::Heading2 => "Título 2",
+        Key::Heading3 => "Título 3",
+        Key::PlainText => "Texto normal",
+        Key::BulletList => "Lista com marcadores",
+        Key::NumberedList => "Lista numerada",
+        Key::TaskList => "Lista de tarefas",
+        Key::Quote => "Citação",
+        Key::Callout => "Destaque",
+        Key::Insert => "Inserir",
+        Key::InsertImage => "Imagem…",
+        Key::CodeBlock => "Bloco de código",
+        Key::Divider => "Divisória",
+        Key::AttachFailed => "Não foi possível anexar o arquivo",
+        Key::Open => "Abrir",
+        Key::NewNoteHere => "Nova nota aqui",
+        Key::NewFolderHere => "Nova pasta aqui",
+        Key::Duplicate => "Duplicar",
+        Key::CopyPath => "Copiar caminho",
+        Key::CopyRelativePath => "Copiar caminho relativo",
+        Key::CopyNoteLink => "Copiar link da nota",
+        Key::Reveal => {
+            if cfg!(target_os = "macos") {
+                "Mostrar no Finder"
+            } else {
+                "Mostrar no gerenciador de arquivos"
+            }
+        }
+        Key::OpenDefault => "Abrir com o app padrão",
+        Key::NameTaken => "Já existe algo com esse nome lá",
+        Key::NoteStatus => "Detalhes da nota",
+        Key::Saved => "Salvo",
+        Key::Characters => "{n} caracteres",
+        Key::ReadingTime => "{n} min de leitura",
+        Key::SelectionWords => "{n} selecionadas",
+        Key::Modified => "Modificado {when}",
+        Key::NotSavedYet => "Ainda não salvo",
+        Key::JustNow => "agora mesmo",
+        Key::MinutesAgo => "há {n} min",
+        Key::HoursAgo => "há {n} h",
+        Key::DaysAgo => "há {n} d",
     }
 }
 
@@ -380,5 +596,18 @@ mod tests {
         assert_eq!(tf(Key::Words, &[("n", "5")]), "5 palavras");
         assert_eq!(lookup(Lang::En, Key::Words), "{n} words");
         assert!(tf(Key::Sidebar, &[]).contains(&format!("{}+\\", crate::keymap::MOD)));
+    }
+
+    #[test]
+    fn shortcuts_use_the_platform_modifier() {
+        for &k in Key::ALL {
+            for lang in [Lang::En, Lang::PtBr] {
+                assert!(
+                    !lookup(lang, k).contains("Ctrl"),
+                    "hard-coded Ctrl: {}",
+                    en(k)
+                );
+            }
+        }
     }
 }
