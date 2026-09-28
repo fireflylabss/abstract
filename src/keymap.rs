@@ -20,6 +20,8 @@ actions!(
         ToggleSpaces,
         StartTour,
         SearchNotes,
+        SearchSelection,
+        InsertImage,
         Quit,
     ]
 );

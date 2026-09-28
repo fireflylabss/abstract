@@ -1,6 +1,6 @@
 [package]
 name = "abstract-editor"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Minimal local-first markdown notes editor, GPU-rendered with GPUI"
 repository = "https://github.com/fireflylabss/abstract"
@@ -29,6 +29,9 @@ futures = "0.3"
 tree-sitter-md = "=0.5.3"
 trash = "5"
 unicode-segmentation = "1"
+
+[dev-dependencies]
+gpui = { version = "=0.3.4", package = "gpui-pre", features = ["test-support"] }
 
 [build-dependencies]
 winresource = "=0.1.31"

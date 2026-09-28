@@ -63,9 +63,24 @@ impl AbstractApp {
                     3,
                     div()
                         .id("status")
+                        .role(Role::Button)
+                        .aria_label(t(Key::NoteStatus))
+                        .debug_selector(|| "status".into())
                         .w(px(140.))
-                        .text_right()
+                        .h(px(28.))
+                        .flex()
+                        .items_center()
+                        .justify_end()
                         .px(px(8.))
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .when(self.status_open, |s| s.bg(rgb(pal.active)))
+                        .hover(|s| s.bg(rgb(pal.hover)))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.status_open = !this.status_open;
+                            cx.notify();
+                        }))
                         .text_size(px(12.))
                         .text_color(rgb(if self.save == SaveState::Failed {
                             pal.fg
@@ -158,5 +173,163 @@ impl AbstractApp {
             .when_some(self.search.as_ref(), |el, _| {
                 el.child(self.render_search(cx))
             })
+            .when(self.status_open, |el| {
+                el.child(self.render_status(has_note, cx))
+            })
+    }
+
+    fn render_status(&self, has_note: bool, cx: &mut Context<Self>) -> impl IntoElement {
+        let pal = cx.palette();
+        let editor = self.editor.read(cx);
+        let chars = editor.text().chars().count();
+        let selected = editor.selected_text().split_whitespace().count();
+        let path = self.current.as_ref().map(|c| c.path());
+        let mtime = self.current.as_ref().and_then(|c| guard(&c.file).mtime);
+        let (dot, state) = match self.save {
+            SaveState::Saved => (pal.faint, t(Key::Saved)),
+            SaveState::Pending => (pal.dim, t(Key::Saving)),
+            SaveState::Failed => (pal.fg, t(Key::SaveFailed)),
+        };
+        let name = path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| t(Key::Untitled).into());
+        let folder = path
+            .as_ref()
+            .and_then(|p| p.parent())
+            .map(|p| {
+                let rel = p.strip_prefix(&self.dir).unwrap_or(p);
+                let space = spaces::name_of(&self.dir);
+                if rel.as_os_str().is_empty() {
+                    space
+                } else {
+                    format!("{space}/{}", rel.display())
+                }
+            })
+            .unwrap_or_default();
+        let modified = match mtime {
+            Some(m) => tf(Key::Modified, &[("when", &ago(m))]),
+            None => t(Key::NotSavedYet).into(),
+        };
+        let stat = |label: String| {
+            div()
+                .text_size(px(12.))
+                .line_height(px(18.))
+                .text_color(rgb(pal.dim))
+                .child(label)
+        };
+        let action = |id: &'static str, label: &'static str| {
+            div()
+                .id(id)
+                .role(Role::Button)
+                .aria_label(label)
+                .h(px(26.))
+                .px(px(8.))
+                .flex()
+                .items_center()
+                .rounded(px(6.))
+                .cursor_pointer()
+                .text_size(px(12.))
+                .text_color(rgb(pal.body))
+                .hover(|s| s.bg(rgb(pal.hover)))
+                .child(label)
+        };
+        div()
+            .id("status-menu")
+            .role(Role::Dialog)
+            .aria_label(t(Key::NoteStatus))
+            .absolute()
+            .top(px(44.))
+            .right(px(if has_note { 72. } else { 40. }))
+            .w(px(240.))
+            .p(px(12.))
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .bg(rgb(pal.menu_bg))
+            .border_1()
+            .border_color(rgb(pal.menu_border))
+            .rounded(px(8.))
+            .shadow_lg()
+            .occlude()
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                this.status_open = false;
+                cx.notify();
+            }))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .text_size(px(11.))
+                    .text_color(rgb(pal.faint))
+                    .child(div().size(px(6.)).rounded_full().bg(rgb(dot)))
+                    .child(state),
+            )
+            .child(
+                div()
+                    .mt(px(4.))
+                    .truncate()
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(pal.fg))
+                    .child(name),
+            )
+            .child(
+                div()
+                    .truncate()
+                    .text_size(px(11.))
+                    .text_color(rgb(pal.faint))
+                    .child(folder),
+            )
+            .child(div().h(px(1.)).my(px(8.)).bg(rgb(pal.line)))
+            .child(stat(tf(Key::Words, &[("n", &self.words.to_string())])))
+            .child(stat(tf(Key::Characters, &[("n", &chars.to_string())])))
+            .child(stat(tf(
+                Key::ReadingTime,
+                &[("n", &self.words.div_ceil(200).max(1).to_string())],
+            )))
+            .when(selected > 0, |el| {
+                el.child(stat(tf(
+                    Key::SelectionWords,
+                    &[("n", &selected.to_string())],
+                )))
+            })
+            .child(stat(modified))
+            .when_some(path.filter(|p| p.exists()), |el, p| {
+                let copy = p.clone();
+                el.child(div().h(px(1.)).my(px(8.)).bg(rgb(pal.line)))
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(4.))
+                            .child(
+                                action("status-reveal", t(Key::Reveal))
+                                    .on_click(move |_, _, cx| cx.reveal_path(&p)),
+                            )
+                            .child(action("status-copy-path", t(Key::CopyPath)).on_click(
+                                move |_, _, cx| {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(
+                                        copy.display().to_string(),
+                                    ))
+                                },
+                            )),
+                    )
+            })
+    }
+}
+
+/// "3 min ago"-style age of `at`.
+fn ago(at: SystemTime) -> String {
+    let secs = SystemTime::now()
+        .duration_since(at)
+        .map_or(0, |d| d.as_secs());
+    let n = |v: u64| v.to_string();
+    match secs {
+        0..60 => t(Key::JustNow).into(),
+        60..3600 => tf(Key::MinutesAgo, &[("n", &n(secs / 60))]),
+        3600..86400 => tf(Key::HoursAgo, &[("n", &n(secs / 3600))]),
+        _ => tf(Key::DaysAgo, &[("n", &n(secs / 86400))]),
     }
 }

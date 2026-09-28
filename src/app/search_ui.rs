@@ -72,6 +72,22 @@ impl AbstractApp {
         }));
     }
 
+    /// Editor menu: open the palette prefilled with the selection.
+    pub(crate) fn search_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let query = self.editor.read(cx).selected_text().trim().to_string();
+        if query.is_empty() {
+            return;
+        }
+        self.open_search(window, cx);
+        if let Some(p) = &self.search {
+            p.state.update(cx, |s, cx| {
+                s.set_value(query, window, cx);
+                s.focus(window, cx);
+            });
+        }
+        self.search_changed(cx);
+    }
+
     fn search_changed(&mut self, cx: &mut Context<Self>) {
         self.run_search(cx);
         cx.notify();

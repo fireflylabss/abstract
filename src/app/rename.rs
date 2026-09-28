@@ -210,6 +210,7 @@ impl AbstractApp {
             }
         }
         self.save_session(cx);
+        self.sync_editor_dirs(cx);
     }
 
     pub(crate) fn rename_folder(&mut self, old: PathBuf, new: PathBuf, cx: &mut Context<Self>) {

@@ -61,6 +61,17 @@ pub struct Item {
     pub bullet: Bullet,
 }
 
+/// `![alt](src)` or an Obsidian-style `![[src]]` embed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImageRef {
+    /// Whole construct, `!` included.
+    pub range: Range<usize>,
+    /// The raw destination text (may be `<…>`-wrapped or percent-encoded).
+    pub src: Range<usize>,
+    /// `![[…]]`: resolved against the space as well as the note's folder.
+    pub embed: bool,
+}
+
 #[derive(Default)]
 pub struct Analysis {
     pub flags: Vec<u16>,
@@ -74,6 +85,8 @@ pub struct Analysis {
     pub tasks: Vec<Task>,
     /// List items, in line order.
     pub items: Vec<Item>,
+    /// Images, in buffer order.
+    pub images: Vec<ImageRef>,
 }
 
 pub struct Analyzer {
@@ -113,6 +126,7 @@ impl Analyzer {
             wiki_links: Vec::new(),
             tasks: Vec::new(),
             items: Vec::new(),
+            images: Vec::new(),
         };
         if len == 0 {
             return out;
@@ -355,12 +369,25 @@ impl Analyzer {
                         let mut pos = range.start;
                         let mut cursor = node.walk();
                         let mut visible = None;
+                        let mut dest = None;
                         for child in node.children(&mut cursor) {
-                            if child.kind() == keep.0 || child.kind() == "link_label" {
-                                visible =
-                                    Some(child.start_byte().min(len)..child.end_byte().min(len));
-                                break;
+                            let r = child.start_byte().min(len)..child.end_byte().min(len);
+                            if visible.is_none()
+                                && (child.kind() == keep.0 || child.kind() == "link_label")
+                            {
+                                visible = Some(r);
+                            } else if child.kind() == "link_destination" {
+                                dest = Some(r);
                             }
+                        }
+                        if node.kind() == "image"
+                            && let Some(src) = dest
+                        {
+                            out.images.push(ImageRef {
+                                range: range.clone(),
+                                src,
+                                embed: false,
+                            });
                         }
                         match visible {
                             Some(v) => {
@@ -406,6 +433,23 @@ impl Analyzer {
             }
             out.conceals
                 .retain(|c| c.hidden.end <= l.range.start || c.hidden.start >= l.range.end);
+            if l.range.start > 0
+                && text.as_bytes()[l.range.start - 1] == b'!'
+                && is_image_path(&text[l.target.clone()])
+            {
+                let range = l.range.start - 1..l.range.end;
+                out.mark(l.target.clone(), MUTED | ITALIC);
+                out.mark(range.start..l.target.start, MARK);
+                out.conceal(range.clone(), range.start..l.target.start);
+                out.mark(l.target.end..range.end, MARK);
+                out.conceal(range.clone(), l.target.end..range.end);
+                out.images.push(ImageRef {
+                    range,
+                    src: l.target.clone(),
+                    embed: true,
+                });
+                continue;
+            }
             let visible = l.alias.clone().unwrap_or_else(|| l.target.clone());
             out.mark(visible.clone(), LINK);
             let mut pre = l.range.start..visible.start;
@@ -423,8 +467,48 @@ impl Analyzer {
 
         out.conceals.retain(|c| !c.hidden.is_empty());
         out.conceals.sort_by_key(|c| c.hidden.start);
+        out.images.sort_by_key(|i| i.range.start);
         out
     }
+}
+
+pub const IMAGE_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tif", "tiff",
+];
+
+/// `line` with its heading/list/quote prefix replaced by `prefix` (indent
+/// kept). Applying the prefix a line already has removes it.
+pub fn set_block_prefix(line: &str, prefix: &str) -> String {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    let (pad, rest) = line.split_at(indent);
+    let hashes = rest.bytes().take_while(|&b| b == b'#').count();
+    let ordered = rest.bytes().take_while(u8::is_ascii_digit).count();
+    let old = if (1..=6).contains(&hashes) && rest[hashes..].starts_with(' ') {
+        hashes + 1
+    } else if ordered > 0
+        && (rest[ordered..].starts_with(". ") || rest[ordered..].starts_with(") "))
+    {
+        ordered + 2
+    } else {
+        [
+            "- [ ] ", "- [x] ", "- [X] ", "* [ ] ", "- ", "* ", "+ ", "> ",
+        ]
+        .iter()
+        .find(|p| rest.starts_with(**p))
+        .map_or(0, |p| p.len())
+    };
+    let (had, body) = rest.split_at(old);
+    let same = had == prefix || (prefix == "1. " && ordered > 0 && old == ordered + 2);
+    let new = if same { "" } else { prefix };
+    format!("{pad}{new}{body}")
+}
+
+/// Whether `path`'s extension is an image format the editor can display.
+pub fn is_image_path(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|x| x.to_str())
+        .is_some_and(|x| IMAGE_EXTS.contains(&x.to_ascii_lowercase().as_str()))
 }
 
 impl Analysis {
@@ -561,6 +645,46 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn block_prefix_replaces_and_toggles() {
+        assert_eq!(set_block_prefix("hello", "# "), "# hello");
+        assert_eq!(set_block_prefix("## hello", "# "), "# hello");
+        assert_eq!(set_block_prefix("# hello", "# "), "hello");
+        assert_eq!(set_block_prefix("  - [x] a", "> "), "  > a");
+        assert_eq!(set_block_prefix("3. a", "1. "), "a");
+        assert_eq!(set_block_prefix("- a", "1. "), "1. a");
+        assert_eq!(set_block_prefix("#tag", ""), "#tag");
+        assert_eq!(set_block_prefix("### a", ""), "a");
+    }
+
+    #[test]
+    fn images_are_collected_and_concealed() {
+        let t = "a ![cat](img/cat%20x.png) b\n![[shot.PNG]] and [[note]]\n![x](<a b.jpg>)";
+        let a = Analyzer::new().analyze(t);
+        let srcs: Vec<(&str, bool)> = a
+            .images
+            .iter()
+            .map(|i| (&t[i.src.clone()], i.embed))
+            .collect();
+        assert_eq!(
+            srcs,
+            [
+                ("img/cat%20x.png", false),
+                ("shot.PNG", true),
+                ("<a b.jpg>", false)
+            ]
+        );
+        assert_eq!(&t[a.images[0].range.clone()], "![cat](img/cat%20x.png)");
+        assert_eq!(&t[a.images[1].range.clone()], "![[shot.PNG]]");
+        // Embeds are not wiki-links; the plain link stays one.
+        assert_eq!(a.wiki_links.len(), 1);
+        assert_eq!(
+            shown(t, t.len()),
+            "a cat b\nshot.PNG and note\n![x](<a b.jpg>)"
+        );
+        assert!(is_image_path("x.JPEG") && !is_image_path("x.md"));
     }
 
     #[test]

@@ -2,6 +2,7 @@
 
 mod app;
 mod assets;
+mod attach;
 mod buffer;
 mod chrome;
 mod code;
