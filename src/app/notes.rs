@@ -73,6 +73,7 @@ impl AbstractApp {
             }
             ed.focus(window, cx);
         });
+        self.refresh_images(cx);
         cx.notify();
     }
 

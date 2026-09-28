@@ -3,7 +3,7 @@
 //! render large) and conceals markdown syntax the selection is not touching.
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
@@ -229,6 +229,36 @@ impl LiveEditor {
         self.insert(s, cx);
     }
 
+    /// Every file the note's images may load from.
+    pub fn image_paths(&self) -> Vec<PathBuf> {
+        let a = &self.analysis;
+        a.images
+            .iter()
+            .flat_map(|im| self.image_candidates(im))
+            .collect()
+    }
+
+    /// Rewrite relative image sources after the note moved folders.
+    pub fn rebase_images(&mut self, old_dir: &Path, new_dir: &Path, cx: &mut Context<Self>) {
+        let edits = crate::attach::rebase(self.buf.text(), &self.analysis.images, old_dir, new_dir);
+        if edits.is_empty() {
+            return;
+        }
+        let mut sel = self.buf.sel();
+        for (r, new) in edits {
+            let shift = |o: usize| {
+                if o >= r.end {
+                    o + new.len() - r.len()
+                } else {
+                    o.min(r.start + new.len())
+                }
+            };
+            sel = shift(sel.start)..shift(sel.end);
+            self.buf.edit(r.clone(), &new, Some(sel.clone()));
+        }
+        self.changed(cx);
+    }
+
     fn image_candidates(&self, im: &md::ImageRef) -> Vec<PathBuf> {
         let Some(dir) = &self.note_dir else {
             return Vec::new();
@@ -300,7 +330,12 @@ impl LiveEditor {
         let sel = self.buf.sel();
         let a = &self.analysis;
         let first = a.line_of(sel.start);
-        let last = a.line_of(sel.end);
+        // A selection ending at a line start leaves that line unselected.
+        let last = a.line_of(if sel.end > sel.start {
+            sel.end - 1
+        } else {
+            sel.end
+        });
         let range = a.lines[first].0.start..a.lines[last].0.end;
         let old = &self.buf.text()[range.clone()];
         let new = old

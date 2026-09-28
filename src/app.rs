@@ -10,7 +10,7 @@ mod sidebar;
 mod spaces_ui;
 mod tour_ui;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -168,6 +168,8 @@ pub(crate) struct AbstractApp {
     save: SaveState,
     words: usize,
     status_open: bool,
+    /// Last seen mtime of each image the editor has shown (`None`: missing).
+    image_stamps: HashMap<PathBuf, Option<SystemTime>>,
     /// Serializes on-disk ops on the open note (rename + write + trash mark).
     write_lock: Arc<Mutex<()>>,
     _save_task: Option<Task<()>>,
@@ -254,6 +256,7 @@ impl AbstractApp {
             save: SaveState::Saved,
             words: 0,
             status_open: false,
+            image_stamps: HashMap::new(),
             write_lock: Arc::new(Mutex::new(())),
             _save_task: None,
             _io_task: None,

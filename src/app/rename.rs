@@ -286,8 +286,11 @@ impl AbstractApp {
                             } else {
                                 false
                             }
+                        } else if std::fs::rename(&old, &new).is_ok() {
+                            rebase_file(&new, &old);
+                            true
                         } else {
-                            std::fs::rename(&old, &new).is_ok()
+                            false
                         }
                     }
                 })
@@ -300,6 +303,10 @@ impl AbstractApp {
                     {
                         let title = title_of(this.editor.read(cx).text());
                         cur.synced = vault::synced_stem(&stem_of(&new), &title);
+                        if let (Some(from), Some(to)) = (old.parent(), new.parent()) {
+                            this.editor
+                                .update(cx, |ed, cx| ed.rebase_images(from, to, cx));
+                        }
                     }
                     this.remap_prefix(&old, &new, cx);
                 } else {
@@ -311,5 +318,29 @@ impl AbstractApp {
             .ok();
         })
         .detach();
+    }
+}
+
+/// Keep relative image sources of the note moved from `old` to `new` valid.
+fn rebase_file(new: &Path, old: &Path) {
+    let (Some(from), Some(to)) = (old.parent(), new.parent()) else {
+        return;
+    };
+    if from == to {
+        return;
+    }
+    let Ok(mut text) = std::fs::read_to_string(new) else {
+        return;
+    };
+    let images = crate::md::Analyzer::new().analyze(&text).images;
+    let edits = crate::attach::rebase(&text, &images, from, to);
+    if edits.is_empty() {
+        return;
+    }
+    for (r, s) in edits {
+        text.replace_range(r, &s);
+    }
+    if let Err(err) = std::fs::write(new, text) {
+        eprintln!("abstract: cannot rewrite {}: {err}", new.display());
     }
 }

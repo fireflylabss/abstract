@@ -14,6 +14,49 @@ impl AbstractApp {
 
     /// Store pasted/dropped items off-thread, then reference them at the
     /// caret, unless another note was opened meanwhile.
+    /// Drop cached decodes of the open note's images whose file changed (or
+    /// appeared) since they were last seen, so edits on disk show up.
+    pub(crate) fn refresh_images(&mut self, cx: &mut Context<Self>) {
+        let paths = self.editor.read(cx).image_paths();
+        if paths.is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let stamps: Vec<(PathBuf, Option<SystemTime>)> = cx
+                .background_executor()
+                .spawn(async move {
+                    paths
+                        .into_iter()
+                        .map(|p| {
+                            let m = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
+                            (p, m)
+                        })
+                        .collect()
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                let mut stale = false;
+                for (p, m) in stamps {
+                    if this
+                        .image_stamps
+                        .insert(p.clone(), m)
+                        .is_some_and(|old| old != m)
+                    {
+                        cx.remove_asset::<ImgResourceLoader>(&Resource::Path(Arc::from(
+                            p.as_path(),
+                        )));
+                        stale = true;
+                    }
+                }
+                if stale {
+                    this.editor.update(cx, |_, cx| cx.notify());
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     pub(crate) fn attach(&mut self, items: Vec<Incoming>, cx: &mut Context<Self>) {
         let Some(cur) = &self.current else { return };
         let Some(note_dir) = cur.path().parent().map(Path::to_path_buf) else {

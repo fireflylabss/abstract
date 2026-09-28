@@ -18,7 +18,7 @@ Your notes are plain `.md` files living in real folders on disk. No accounts, no
 - **Autosave** — writes are debounced as you type; a note's file is created on the first keystroke and named after its first heading.
 - **Spaces** — keep several note directories and switch between them from the sidebar.
 - **Sidebar tree** — folders and notes with inline rename, drag-and-drop moves and a right-click menu, plus one-click new note / new folder.
-- **Images and attachments** — paste an image or drop files onto a note; they are copied to `attachments/` and `![](…)` images render inline.
+- **Images and attachments** — paste or drop images onto a note: they are copied to `attachments/` and render inline, as do hand-written `![](…)` / `![[…]]` images. Other dropped files become links (`[[note]]` for notes in the space).
 - **Context menus** — right-click in the editor for clipboard, links, formatting, paragraph styles and inserts.
 - **Task lists** — click the checkbox to toggle; **code blocks** with syntax highlighting.
 - **Wiki-links** — `[[note]]` links with autocomplete; `Ctrl`/`Cmd`+click follows a link (creating the note if missing), and a backlinks panel lists references.

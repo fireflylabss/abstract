@@ -61,6 +61,12 @@ impl AbstractApp {
         cx: &mut Context<Self>,
     ) {
         self.flush(cx);
+        // The open note's buffer may be ahead of its file.
+        let text = self
+            .current
+            .as_ref()
+            .filter(|c| c.path() == path)
+            .map(|_| self.editor.read(cx).text().to_string());
         let lock = self.write_lock.clone();
         cx.spawn_in(window, async move |this, cx| {
             let copied = cx
@@ -69,7 +75,11 @@ impl AbstractApp {
                     let _w = guard(&lock);
                     let dir = path.parent()?.to_path_buf();
                     let to = vault::unique_path(&dir, &stem_of(&path), None);
-                    std::fs::copy(&path, &to).ok().map(|_| to)
+                    let res = match text {
+                        Some(text) => std::fs::write(&to, text),
+                        None => std::fs::copy(&path, &to).map(|_| ()),
+                    };
+                    res.ok().map(|_| to)
                 })
                 .await;
             this.update_in(cx, |this, window, cx| {

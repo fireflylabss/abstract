@@ -3,7 +3,10 @@
 //! pure path ↔ markdown helpers.
 
 use std::io;
+use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
+
+use crate::md::ImageRef;
 
 /// Folder next to the note that receives pasted/dropped images.
 pub const DIR: &str = "attachments";
@@ -200,6 +203,44 @@ pub fn candidates(raw: &str, embed: bool, note_dir: &Path, root: &Path) -> Vec<P
     out
 }
 
+/// Edits, last first, that keep relative `![](…)` sources pointing at the
+/// same files once a note moves from `old_dir` to `new_dir`. `![[…]]` embeds
+/// also resolve against the space root and are left alone.
+pub fn rebase(
+    text: &str,
+    images: &[ImageRef],
+    old_dir: &Path,
+    new_dir: &Path,
+) -> Vec<(Range<usize>, String)> {
+    let mut out = Vec::new();
+    for im in images.iter().rev().filter(|im| !im.embed) {
+        let src = decode(&text[im.src.clone()]);
+        if src.is_empty() || src.contains(':') || Path::new(&src).is_absolute() {
+            continue;
+        }
+        let to = encode(&relative(new_dir, &normalize(&old_dir.join(&src))));
+        if to != text[im.src.clone()] {
+            out.push((im.src.clone(), to));
+        }
+    }
+    out
+}
+
+/// `.` and `..` folded away lexically.
+fn normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 /// Seconds-resolution local-agnostic stamp for pasted image names.
 pub fn stamp() -> String {
     let d = std::time::SystemTime::now()
@@ -211,6 +252,21 @@ pub fn stamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rebase_keeps_image_targets() {
+        let text = "![a](attachments/a.png) ![b](../b%20c.png) ![w](https://x/y.png) ![[e.png]]";
+        let images = crate::md::Analyzer::new().analyze(text).images;
+        let mut t = text.to_string();
+        for (r, s) in rebase(text, &images, Path::new("/v/n"), Path::new("/v/n/deep")) {
+            t.replace_range(r, &s);
+        }
+        assert_eq!(
+            t,
+            "![a](../attachments/a.png) ![b](../../b%20c.png) ![w](https://x/y.png) ![[e.png]]"
+        );
+        assert!(rebase(text, &images, Path::new("/v/n"), Path::new("/v/n")).is_empty());
+    }
 
     #[test]
     fn relative_paths() {

@@ -21,7 +21,7 @@ All notable changes to abstract are documented here. The format follows
   their line; the syntax shows again when the selection touches it.
 - Insert > Image opens a file picker.
 - Drag notes and folders in the sidebar onto a folder (or the "Notes" header)
-  to move them; links are rewritten as with rename.
+  to move them; a moved note's relative image paths are updated.
 - Note status button in the toolbar: save state, words, characters, reading
   time, selection word count, last modified, reveal and copy path.
 
