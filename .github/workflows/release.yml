@@ -129,6 +129,20 @@ jobs:
           path: dist/
       - name: Checksums
         run: sha256sum dist/* > dist/SHA256SUMS
+      - name: Sign checksums
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          if [[ -z "${MINISIGN_SECRET_KEY}" ]]; then
+            echo "No MINISIGN_SECRET_KEY; in-app updates stay notify-only"
+            exit 0
+          fi
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+          key="$(mktemp)"
+          printf '%s\n' "${MINISIGN_SECRET_KEY}" > "${key}"
+          minisign -S -s "${key}" -m dist/SHA256SUMS -t "abstract ${GITHUB_REF_NAME}"
+          rm -f "${key}"
       - name: Check for existing release
         id: existing
         env:

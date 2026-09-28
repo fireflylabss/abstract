@@ -16,6 +16,7 @@ mod spaces;
 mod store;
 mod theme;
 mod tour;
+mod update;
 mod vault;
 mod watch;
 
@@ -30,6 +31,7 @@ use keymap::{Quit, bind_keys};
 use store::{Session, Settings};
 
 fn main() {
+    update::clean_up();
     gpui_kit::application()
         .with_assets(AppAssets)
         .run(|cx: &mut App| {

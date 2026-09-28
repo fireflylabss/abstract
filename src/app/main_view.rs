@@ -176,6 +176,7 @@ impl AbstractApp {
             .when(self.status_open, |el| {
                 el.child(self.render_status(has_note, cx))
             })
+            .when_some(self.render_update(cx), |el, card| el.child(card))
     }
 
     fn render_status(&self, has_note: bool, cx: &mut Context<Self>) -> impl IntoElement {

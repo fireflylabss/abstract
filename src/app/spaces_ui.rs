@@ -321,6 +321,38 @@ impl AbstractApp {
                                 .child(self.lang_label()),
                         ),
                 ),
+            )
+            .child(
+                div().px(px(4.)).pb(px(4.)).child(
+                    div()
+                        .id("updates-toggle")
+                        .role(Role::MenuItem)
+                        .h(px(32.))
+                        .px(px(8.))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .text_size(px(13.))
+                        .text_color(rgb(pal.body))
+                        .hover(|s| s.bg(rgb(pal.hover)))
+                        .active(|s| s.bg(rgb(pal.active)))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let on = !this.settings.updates();
+                            this.set_updates(on, cx);
+                        }))
+                        .child(icon("icons/unfold-more.svg", pal.dim).size(px(15.)))
+                        .child(t(Key::CheckUpdates))
+                        .child(div().flex_1())
+                        .child(div().text_size(px(11.)).text_color(rgb(pal.faint)).child(t(
+                            if self.settings.updates() {
+                                Key::On
+                            } else {
+                                Key::Off
+                            },
+                        ))),
+                ),
             );
         menu.with_animation(
             "spaces-menu-in",

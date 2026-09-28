@@ -187,6 +187,18 @@ pub enum Key {
     MinutesAgo,
     HoursAgo,
     DaysAgo,
+    // Updates
+    CheckUpdates,
+    On,
+    Off,
+    UpdateAvailable,
+    UpdateManual,
+    UpdateInstalling,
+    UpdateFailed,
+    UpdateRestart,
+    ReleaseNotes,
+    Later,
+    UpdatesOff,
 }
 
 impl Key {
@@ -298,6 +310,17 @@ impl Key {
         Key::MinutesAgo,
         Key::HoursAgo,
         Key::DaysAgo,
+        Key::CheckUpdates,
+        Key::On,
+        Key::Off,
+        Key::UpdateAvailable,
+        Key::UpdateManual,
+        Key::UpdateInstalling,
+        Key::UpdateFailed,
+        Key::UpdateRestart,
+        Key::ReleaseNotes,
+        Key::Later,
+        Key::UpdatesOff,
     ];
 }
 
@@ -421,6 +444,17 @@ fn en(k: Key) -> &'static str {
         Key::MinutesAgo => "{n} min ago",
         Key::HoursAgo => "{n} h ago",
         Key::DaysAgo => "{n} d ago",
+        Key::CheckUpdates => "Check for updates",
+        Key::On => "On",
+        Key::Off => "Off",
+        Key::UpdateAvailable => "abstract {v} is available",
+        Key::UpdateManual => "Update it the same way you installed it.",
+        Key::UpdateInstalling => "Downloading and verifying…",
+        Key::UpdateFailed => "Couldn't update: {err}",
+        Key::UpdateRestart => "Update and restart",
+        Key::ReleaseNotes => "What's new",
+        Key::Later => "Later",
+        Key::UpdatesOff => "Don't check",
     }
 }
 
@@ -544,6 +578,17 @@ fn pt(k: Key) -> &'static str {
         Key::MinutesAgo => "há {n} min",
         Key::HoursAgo => "há {n} h",
         Key::DaysAgo => "há {n} d",
+        Key::CheckUpdates => "Procurar atualizações",
+        Key::On => "Ligado",
+        Key::Off => "Desligado",
+        Key::UpdateAvailable => "O abstract {v} está disponível",
+        Key::UpdateManual => "Atualize pelo mesmo lugar em que você instalou.",
+        Key::UpdateInstalling => "Baixando e verificando…",
+        Key::UpdateFailed => "Não deu pra atualizar: {err}",
+        Key::UpdateRestart => "Atualizar e reiniciar",
+        Key::ReleaseNotes => "Novidades",
+        Key::Later => "Depois",
+        Key::UpdatesOff => "Não verificar",
     }
 }
 
