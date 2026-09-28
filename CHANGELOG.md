@@ -24,11 +24,19 @@ All notable changes to abstract are documented here. The format follows
   to move them; a moved note's relative image paths are updated.
 - Note status button in the toolbar: save state, words, characters, reading
   time, selection word count, last modified, reveal and copy path.
+- `==highlight==` (Format > Highlight, `Cmd/Ctrl+Shift+H`) and hidden
+  `%%comments%%` (Format > Hidden comment, `Cmd/Ctrl+/`), which render dimmed;
+  both hide their delimiters until the selection touches them.
+- Callouts: `> [!note]`, `[!tip]`, `[!warning]` and `[!danger]` (plus their
+  usual aliases) render as a tinted box with a coloured title. Paragraph >
+  Callout toggles one.
 
 ### Fixed
 - First-run tour: the Skip / Back / Next buttons rendered without their
   labels, and the bubble was centered on top of the control it pointed at.
 - Tour shortcuts now show `Cmd` on macOS instead of `Ctrl`.
+- The `>` of a block quote's second and later lines is concealed like the
+  first one's.
 
 ## [0.1.1] - 2026-09-26
 

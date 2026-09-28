@@ -20,6 +20,10 @@ pub const KEYWORD: u16 = 1024;
 pub const STRING: u16 = 2048;
 pub const COMMENT: u16 = 4096;
 pub const NUMBER: u16 = 8192;
+/// `==highlighted==` text.
+pub const HIGHLIGHT: u16 = 16384;
+/// A callout's title (or its type word when it has no title).
+pub const CALLOUT: u16 = 32768;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -72,6 +76,64 @@ pub struct ImageRef {
     pub embed: bool,
 }
 
+/// Callout colour family; unknown `[!types]` read as `Note`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tone {
+    Note,
+    Tip,
+    Warning,
+    Danger,
+}
+
+/// A `> [!type] Title` block quote.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Callout {
+    /// Line indices, end exclusive.
+    pub lines: Range<usize>,
+    pub tone: Tone,
+}
+
+/// The `[!type]` head of a callout line, offsets relative to the line.
+struct CalloutHead {
+    tone: Tone,
+    /// `[!type]` plus an optional `+`/`-` fold sign.
+    marker: Range<usize>,
+    word: Range<usize>,
+    /// Where the title (or the rest of the line) starts.
+    body: usize,
+}
+
+fn callout_head(line: &str) -> Option<CalloutHead> {
+    let start = line.len() - line.trim_start_matches([' ', '>']).len();
+    if !line[..start].contains('>') {
+        return None;
+    }
+    let rest = line[start..].strip_prefix("[!")?;
+    let close = rest.find(']')?;
+    let word = &rest[..close];
+    if word.is_empty() || !word.chars().all(|c| c.is_alphanumeric() || c == '-') {
+        return None;
+    }
+    let tone = match word.to_lowercase().as_str() {
+        "tip" | "hint" | "success" | "check" | "done" | "important" => Tone::Tip,
+        "warning" | "caution" | "attention" | "question" | "help" | "faq" => Tone::Warning,
+        "danger" | "error" | "bug" | "failure" | "fail" | "missing" => Tone::Danger,
+        _ => Tone::Note,
+    };
+    let word = start + 2..start + 2 + close;
+    let mut end = word.end + 1;
+    if matches!(line.as_bytes().get(end), Some(b'+' | b'-')) {
+        end += 1;
+    }
+    let body = end + (line.len() - end - line[end..].trim_start_matches(' ').len());
+    Some(CalloutHead {
+        tone,
+        marker: start..end,
+        word,
+        body,
+    })
+}
+
 #[derive(Default)]
 pub struct Analysis {
     pub flags: Vec<u16>,
@@ -87,6 +149,8 @@ pub struct Analysis {
     pub items: Vec<Item>,
     /// Images, in buffer order.
     pub images: Vec<ImageRef>,
+    /// Callout blocks, in line order.
+    pub callouts: Vec<Callout>,
 }
 
 pub struct Analyzer {
@@ -127,6 +191,7 @@ impl Analyzer {
             tasks: Vec::new(),
             items: Vec::new(),
             images: Vec::new(),
+            callouts: Vec::new(),
         };
         if len == 0 {
             return out;
@@ -214,6 +279,37 @@ impl Analyzer {
                         }
                     }
                     false
+                }
+                "block_quote" => {
+                    let first = out.line_of(range.start);
+                    let last = out.line_of(range.end.saturating_sub(1).max(range.start));
+                    let nested = out
+                        .callouts
+                        .last()
+                        .is_some_and(|c| c.lines.contains(&first));
+                    if !nested && let Some(h) = callout_head(&text[out.lines[first].0.clone()]) {
+                        out.callouts.push(Callout {
+                            lines: first..last + 1,
+                            tone: h.tone,
+                        });
+                    }
+                    // Only the first line gets a `block_quote_marker` node;
+                    // later lines carry their `>` in a continuation.
+                    let outer = std::iter::successors(node.parent(), |p| p.parent())
+                        .all(|p| p.kind() != "block_quote");
+                    for line in (first + 1..=last).filter(|_| outer) {
+                        let r = out.lines[line].0.clone();
+                        let lead = text[r.clone()].len()
+                            - text[r.clone()].trim_start_matches([' ', '>']).len();
+                        if text[r.start..r.start + lead].contains('>') {
+                            out.mark(r.start..r.start + lead, MARK);
+                            out.conceal(r.clone(), r.start..r.start + lead);
+                            if out.lines[line].1 == Kind::Body {
+                                out.lines[line].1 = Kind::Quote;
+                            }
+                        }
+                    }
+                    true
                 }
                 "block_quote_marker" => {
                     let line = out.line_of(range.start);
@@ -465,6 +561,50 @@ impl Analyzer {
             out.wiki_links.push(l);
         }
 
+        let skip = |o: usize| out.flags[o] & CODE != 0 || out.lines[out.line_of(o)].1 == Kind::Code;
+        let comments = delimited(text, b'%', true, &skip);
+        let marks = delimited(text, b'=', false, &skip);
+        for (r, flag) in comments
+            .into_iter()
+            .map(|r| (r, MUTED | ITALIC))
+            .chain(marks.into_iter().map(|r| (r, HIGHLIGHT)))
+        {
+            let (open, close) = (r.start..r.start + 2, r.end - 2..r.end);
+            out.mark(open.end..close.start, flag);
+            out.mark(open.clone(), MARK);
+            out.mark(close.clone(), MARK);
+            out.conceal(r.clone(), open);
+            out.conceal(r, close);
+        }
+
+        for c in out.callouts.clone() {
+            let line = out.lines[c.lines.start].0.clone();
+            let Some(h) = callout_head(&text[line.clone()]) else {
+                continue;
+            };
+            let at = |r: Range<usize>| line.start + r.start..line.start + r.end;
+            let marker = at(h.marker.clone());
+            // tree-sitter may have read `[!type]` as a shortcut link.
+            for f in &mut out.flags[marker.clone()] {
+                *f = 0;
+            }
+            out.conceals
+                .retain(|k| k.hidden.end <= marker.start || k.hidden.start >= marker.end);
+            if h.body < line.len() {
+                let hidden = marker.start..line.start + h.body;
+                out.mark(hidden.clone(), MARK);
+                out.conceal(line.clone(), hidden);
+                out.mark(line.start + h.body..line.end, CALLOUT | BOLD);
+            } else {
+                let word = at(h.word);
+                out.mark(marker.start..word.start, MARK);
+                out.conceal(line.clone(), marker.start..word.start);
+                out.mark(word.end..marker.end, MARK);
+                out.conceal(line.clone(), word.end..marker.end);
+                out.mark(word, CALLOUT | BOLD);
+            }
+        }
+
         out.conceals.retain(|c| !c.hidden.is_empty());
         out.conceals.sort_by_key(|c| c.hidden.start);
         out.images.sort_by_key(|i| i.range.start);
@@ -513,6 +653,77 @@ pub fn set_block_prefix(line: &str, prefix: &str) -> String {
     let same = had == prefix || (prefix == "1. " && ordered > 0 && old == ordered + 2);
     let new = if same { "" } else { prefix };
     format!("{pad}{new}{body}")
+}
+
+/// `ch ch … ch ch` spans (`==mark==`, `%%comment%%`), delimiters included.
+/// Runs of more than two `ch` are not delimiters; an opener needs text right
+/// after it and a closer right before it. `multiline` spans may cross lines.
+fn delimited(
+    text: &str,
+    ch: u8,
+    multiline: bool,
+    skip: &impl Fn(usize) -> bool,
+) -> Vec<Range<usize>> {
+    let b = text.as_bytes();
+    let mut out = Vec::new();
+    let mut open: Option<usize> = None;
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\n' && !multiline {
+            open = None;
+        }
+        if b[i] != ch {
+            i += 1;
+            continue;
+        }
+        let n = b[i..].iter().take_while(|&&c| c == ch).count();
+        if n != 2 || skip(i) || (i > 0 && b[i - 1] == b'\\') {
+            i += n;
+            continue;
+        }
+        let blank = |c: Option<&u8>| matches!(c, None | Some(b' ' | b'\t' | b'\n'));
+        match open {
+            Some(o) if i > o + 2 && (multiline || !blank(b.get(i - 1))) => {
+                out.push(o..i + 2);
+                open = None;
+            }
+            None if multiline || !blank(b.get(i + 2)) => open = Some(i),
+            _ => {}
+        }
+        i += 2;
+    }
+    out
+}
+
+/// Turn the lines of `block` into a `> [!note]` callout, or back into plain
+/// lines when the first one already is a callout head.
+pub fn toggle_callout(block: &str) -> String {
+    let mut lines = block.split('\n');
+    let first = lines.next().unwrap_or_default();
+    let unquote = |l: &str| {
+        let t = l.trim_start_matches(' ');
+        t.strip_prefix("> ")
+            .or_else(|| t.strip_prefix('>'))
+            .unwrap_or(t)
+            .to_string()
+    };
+    let quote = |l: &str| {
+        if l.trim_start().starts_with('>') {
+            l.to_string()
+        } else {
+            format!("> {l}")
+        }
+    };
+    let head = callout_head(first);
+    let lines = lines.map(|l| if head.is_some() { unquote(l) } else { quote(l) });
+    let first = match &head {
+        Some(h) => first[h.body..].to_string(),
+        None => format!("> [!note] {}", unquote(first)),
+    };
+    std::iter::once(first)
+        .chain(lines)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Whether `path`'s extension is an image format the editor can display.
@@ -793,6 +1004,52 @@ mod tests {
         let at = |s: &str| a.flags[t.find(s).unwrap()];
         assert!(at("[x]") & TASK != 0);
         assert!(at("d\n") & DONE != 0);
+    }
+
+    #[test]
+    fn highlight_and_comments_conceal_delimiters() {
+        let t = "a ==hi== b %%note%% c `==x==` == d ==\n=== e";
+        let a = Analyzer::new().analyze(t);
+        let at = |s: &str| a.flags[t.find(s).unwrap()];
+        assert!(at("hi") & HIGHLIGHT != 0);
+        assert!(at("note") & MUTED != 0 && at("note") & ITALIC != 0);
+        assert!(at("x==") & HIGHLIGHT == 0);
+        assert!(at(" d") & HIGHLIGHT == 0);
+        assert_eq!(shown(t, t.len()), "a hi b note c ==x== == d ==\n=== e");
+        let m = "%%\nsecret\n%% after";
+        let a = Analyzer::new().analyze(m);
+        assert!(a.flags[m.find("secret").unwrap()] & MUTED != 0);
+        assert!(a.flags[m.find("after").unwrap()] & MUTED == 0);
+    }
+
+    #[test]
+    fn callouts_take_tone_and_title() {
+        let t = "> [!WARNING] Careful\n> body\n\n> [!tip]\n> x\n\n> plain";
+        let a = Analyzer::new().analyze(t);
+        assert_eq!(
+            a.callouts,
+            [
+                Callout {
+                    lines: 0..2,
+                    tone: Tone::Warning
+                },
+                Callout {
+                    lines: 3..5,
+                    tone: Tone::Tip
+                }
+            ]
+        );
+        assert!(a.flags[t.find("Careful").unwrap()] & CALLOUT != 0);
+        assert!(a.flags[t.find("tip").unwrap()] & CALLOUT != 0);
+        assert_eq!(shown(t, 0), "> [!WARNING] Careful\nbody\n\ntip\nx\n\nplain");
+    }
+
+    #[test]
+    fn callout_toggles() {
+        assert_eq!(toggle_callout("a\n- b"), "> [!note] a\n> - b");
+        assert_eq!(toggle_callout("> q"), "> [!note] q");
+        assert_eq!(toggle_callout("> [!note] a\n> - b"), "a\n- b");
+        assert_eq!(toggle_callout("> [!tip]"), "");
     }
 
     #[test]

@@ -14,7 +14,7 @@ Your notes are plain `.md` files living in real folders on disk. No accounts, no
 
 ## Features
 
-- **Live markdown** — Typora-style rendering powered by tree-sitter: bold, italic, code, links, headings, lists and tasks render inline, and the syntax conceals itself until your selection touches it.
+- **Live markdown** — Typora-style rendering powered by tree-sitter: bold, italic, `==highlights==`, `%%comments%%`, code, links, headings, lists, tasks and `> [!note]` callouts render inline, and the syntax conceals itself until your selection touches it.
 - **Autosave** — writes are debounced as you type; a note's file is created on the first keystroke and named after its first heading.
 - **Spaces** — keep several note directories and switch between them from the sidebar.
 - **Sidebar tree** — folders and notes with inline rename, drag-and-drop moves and a right-click menu, plus one-click new note / new folder.

@@ -58,6 +58,9 @@ actions!(
         PastePlain,
         Strike,
         InlineCode,
+        Highlight,
+        Comment,
+        Callout,
         WikiLink,
         ExternalLink,
         Heading1,
@@ -136,6 +139,10 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-x", Strike, c),
         KeyBinding::new("ctrl-e", InlineCode, c),
         KeyBinding::new("cmd-e", InlineCode, c),
+        KeyBinding::new("ctrl-shift-h", Highlight, c),
+        KeyBinding::new("cmd-shift-h", Highlight, c),
+        KeyBinding::new("ctrl-/", Comment, c),
+        KeyBinding::new("cmd-/", Comment, c),
         KeyBinding::new("ctrl-k", ExternalLink, c),
         KeyBinding::new("cmd-k", ExternalLink, c),
     ]);
@@ -325,6 +332,32 @@ impl LiveEditor {
         self.edit(r, &new, Some(caret..caret), cx);
     }
 
+    /// Line-aligned range covering the selection (a selection ending at a
+    /// line start leaves that line out).
+    fn selected_lines(&self) -> (Range<usize>, bool) {
+        let sel = self.buf.sel();
+        let a = &self.analysis;
+        let first = a.line_of(sel.start);
+        let last = a.line_of(if sel.end > sel.start {
+            sel.end - 1
+        } else {
+            sel.end
+        });
+        (
+            a.lines[first].0.start..a.lines[last].0.end,
+            first == last && sel.is_empty(),
+        )
+    }
+
+    /// Turn the selected lines into a `> [!note]` callout, or back.
+    fn callout(&mut self, cx: &mut Context<Self>) {
+        let (range, caret) = self.selected_lines();
+        let new = md::toggle_callout(&self.buf.text()[range.clone()]);
+        let end = range.start + new.len();
+        let select = if caret { end..end } else { range.start..end };
+        self.edit(range, &new, Some(select), cx);
+    }
+
     /// Replace the block prefix (heading, list, quote) of every selected line.
     fn block_prefix(&mut self, prefix: &str, cx: &mut Context<Self>) {
         let sel = self.buf.sel();
@@ -415,6 +448,8 @@ impl LiveEditor {
                     .menu(t(Key::Italic), Box::new(Italic))
                     .menu(t(Key::Strikethrough), Box::new(Strike))
                     .menu(t(Key::InlineCode), Box::new(InlineCode))
+                    .menu(t(Key::Highlight), Box::new(Highlight))
+                    .menu(t(Key::Comment), Box::new(Comment))
             })
             .submenu(t(Key::Paragraph), window, cx, move |m, _, _| {
                 m.action_context(f2.clone())
@@ -427,6 +462,7 @@ impl LiveEditor {
                     .menu(t(Key::NumberedList), Box::new(NumberedList))
                     .menu(t(Key::TaskList), Box::new(TaskList))
                     .menu(t(Key::Quote), Box::new(Quote))
+                    .menu(t(Key::Callout), Box::new(Callout))
             })
             .submenu(t(Key::Insert), window, cx, move |m, _, _| {
                 m.action_context(f3.clone())
@@ -950,6 +986,9 @@ impl Render for LiveEditor {
             .on_action(cx.listener(|this, _: &Italic, _, cx| this.wrap("*", cx)))
             .on_action(cx.listener(|this, _: &Strike, _, cx| this.wrap("~~", cx)))
             .on_action(cx.listener(|this, _: &InlineCode, _, cx| this.wrap("`", cx)))
+            .on_action(cx.listener(|this, _: &Highlight, _, cx| this.wrap("==", cx)))
+            .on_action(cx.listener(|this, _: &Comment, _, cx| this.wrap("%%", cx)))
+            .on_action(cx.listener(|this, _: &Callout, _, cx| this.callout(cx)))
             .on_action(cx.listener(|this, _: &WikiLink, _, cx| this.link(true, cx)))
             .on_action(cx.listener(|this, _: &ExternalLink, _, cx| this.link(false, cx)))
             .on_action(cx.listener(|this, _: &Heading1, _, cx| this.block_prefix("# ", cx)))
@@ -1003,6 +1042,8 @@ struct LineBox {
     check: Option<Bounds<f32>>,
     /// Rendered `![](…)` images below the line's text, content coordinates.
     images: Vec<(Arc<RenderImage>, Bounds<f32>)>,
+    /// Callout accent, and whether this is the block's first / last line.
+    callout: Option<(u32, bool, bool)>,
 }
 
 impl LineBox {
@@ -1142,7 +1183,12 @@ fn hsla(c: u32) -> Hsla {
     rgb(c).into()
 }
 
-fn run(pal: &Palette, kind: Kind, flags: u16, len: usize) -> TextRun {
+fn tone_color(pal: &Palette, tone: md::Tone) -> u32 {
+    pal.callout[tone as usize]
+}
+
+/// `accent` is the callout colour of the line, if it is in one.
+fn run(pal: &Palette, kind: Kind, flags: u16, accent: Option<u32>, len: usize) -> TextRun {
     let heading = matches!(kind, Kind::Heading(_));
     let code = kind == Kind::Code || flags & md::CODE != 0;
     let mut f = font(if code { MONO } else { SANS });
@@ -1180,7 +1226,9 @@ fn run(pal: &Palette, kind: Kind, flags: u16, len: usize) -> TextRun {
         pal.code_num
     } else if heading || flags & md::LINK != 0 {
         pal.head
-    } else if kind == Kind::Quote {
+    } else if let Some(c) = accent.filter(|_| flags & md::CALLOUT != 0) {
+        c
+    } else if kind == Kind::Quote && accent.is_none() {
         pal.quote
     } else {
         pal.body
@@ -1199,8 +1247,13 @@ fn run(pal: &Palette, kind: Kind, flags: u16, len: usize) -> TextRun {
                 color: None,
             }
         });
-    let background_color =
-        (flags & md::CODE != 0 && kind != Kind::Code).then(|| hsla(pal.inline_code_bg));
+    let background_color = if flags & md::CODE != 0 && kind != Kind::Code {
+        Some(hsla(pal.inline_code_bg))
+    } else if flags & md::HIGHLIGHT != 0 && flags & md::MARK == 0 {
+        Some(rgba(pal.highlight).into())
+    } else {
+        None
+    };
     TextRun {
         len,
         font: f,
@@ -1284,7 +1337,19 @@ impl Element for EditorElement {
         let mut display = String::new();
         let mut runs = Vec::new();
         let mut items = a.items.iter().peekable();
+        let mut callouts = a.callouts.iter().peekable();
         for (ix, (buf, kind)) in a.lines.iter().enumerate() {
+            while matches!(callouts.peek(), Some(c) if c.lines.end <= ix) {
+                callouts.next();
+            }
+            let callout = callouts.peek().filter(|c| c.lines.contains(&ix)).map(|c| {
+                (
+                    tone_color(&pal, c.tone),
+                    c.lines.start == ix,
+                    c.lines.end == ix + 1,
+                )
+            });
+            let accent = callout.map(|c| c.0);
             let (fs, lh, above, below) = metrics(*kind);
             // A line can carry several markers (e.g. "- 1. x"); the
             // innermost item decides the indent and the painted bullet.
@@ -1308,7 +1373,7 @@ impl Element for EditorElement {
             let segs = if text.is_empty() && ix == 0 {
                 let placeholder = crate::i18n::t(crate::i18n::Key::EditorPlaceholder);
                 display.push_str(placeholder);
-                runs.push(run(&pal, *kind, md::MARK, placeholder.len()));
+                runs.push(run(&pal, *kind, md::MARK, accent, placeholder.len()));
                 std::iter::once(0..0).collect()
             } else {
                 let mut segs = a.visible(buf.clone(), &reveal);
@@ -1330,7 +1395,7 @@ impl Element for EditorElement {
                         while j < s.end && a.flags[j] == f {
                             j += 1;
                         }
-                        runs.push(run(&pal, *kind, f, j - i));
+                        runs.push(run(&pal, *kind, f, accent, j - i));
                         display.push_str(&text[i..j]);
                         i = j;
                     }
@@ -1395,6 +1460,7 @@ impl Element for EditorElement {
                 bullet,
                 check: None,
                 images,
+                callout,
             });
         }
         let content_h = y + PAD_TOP;
@@ -1477,6 +1543,31 @@ impl Element for EditorElement {
                         ),
                         hsla(pal.code_bg),
                     )),
+                    Kind::Quote if let Some((c, first, last)) = line.callout => {
+                        let pad = |edge: bool| if edge { 6. } else { 0. };
+                        let top = line.top - pad(first);
+                        let h = line.rows_h + pad(first) + pad(last);
+                        let tint = rgba((c << 8) | 0x1a);
+                        window.paint_quad(
+                            fill(
+                                Bounds::new(
+                                    at(layout.col_x - 6., top),
+                                    size(px(layout.col_w + 12.), px(h)),
+                                ),
+                                tint,
+                            )
+                            .corner_radii(Corners {
+                                top_left: px(if first { 6. } else { 0. }),
+                                top_right: px(if first { 6. } else { 0. }),
+                                bottom_left: px(if last { 6. } else { 0. }),
+                                bottom_right: px(if last { 6. } else { 0. }),
+                            }),
+                        );
+                        window.paint_quad(fill(
+                            Bounds::new(at(layout.col_x - 6., top), size(px(3.), px(h))),
+                            hsla(c),
+                        ));
+                    }
                     Kind::Quote => window.paint_quad(fill(
                         Bounds::new(
                             at(layout.col_x + 2., line.top),
