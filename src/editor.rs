@@ -248,6 +248,17 @@ impl LiveEditor {
     /// Rewrite relative image sources after the note moved folders.
     pub fn rebase_images(&mut self, old_dir: &Path, new_dir: &Path, cx: &mut Context<Self>) {
         let edits = crate::attach::rebase(self.buf.text(), &self.analysis.images, old_dir, new_dir);
+        self.apply_edits(edits, cx);
+    }
+
+    /// Points `[[old]]` links in the buffer at `new`.
+    pub fn retarget_links(&mut self, old: &str, new: &str, cx: &mut Context<Self>) {
+        let edits = crate::links::retarget(self.buf.text(), &self.analysis.wiki_links, old, new);
+        self.apply_edits(edits, cx);
+    }
+
+    /// Applies non-overlapping edits given last first, keeping the selection.
+    fn apply_edits(&mut self, edits: Vec<(Range<usize>, String)>, cx: &mut Context<Self>) {
         if edits.is_empty() {
             return;
         }

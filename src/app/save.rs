@@ -11,6 +11,7 @@ impl AbstractApp {
         let file = cur.file.clone();
         let synced = cur.synced;
         let lock = self.write_lock.clone();
+        let space = self.dir.clone();
         self.save = SaveState::Pending;
         self._save_task = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(SAVE_DEBOUNCE).await;
@@ -20,7 +21,7 @@ impl AbstractApp {
             };
             let result = cx
                 .background_executor()
-                .spawn(async move { write_note(&lock, &file, synced, &text) })
+                .spawn(async move { write_note(&lock, &file, synced, &text, Some(&space)) })
                 .await;
             this.update(cx, |this, cx| this.finish_save(result, cx))
                 .ok();
@@ -34,12 +35,13 @@ impl AbstractApp {
         let file = cur.file.clone();
         let synced = cur.synced;
         let lock = self.write_lock.clone();
+        let space = self.dir.clone();
         let text = self.current_text(cx);
         self.save = SaveState::Pending;
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { write_note(&lock, &file, synced, &text) })
+                .spawn(async move { write_note(&lock, &file, synced, &text, Some(&space)) })
                 .await;
             this.update(cx, |this, cx| this.finish_save(result, cx))
                 .ok();
@@ -76,8 +78,11 @@ impl AbstractApp {
             let file = cur.file.clone();
             let synced = cur.synced;
             let lock = self.write_lock.clone();
+            let space = self.dir.clone();
             let text = self.current_text(cx);
-            let write = cx.background_spawn(async move { write_note(&lock, &file, synced, &text) });
+            let write = cx.background_spawn(async move {
+                write_note(&lock, &file, synced, &text, Some(&space))
+            });
             cx.spawn(async move |this, cx| {
                 let result = write.await;
                 this.update(cx, |this, cx| this.finish_save(result, cx))
@@ -96,7 +101,13 @@ impl AbstractApp {
         {
             let lock = self.write_lock.clone();
             let file = cur.file.clone();
-            let _ = write_note(&lock, &file, cur.synced, &self.current_text(cx));
+            let _ = write_note(
+                &lock,
+                &file,
+                cur.synced,
+                &self.current_text(cx),
+                Some(&self.dir),
+            );
             self.save = SaveState::Saved;
         }
         self.record_session_note(cx);

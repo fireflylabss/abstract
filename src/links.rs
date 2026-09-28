@@ -139,6 +139,92 @@ pub(crate) fn backlinks(root: &Path, note: &Path, names: &[String]) -> Vec<(Path
     out
 }
 
+/// Edits pointing each `[[old]]` / `[[old|alias]]` in `links` at `new`, last
+/// first. `old` matches case-insensitively, like [`resolve`].
+pub(crate) fn retarget(
+    text: &str,
+    links: &[WikiLink],
+    old: &str,
+    new: &str,
+) -> Vec<(Range<usize>, String)> {
+    let old = old.trim().to_lowercase();
+    links
+        .iter()
+        .rev()
+        .filter(|l| {
+            let t = &text[l.target.clone()];
+            t.to_lowercase() == old && t != new
+        })
+        .map(|l| (l.target.clone(), new.to_string()))
+        .collect()
+}
+
+/// Rewrites `[[old]]` links to the stem of `renamed` in every note under
+/// `root` except `renamed` and `open` (the editor buffer, retargeted by the
+/// caller). Nothing is written, and `false` returned, when another note
+/// carries either stem. `strict` (automatic renames while typing a title)
+/// also refuses when a link already targets the new stem.
+pub(crate) fn relink(
+    root: &Path,
+    renamed: &Path,
+    old: &str,
+    open: Option<&Path>,
+    strict: bool,
+) -> bool {
+    let new = renamed
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let (old_l, new_l) = (old.trim().to_lowercase(), new.to_lowercase());
+    if old == new || old_l.is_empty() || new.contains(['|', ']', '[', '\n']) {
+        return old == new;
+    }
+    let mut files = Vec::new();
+    crate::search::collect(root, &mut files);
+    let mut analyzer = crate::md::Analyzer::new();
+    let mut edits = Vec::new();
+    for (path, _) in files {
+        if path == renamed {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        if stem == old_l || stem == new_l {
+            return false;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let links = analyzer.analyze(&text).wiki_links;
+        if strict
+            && old_l != new_l
+            && links
+                .iter()
+                .any(|l| text[l.target.clone()].to_lowercase() == new_l)
+        {
+            return false;
+        }
+        if Some(path.as_path()) == open {
+            continue;
+        }
+        let e = retarget(&text, &links, old, &new);
+        if !e.is_empty() {
+            edits.push((path, text, e));
+        }
+    }
+    for (path, mut text, e) in edits {
+        for (r, s) in e {
+            text.replace_range(r, &s);
+        }
+        if let Err(err) = crate::store::write_atomic(&path, text.as_bytes()) {
+            eprintln!("abstract: cannot relink {}: {err}", path.display());
+        }
+    }
+    true
+}
+
 /// Note stems starting with `prefix` (case-insensitive), sorted, max 8.
 /// Empty prefix → the 8 most recently modified notes.
 pub(crate) fn complete(tree: &[vault::Node], prefix: &str) -> Vec<String> {
@@ -239,6 +325,69 @@ mod tests {
             .collect();
         titles.sort();
         assert_eq!(titles, vec!["Beta".to_string(), "Gamma".to_string()]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn retarget_keeps_alias_and_code() {
+        let text = "[[Old]] [[old | a]] [[Older]] `[[Old]]`\n";
+        let links = crate::md::Analyzer::new().analyze(text).wiki_links;
+        let mut out = text.to_string();
+        for (r, s) in retarget(text, &links, "Old", "New") {
+            out.replace_range(r, &s);
+        }
+        assert_eq!(out, "[[New]] [[New | a]] [[Older]] `[[Old]]`\n");
+    }
+
+    #[test]
+    fn relink_rewrites_other_notes() {
+        let dir = space("relink");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let new = dir.join("Plano.md");
+        std::fs::write(&new, "# Plano\n").unwrap();
+        std::fs::write(dir.join("a.md"), "see [[projeto]]\n").unwrap();
+        std::fs::write(dir.join("sub/b.md"), "[[Projeto|p]] and [[Other]]\n").unwrap();
+        std::fs::write(dir.join("open.md"), "[[Projeto]]\n").unwrap();
+        assert!(relink(
+            &dir,
+            &new,
+            "Projeto",
+            Some(&dir.join("open.md")),
+            false
+        ));
+        let read = |p: &str| std::fs::read_to_string(dir.join(p)).unwrap();
+        assert_eq!(read("a.md"), "see [[Plano]]\n");
+        assert_eq!(read("sub/b.md"), "[[Plano|p]] and [[Other]]\n");
+        assert_eq!(read("open.md"), "[[Projeto]]\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn relink_refuses_ambiguous_stems() {
+        let dir = space("relink-ambiguous");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let new = dir.join("Plano.md");
+        std::fs::write(&new, "").unwrap();
+        std::fs::write(dir.join("sub/Projeto.md"), "").unwrap();
+        std::fs::write(dir.join("a.md"), "[[Projeto]]\n").unwrap();
+        assert!(!relink(&dir, &new, "Projeto", None, false));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a.md")).unwrap(),
+            "[[Projeto]]\n"
+        );
+
+        std::fs::remove_file(dir.join("sub/Projeto.md")).unwrap();
+        std::fs::write(dir.join("b.md"), "[[plano]] dangling\n").unwrap();
+        assert!(!relink(&dir, &new, "Projeto", None, true));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a.md")).unwrap(),
+            "[[Projeto]]\n"
+        );
+        assert!(relink(&dir, &new, "Projeto", None, false));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a.md")).unwrap(),
+            "[[Plano]]\n"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

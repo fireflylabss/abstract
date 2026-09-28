@@ -37,6 +37,10 @@ All notable changes to abstract are documented here. The format follows
 - Tour shortcuts now show `Cmd` on macOS instead of `Ctrl`.
 - The `>` of a block quote's second and later lines is concealed like the
   first one's.
+- Renaming a note, by F2, the sidebar or its title, now rewrites the
+  `[[links]]` pointing to it across the space instead of leaving them to
+  create a new empty note. Links stay untouched when another note shares the
+  old or the new name.
 
 ## [0.1.1] - 2026-09-26
 
