@@ -188,6 +188,10 @@ pub struct LiveEditor {
     /// resolve against them.
     note_dir: Option<PathBuf>,
     root: Option<PathBuf>,
+    /// Find-bar matches, painted behind the text; `find_current` is the
+    /// active one.
+    finds: Vec<Range<usize>>,
+    find_current: Option<usize>,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
@@ -219,6 +223,8 @@ impl LiveEditor {
             completing: false,
             note_dir: None,
             root: None,
+            finds: Vec::new(),
+            find_current: None,
         }
     }
 
@@ -228,6 +234,10 @@ impl LiveEditor {
             self.root = Some(root);
             cx.notify();
         }
+    }
+
+    pub fn selection(&self) -> Range<usize> {
+        self.buf.sel()
     }
 
     pub fn selected_text(&self) -> &str {
@@ -258,6 +268,36 @@ impl LiveEditor {
     pub fn retarget_links(&mut self, old: &str, new: &str, cx: &mut Context<Self>) {
         let edits = crate::links::retarget(self.buf.text(), &self.analysis.wiki_links, old, new);
         self.apply_edits(edits, cx);
+    }
+
+    /// Matches to paint for the find bar; empty clears them.
+    pub fn set_finds(
+        &mut self,
+        finds: Vec<Range<usize>>,
+        current: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        self.finds = finds;
+        self.find_current = current;
+        cx.notify();
+    }
+
+    /// Selects `r` and scrolls it into view.
+    pub fn select_range(&mut self, r: Range<usize>, cx: &mut Context<Self>) {
+        self.buf.set_sel(r);
+        self.after_move(cx);
+    }
+
+    /// Replaces `r` as one undoable edit; the caret lands after `new`.
+    pub fn replace_range(&mut self, r: Range<usize>, new: &str, cx: &mut Context<Self>) {
+        self.edit(r, new, None, cx);
+    }
+
+    /// Replaces the whole text as one undoable edit, caret at `cursor`.
+    pub fn replace_all(&mut self, text: String, cursor: usize, cx: &mut Context<Self>) {
+        let len = self.buf.text().len();
+        let c = cursor.min(text.len());
+        self.edit(0..len, &text, Some(c..c), cx);
     }
 
     /// Applies non-overlapping edits given last first, keeping the selection.
@@ -525,6 +565,7 @@ impl LiveEditor {
                 Box::new(crate::keymap::SearchSelection),
                 !has_sel,
             )
+            .menu(t(Key::FindInNote), Box::new(crate::keymap::FindInNote))
             .separator()
             .submenu(t(Key::Format), window, cx, move |m, _, _| {
                 m.action_context(f1.clone())
@@ -564,6 +605,8 @@ impl LiveEditor {
     /// Replace the whole buffer without emitting `Changed` (loading a note).
     pub fn set_text(&mut self, text: String, cx: &mut Context<Self>) {
         self.buf.set_text(text);
+        self.finds.clear();
+        self.find_current = None;
         self.scroll_y = 0.;
         self.caret = None;
         self.analysis = self.analyzer.analyze(self.buf.text());
@@ -1245,6 +1288,43 @@ fn load_image(
 }
 
 /// `segs` minus `hole`.
+/// Row rectangles (x, y, w, h, content coordinates) covering `s..e` of
+/// `line`; `spans_break` adds a sliver for a selected line break.
+fn span_rects(
+    line: &LineBox,
+    s: usize,
+    e: usize,
+    spans_break: bool,
+    full: f32,
+) -> Vec<(f32, f32, f32, f32)> {
+    let pos = |off: usize| {
+        let di = line.to_display(off).min(line.wrapped.len());
+        line.wrapped
+            .position_for_index(di, px(line.lh))
+            .unwrap_or_default()
+    };
+    let (ps, pe) = (pos(s), pos(e));
+    let (r0, r1) = (
+        (f32::from(ps.y) / line.lh).round() as usize,
+        (f32::from(pe.y) / line.lh).round() as usize,
+    );
+    (r0..=r1)
+        .map(|r| {
+            let x0 = if r == r0 { f32::from(ps.x) } else { 0. };
+            let mut x1 = if r == r1 { f32::from(pe.x) } else { full };
+            if r == r1 && spans_break {
+                x1 += 6.;
+            }
+            (
+                line.x + x0,
+                line.top + r as f32 * line.lh,
+                (x1 - x0).max(0.),
+                line.lh,
+            )
+        })
+        .collect()
+}
+
 fn cut(segs: Vec<Range<usize>>, hole: &Range<usize>) -> Vec<Range<usize>> {
     let mut out = Vec::with_capacity(segs.len());
     for s in segs {
@@ -1608,9 +1688,16 @@ impl Element for EditorElement {
             return;
         };
         let pal = *cx.global::<Palette>();
-        let (focus, sel, cursor, caret) = {
+        let (focus, sel, cursor, caret, finds, find_current) = {
             let ed = self.0.read(cx);
-            (ed.focus.clone(), ed.buf.sel(), ed.buf.cursor(), ed.caret)
+            (
+                ed.focus.clone(),
+                ed.buf.sel(),
+                ed.buf.cursor(),
+                ed.caret,
+                ed.finds.clone(),
+                ed.find_current,
+            )
         };
         let focused = focus.is_focused(window);
         window.handle_input(&focus, ElementInputHandler::new(bounds, self.0.clone()), cx);
@@ -1708,34 +1795,39 @@ impl Element for EditorElement {
                     _ => {}
                 }
 
+                // Find matches under the selection; the active one is stronger.
+                let full = layout.col_w - (line.x - layout.col_x);
+                let first_find = finds.partition_point(|f| f.end <= line.buf.start);
+                for (i, f) in finds.iter().enumerate().skip(first_find) {
+                    if f.start > line.buf.end {
+                        break;
+                    }
+                    let s = f.start.max(line.buf.start);
+                    let e = f.end.min(line.buf.end);
+                    if s >= e {
+                        continue;
+                    }
+                    let color = if find_current == Some(i) {
+                        pal.find_current
+                    } else {
+                        pal.highlight
+                    };
+                    for (x, y, w, h) in span_rects(line, s, e, false, full) {
+                        window.paint_quad(
+                            fill(Bounds::new(at(x, y), size(px(w), px(h))), rgba(color))
+                                .corner_radii(px(2.)),
+                        );
+                    }
+                }
+
                 // Selection, including a sliver for the selected line break.
                 let s = sel.start.max(line.buf.start);
                 let e = sel.end.min(line.buf.end);
                 let spans_break = sel.end > line.buf.end && sel.start <= line.buf.end;
                 if s < e || spans_break {
-                    let pos = |off: usize| {
-                        let di = line.to_display(off).min(line.wrapped.len());
-                        line.wrapped
-                            .position_for_index(di, px(line.lh))
-                            .unwrap_or_default()
-                    };
-                    let (ps, pe) = (pos(s), pos(e));
-                    let (r0, r1) = (
-                        (f32::from(ps.y) / line.lh).round() as usize,
-                        (f32::from(pe.y) / line.lh).round() as usize,
-                    );
-                    let full = layout.col_w - (line.x - layout.col_x);
-                    for r in r0..=r1 {
-                        let x0 = if r == r0 { f32::from(ps.x) } else { 0. };
-                        let mut x1 = if r == r1 { f32::from(pe.x) } else { full };
-                        if r == r1 && spans_break {
-                            x1 += 6.;
-                        }
+                    for (x, y, w, h) in span_rects(line, s, e, spans_break, full) {
                         window.paint_quad(fill(
-                            Bounds::new(
-                                at(line.x + x0, line.top + r as f32 * line.lh),
-                                size(px((x1 - x0).max(0.)), px(line.lh)),
-                            ),
+                            Bounds::new(at(x, y), size(px(w), px(h))),
                             rgba(pal.selection),
                         ));
                     }

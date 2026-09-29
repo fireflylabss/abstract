@@ -115,11 +115,16 @@ cargo build --release
 | Toggle sidebar | `Ctrl+\` | `Cmd+\` |
 | Delete note | `Ctrl+Shift+Backspace` | `Cmd+Shift+Backspace` |
 | Search notes | `Ctrl+P` or `Ctrl+Shift+F` | `Cmd+P` or `Cmd+Shift+F` |
+| Find in note | `Ctrl+F` | `Cmd+F` |
+| Replace in note | `Ctrl+H` | `Cmd+Alt+F` |
+| Next / previous match | `F3` / `Shift+F3` | `Cmd+G` / `Cmd+Shift+G` |
 | Rename | `F2` | `F2` |
 | Tour | `F1` | `F1` |
 | Quit | — | `Cmd+Q` |
 
 Tour navigation: `Enter`/`→` next, `←` back, `Esc` skip.
+
+Find bar: `Enter`/`Shift+Enter` step through matches. In the replace field `Enter` replaces the active match and `Ctrl+Enter` (`Cmd+Enter`) replaces all of them as one undo step. `Esc` closes.
 
 In a table, `Tab` / `Shift+Tab` realign the columns and move to the next / previous cell; `Tab` in the last cell adds a row.
 
