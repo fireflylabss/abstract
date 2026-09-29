@@ -2,17 +2,26 @@
 //! and deletions surface in the sidebar/editor without waiting for window
 //! activation.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use futures::channel::mpsc::UnboundedReceiver;
+use notify::event::{EventKind, ModifyKind};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-/// Recursive watcher over a space; coalesced change signals arrive on the receiver.
+/// Recursive watcher over a space; changes arrive on the receiver.
 pub(crate) struct SpaceWatcher {
     _inner: RecommendedWatcher,
 }
 
-pub(crate) fn watch(dir: &Path) -> notify::Result<(SpaceWatcher, UnboundedReceiver<()>)> {
+/// One changed path. `content` is set when only the file's bytes or metadata
+/// moved, so the folder tree is unchanged.
+#[derive(Debug)]
+pub(crate) struct Change {
+    pub path: PathBuf,
+    pub content: bool,
+}
+
+pub(crate) fn watch(dir: &Path) -> notify::Result<(SpaceWatcher, UnboundedReceiver<Vec<Change>>)> {
     let (tx, rx) = futures::channel::mpsc::unbounded();
     let mut inner = RecommendedWatcher::new(
         move |event: notify::Result<notify::Event>| {
@@ -25,7 +34,21 @@ pub(crate) fn watch(dir: &Path) -> notify::Result<(SpaceWatcher, UnboundedReceiv
             }) {
                 return;
             }
-            tx.unbounded_send(()).ok();
+            let content = matches!(
+                event.kind,
+                EventKind::Access(_)
+                    | EventKind::Modify(ModifyKind::Data(_) | ModifyKind::Metadata(_))
+            );
+            let changes = event
+                .paths
+                .into_iter()
+                .filter(|p| {
+                    !p.file_name()
+                        .is_some_and(|n| n.to_string_lossy().starts_with('.'))
+                })
+                .map(|path| Change { path, content })
+                .collect();
+            tx.unbounded_send(changes).ok();
         },
         notify::Config::default(),
     )?;

@@ -190,6 +190,9 @@ pub(crate) struct AbstractApp {
     update: Option<update_ui::UpdateState>,
     install: crate::update::Install,
     _update_task: Option<Task<()>>,
+    /// Note path and names the current `backlinks` were computed for.
+    backlinks_key: Option<(PathBuf, Vec<String>)>,
+    link_index: Arc<Mutex<crate::links::LinkIndex>>,
     _backlinks_task: Option<Task<()>>,
     _watcher: Option<SpaceWatcher>,
     _watch_task: Option<Task<()>>,
@@ -279,6 +282,8 @@ impl AbstractApp {
             update: None,
             install: crate::update::Install::detect(),
             _update_task: None,
+            backlinks_key: None,
+            link_index: Arc::default(),
             _backlinks_task: None,
             _watcher: None,
             _watch_task: None,

@@ -103,6 +103,7 @@ impl AbstractApp {
     /// the same note is still open.
     pub(crate) fn refresh_backlinks(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.current.as_ref().map(|c| c.path()) else {
+            self.backlinks_key = None;
             if !self.backlinks.is_empty() {
                 self.backlinks.clear();
                 cx.notify();
@@ -110,12 +111,14 @@ impl AbstractApp {
             return;
         };
         let names = crate::links::names_of(&path, self.editor.read(cx).text());
+        self.backlinks_key = Some((path.clone(), names.clone()));
         let dir = self.dir.clone();
         let note = path.clone();
+        let index = self.link_index.clone();
         self._backlinks_task = Some(cx.spawn(async move |this, cx| {
             let found = cx
                 .background_executor()
-                .spawn(async move { crate::links::backlinks(&dir, &note, &names) })
+                .spawn(async move { guard(&index).backlinks(&dir, &note, &names) })
                 .await;
             this.update(cx, |this, cx| {
                 if this.current.as_ref().is_some_and(|c| c.path() == path) {
@@ -125,6 +128,19 @@ impl AbstractApp {
             })
             .ok();
         }));
+    }
+
+    /// Recompute backlinks only when the open note's path or names moved
+    /// since the last computation (its own edits cannot change who links to it).
+    pub(crate) fn refresh_backlinks_if_renamed(&mut self, cx: &mut Context<Self>) {
+        let key = self.current.as_ref().map(|c| {
+            let path = c.path();
+            let names = crate::links::names_of(&path, self.editor.read(cx).text());
+            (path, names)
+        });
+        if key != self.backlinks_key {
+            self.refresh_backlinks(cx);
+        }
     }
 
     /// Backlinks strip pinned to the bottom of the editor column.
