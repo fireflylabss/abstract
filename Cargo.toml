@@ -1,6 +1,6 @@
 [package]
 name = "abstract-editor"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "Minimal local-first markdown notes editor, GPU-rendered with GPUI"
 repository = "https://github.com/fireflylabss/abstract"
