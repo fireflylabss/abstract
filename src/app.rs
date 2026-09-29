@@ -1,5 +1,6 @@
 mod attach_ui;
 mod files_menu;
+mod find_ui;
 mod links_ui;
 mod main_view;
 mod notes;
@@ -201,6 +202,7 @@ pub(crate) struct AbstractApp {
     _io_task: Option<Task<()>>,
     _bounds_task: Option<Task<()>>,
     search: Option<search_ui::SearchPalette>,
+    find: Option<find_ui::FindBar>,
     completion: Option<links_ui::Completion>,
     backlinks: Vec<(PathBuf, String)>,
     update: Option<update_ui::UpdateState>,
@@ -229,6 +231,7 @@ impl AbstractApp {
             this.words = text.split_whitespace().count();
             this.schedule_save(cx);
             this.update_completion(cx);
+            this.refresh_find(false, None, cx);
             cx.notify();
         });
         let on_completion = cx.subscribe(&editor, |this: &mut Self, _, ev: &CompletionKey, cx| {
@@ -295,6 +298,7 @@ impl AbstractApp {
             _io_task: None,
             _bounds_task: None,
             search: None,
+            find: None,
             completion: None,
             backlinks: Vec::new(),
             update: None,
@@ -365,6 +369,14 @@ impl Render for AbstractApp {
             .on_action(
                 cx.listener(|this, _: &InsertImage, window, cx| this.insert_image(window, cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &FindInNote, window, cx| this.open_find(false, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ReplaceInNote, window, cx| this.open_find(true, window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_step(true, cx)))
+            .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.find_step(false, cx)))
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
             .child(self.render_sidebar(cx))
             .child(self.render_main(window, cx))
