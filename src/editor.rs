@@ -75,6 +75,7 @@ actions!(
         Divider,
         InsertTable,
         Backtab,
+        InsertFootnote,
     ]
 );
 
@@ -595,6 +596,7 @@ impl LiveEditor {
                     .menu(t(Key::CodeBlock), Box::new(CodeBlock))
                     .menu(t(Key::Divider), Box::new(Divider))
                     .menu(t(Key::Table), Box::new(InsertTable))
+                    .menu(t(Key::Footnote), Box::new(InsertFootnote))
             })
     }
 
@@ -781,6 +783,21 @@ impl LiveEditor {
                 .find(|l| l.range.contains(&off))
         {
             cx.emit(OpenLink(self.buf.text()[l.target.clone()].to_string()));
+            return;
+        }
+        // Ctrl/Cmd+click on a footnote jumps between reference and definition.
+        if ev.modifiers.secondary()
+            && let Some(off) = self.offset_at(ev.position)
+            && let Some(f) = self
+                .analysis
+                .footnotes
+                .iter()
+                .find(|f| f.range.contains(&off))
+        {
+            if let Some(to) = crate::footnote::target(self.buf.text(), &self.analysis.footnotes, f)
+            {
+                self.move_to(to, cx);
+            }
             return;
         }
         // Click on a painted checkbox toggles the task whose marker is in that
@@ -1137,6 +1154,14 @@ impl Render for LiveEditor {
             .on_action(cx.listener(|this, _: &Quote, _, cx| this.block_prefix("> ", cx)))
             .on_action(cx.listener(|this, _: &CodeBlock, _, cx| this.code_block(cx)))
             .on_action(cx.listener(|this, _: &Divider, _, cx| this.insert_block("---\n", None, cx)))
+            .on_action(cx.listener(|this, _: &InsertFootnote, _, cx| {
+                let (r, new, caret) = crate::footnote::insertion(
+                    this.buf.text(),
+                    &this.analysis.footnotes,
+                    this.buf.sel().end,
+                );
+                this.edit(r, &new, Some(caret..caret), cx);
+            }))
             .on_mouse_down(MouseButton::Right, cx.listener(Self::right_click))
             .on_drop(cx.listener(Self::drop_paths))
             .drag_over::<ExternalPaths>(|s, _, _, cx| s.bg(rgb(cx.global::<Palette>().hover)))

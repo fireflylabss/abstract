@@ -144,6 +144,8 @@ pub struct Analysis {
     pub conceals: Vec<Conceal>,
     /// `[[wiki-links]]` found outside code spans/blocks.
     pub wiki_links: Vec<crate::links::WikiLink>,
+    /// Footnote references and definitions, in buffer order.
+    pub footnotes: Vec<crate::footnote::Footnote>,
     /// Task-list markers, in buffer order.
     pub tasks: Vec<Task>,
     /// List items, in line order.
@@ -191,6 +193,7 @@ impl Analyzer {
             lines,
             conceals: Vec::new(),
             wiki_links: Vec::new(),
+            footnotes: Vec::new(),
             tasks: Vec::new(),
             items: Vec::new(),
             images: Vec::new(),
@@ -579,6 +582,33 @@ impl Analyzer {
             out.mark(visible.end..l.range.end, MARK);
             out.conceal(l.range.clone(), visible.end..l.range.end);
             out.wiki_links.push(l);
+        }
+
+        // Footnotes show as `[label]`: the `^` is concealed, the label is a
+        // LINK. A one-word definition parses as a link reference definition,
+        // which mutes its whole line.
+        out.footnotes = crate::footnote::parse(text, |o| {
+            out.flags[o] & CODE != 0 || matches!(out.lines[out.line_of(o)].1, Kind::Code)
+        });
+        let spans: Vec<Range<usize>> = out.footnotes.iter().map(|f| f.range.clone()).collect();
+        drop_overlapping(&mut out.conceals, &spans);
+        for f in out.footnotes.clone() {
+            for fl in &mut out.flags[f.range.clone()] {
+                *fl = 0;
+            }
+            if f.def {
+                let line = out.lines[out.line_of(f.range.start)].0.clone();
+                if out.flags.get(f.range.end).is_some_and(|fl| fl & MUTED != 0) {
+                    for fl in &mut out.flags[f.range.end..line.end] {
+                        *fl &= !MUTED;
+                    }
+                }
+            }
+            let caret = f.range.start + 1..f.label.start;
+            out.mark(f.range.start..f.label.start, MARK);
+            out.conceal(f.range.clone(), caret);
+            out.mark(f.label.clone(), LINK);
+            out.mark(f.label.end..f.range.end, MARK);
         }
 
         let skip = |o: usize| out.flags[o] & CODE != 0 || out.lines[out.line_of(o)].1 == Kind::Code;
@@ -1133,6 +1163,21 @@ mod tests {
         assert_ne!(a.flags[header + 2] & BOLD, 0);
         let escaped = header + text[header..].find("\\|").unwrap() + 1;
         assert_eq!(a.flags[escaped] & MUTED, 0);
+    }
+
+    #[test]
+    fn footnotes_render_as_bracketed_links() {
+        let t = "Hi[^1] `[^2]`.\n\n[^1]: Source.";
+        let a = Analyzer::new().analyze(t);
+        assert_eq!(a.footnotes.len(), 2);
+        assert!(a.footnotes[1].def);
+        assert_eq!(shown(t, t.len()), "Hi[1] [^2].\n\n[1]: Source.");
+        let label = t.find('1').unwrap();
+        assert_ne!(a.flags[label] & LINK, 0);
+        let body = t.find("Source").unwrap();
+        assert_eq!(a.flags[body] & MUTED, 0);
+        // The caret on the reference reveals its `^`.
+        assert!(shown(t, 3).starts_with("Hi[^1]"));
     }
 
     #[test]

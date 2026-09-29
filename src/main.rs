@@ -9,6 +9,7 @@ mod code;
 mod crash;
 mod editor;
 mod find;
+mod footnote;
 mod i18n;
 mod keymap;
 mod links;
