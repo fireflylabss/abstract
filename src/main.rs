@@ -18,6 +18,7 @@ mod perf;
 mod search;
 mod spaces;
 mod store;
+mod table;
 mod theme;
 mod tour;
 mod update;

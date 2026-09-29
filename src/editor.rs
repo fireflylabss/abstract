@@ -73,6 +73,8 @@ actions!(
         Quote,
         CodeBlock,
         Divider,
+        InsertTable,
+        Backtab,
     ]
 );
 
@@ -124,6 +126,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("escape", Escape, c),
         KeyBinding::new("shift-enter", Enter, c),
         KeyBinding::new("tab", Tab, c),
+        KeyBinding::new("shift-tab", Backtab, c),
         KeyBinding::new("ctrl-z", Undo, c),
         KeyBinding::new("cmd-z", Undo, c),
         KeyBinding::new("ctrl-shift-z", Redo, c),
@@ -450,6 +453,76 @@ impl LiveEditor {
         self.edit(r, &new, select, cx);
     }
 
+    fn insert_table(&mut self, cx: &mut Context<Self>) {
+        let header: Vec<String> = (1..=2)
+            .map(|n| crate::i18n::tf(Key::TableColumn, &[("n", &n.to_string())]))
+            .collect();
+        let text = crate::table::template(&header);
+        let r = self.buf.sel();
+        let lead = md::block_lead(&self.buf.text()[..r.start]);
+        let first = r.start + lead.len() + 2;
+        let select = first..first + header[0].len();
+        self.edit(r, &format!("{lead}{text}"), Some(select), cx);
+    }
+
+    /// Tab / Shift+Tab inside a pipe table: realigns the columns and moves
+    /// to the next / previous cell, adding a row after the last one. `false`
+    /// when the caret isn't in a table.
+    fn table_step(&mut self, forward: bool, cx: &mut Context<Self>) -> bool {
+        let a = &self.analysis;
+        let cursor = self.buf.cursor();
+        let ix = a.line_of(cursor);
+        let Some(t) = a.tables.iter().find(|t| t.contains(&ix)).cloned() else {
+            return false;
+        };
+        let text = self.buf.text();
+        let block = a.lines[t.start].0.start..a.lines[t.end - 1].0.end;
+        let line = a.lines[ix].0.clone();
+        let Some(mut formatted) = crate::table::format(&text[block.clone()]) else {
+            return false;
+        };
+        let (row, col) = (
+            ix - t.start,
+            crate::table::column_at(&text[line.clone()], cursor - line.start),
+        );
+        let rows = t.len();
+        let cols = crate::table::columns(formatted.split('\n').next().unwrap_or_default());
+        let target = if forward {
+            if col + 1 < cols && row != 1 {
+                (row, col + 1)
+            } else {
+                (if row == 0 { 2 } else { row + 1 }, 0)
+            }
+        } else if col > 0 && row != 1 {
+            (row, col - 1)
+        } else if row == 0 {
+            (0, 0)
+        } else {
+            (if row <= 2 { 0 } else { row - 1 }, cols.saturating_sub(1))
+        };
+        if target.0 >= rows {
+            let empty = crate::table::empty_row(&formatted);
+            formatted.push('\n');
+            formatted.push_str(&empty);
+        }
+        let mut at = block.start;
+        let mut caret = block.start;
+        for (i, l) in formatted.split('\n').enumerate() {
+            if i == target.0 {
+                caret = at + crate::table::caret_in(l, target.1);
+                break;
+            }
+            at += l.len() + 1;
+        }
+        if formatted == text[block.clone()] {
+            self.buf.set_sel(caret..caret);
+            self.after_move(cx);
+        } else {
+            self.edit(block, &formatted, Some(caret..caret), cx);
+        }
+        true
+    }
+
     fn code_block(&mut self, cx: &mut Context<Self>) {
         let inner = self.selected_text().to_string();
         let text = format!("```\n{inner}\n```\n");
@@ -521,6 +594,7 @@ impl LiveEditor {
                     .menu(t(Key::InsertImage), Box::new(crate::keymap::InsertImage))
                     .menu(t(Key::CodeBlock), Box::new(CodeBlock))
                     .menu(t(Key::Divider), Box::new(Divider))
+                    .menu(t(Key::Table), Box::new(InsertTable))
             })
     }
 
@@ -1033,7 +1107,15 @@ impl Render for LiveEditor {
                     cx.emit(CompletionKey(CompletionMove::Cancel));
                 }
             }))
-            .on_action(cx.listener(|this, _: &Tab, _, cx| this.insert("  ", cx)))
+            .on_action(cx.listener(|this, _: &Tab, _, cx| {
+                if !this.table_step(true, cx) {
+                    this.insert("  ", cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &Backtab, _, cx| {
+                this.table_step(false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &InsertTable, _, cx| this.insert_table(cx)))
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(true, cx)))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(false, cx)))
             .on_action(cx.listener(|this, _: &Bold, _, cx| this.wrap("**", cx)))
@@ -1098,6 +1180,8 @@ struct LineBox {
     images: Vec<(Arc<RenderImage>, Bounds<f32>)>,
     /// Callout accent, and whether this is the block's first / last line.
     callout: Option<(u32, bool, bool)>,
+    /// Whether this table line is its table's first / last.
+    table: Option<(bool, bool)>,
 }
 
 impl LineBox {
@@ -1266,6 +1350,7 @@ fn metrics(kind: Kind) -> (f32, f32, f32, f32) {
         Kind::Heading(3) => (20.5, 29., 12., 2.),
         Kind::Heading(_) => (17.5, 27., 8., 0.),
         Kind::Code => (14., 23., 0., 0.),
+        Kind::Table => (14., 24., 0., 0.),
         _ => (16., 28., 0., 0.),
     }
 }
@@ -1281,7 +1366,7 @@ fn tone_color(pal: &Palette, tone: md::Tone) -> u32 {
 /// `accent` is the callout colour of the line, if it is in one.
 fn run(pal: &Palette, kind: Kind, flags: u16, accent: Option<u32>, len: usize) -> TextRun {
     let heading = matches!(kind, Kind::Heading(_));
-    let code = kind == Kind::Code || flags & md::CODE != 0;
+    let code = matches!(kind, Kind::Code | Kind::Table) || flags & md::CODE != 0;
     let mut f = font(if code { MONO } else { SANS });
     if heading {
         f.weight = if matches!(kind, Kind::Heading(1 | 2)) {
@@ -1338,7 +1423,7 @@ fn run(pal: &Palette, kind: Kind, flags: u16, accent: Option<u32>, len: usize) -
                 color: None,
             }
         });
-    let background_color = if flags & md::CODE != 0 && kind != Kind::Code {
+    let background_color = if flags & md::CODE != 0 && !matches!(kind, Kind::Code | Kind::Table) {
         Some(hsla(pal.inline_code_bg))
     } else if flags & md::HIGHLIGHT != 0 && flags & md::MARK == 0 {
         Some(rgba(pal.highlight).into())
@@ -1429,7 +1514,15 @@ impl Element for EditorElement {
         let mut runs = Vec::new();
         let mut items = a.items.iter().peekable();
         let mut callouts = a.callouts.iter().peekable();
+        let mut tables = a.tables.iter().peekable();
         for (ix, (buf, kind)) in a.lines.iter().enumerate() {
+            while matches!(tables.peek(), Some(t) if t.end <= ix) {
+                tables.next();
+            }
+            let table = tables
+                .peek()
+                .filter(|t| t.contains(&ix))
+                .map(|t| (t.start == ix, t.end == ix + 1));
             while matches!(callouts.peek(), Some(c) if c.lines.end <= ix) {
                 callouts.next();
             }
@@ -1552,6 +1645,7 @@ impl Element for EditorElement {
                 check: None,
                 images,
                 callout,
+                table,
             });
         }
         let content_h = y + PAD_TOP;
@@ -1665,6 +1759,24 @@ impl Element for EditorElement {
                             Bounds::new(at(layout.col_x - 6., top), size(px(3.), px(h))),
                             hsla(c),
                         ));
+                    }
+                    Kind::Table if let Some((first, last)) = line.table => {
+                        let r = |edge: bool| px(if edge { 6. } else { 0. });
+                        window.paint_quad(
+                            fill(
+                                Bounds::new(
+                                    at(layout.col_x - 10., line.top),
+                                    size(px(layout.col_w + 20.), px(line.rows_h)),
+                                ),
+                                hsla(pal.code_bg),
+                            )
+                            .corner_radii(Corners {
+                                top_left: r(first),
+                                top_right: r(first),
+                                bottom_left: r(last),
+                                bottom_right: r(last),
+                            }),
+                        );
                     }
                     Kind::Quote => window.paint_quad(fill(
                         Bounds::new(
