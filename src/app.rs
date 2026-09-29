@@ -204,6 +204,9 @@ pub(crate) struct AbstractApp {
     backlinks: Vec<(PathBuf, String)>,
     /// Report left by the previous run's crash, shown until dismissed.
     pub(crate) crash: Option<crate::crash::Pending>,
+    /// Note path and names the current `backlinks` were computed for.
+    backlinks_key: Option<(PathBuf, Vec<String>)>,
+    link_index: Arc<Mutex<crate::links::LinkIndex>>,
     _backlinks_task: Option<Task<()>>,
     _watcher: Option<SpaceWatcher>,
     _watch_task: Option<Task<()>>,
@@ -291,6 +294,8 @@ impl AbstractApp {
             completion: None,
             backlinks: Vec::new(),
             crash: None,
+            backlinks_key: None,
+            link_index: Arc::default(),
             _backlinks_task: None,
             _watcher: None,
             _watch_task: None,

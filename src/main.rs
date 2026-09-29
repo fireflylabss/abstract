@@ -12,6 +12,8 @@ mod i18n;
 mod keymap;
 mod links;
 mod md;
+#[cfg(test)]
+mod perf;
 mod search;
 mod spaces;
 mod store;
