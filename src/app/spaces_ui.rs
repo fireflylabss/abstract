@@ -33,9 +33,23 @@ impl AbstractApp {
     }
 
     pub(crate) fn cycle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.theme_pref = self.theme_pref.next();
-        theme::apply(self.theme_pref, window.appearance(), cx);
-        self.settings.set_theme(self.theme_pref);
+        self.set_theme_pref(self.theme_pref.next(), window, cx);
+    }
+
+    pub(crate) fn set_theme_pref(
+        &mut self,
+        pref: ThemePref,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.theme_pref = pref;
+        self.settings.set_theme(pref);
+        self.save_settings(window, cx);
+    }
+
+    /// Re-apply the palette and persist `settings` off-thread.
+    pub(crate) fn save_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        theme::apply(&self.settings, window.appearance(), cx);
         let settings = self.settings.clone();
         cx.background_spawn(async move { settings.save() }).detach();
         cx.notify();
@@ -292,66 +306,6 @@ impl AbstractApp {
                         .on_click(cx.listener(|this, _, window, cx| this.open_space(window, cx)))
                         .child(icon("icons/folder-add.svg", pal.dim).size(px(15.)))
                         .child(t(Key::OpenFolderAsSpace)),
-                ),
-            )
-            .child(
-                div().p(px(4.)).child(
-                    div()
-                        .id("lang-cycle")
-                        .role(Role::MenuItem)
-                        .h(px(32.))
-                        .px(px(8.))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .rounded(px(6.))
-                        .cursor_pointer()
-                        .text_size(px(13.))
-                        .text_color(rgb(pal.body))
-                        .hover(|s| s.bg(rgb(pal.hover)))
-                        .active(|s| s.bg(rgb(pal.active)))
-                        .on_click(cx.listener(|this, _, _, cx| this.cycle_lang(cx)))
-                        .child(icon("icons/globe.svg", pal.dim).size(px(15.)))
-                        .child(t(Key::Language))
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .text_size(px(11.))
-                                .text_color(rgb(pal.faint))
-                                .child(self.lang_label()),
-                        ),
-                ),
-            )
-            .child(
-                div().px(px(4.)).pb(px(4.)).child(
-                    div()
-                        .id("updates-toggle")
-                        .role(Role::MenuItem)
-                        .h(px(32.))
-                        .px(px(8.))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .rounded(px(6.))
-                        .cursor_pointer()
-                        .text_size(px(13.))
-                        .text_color(rgb(pal.body))
-                        .hover(|s| s.bg(rgb(pal.hover)))
-                        .active(|s| s.bg(rgb(pal.active)))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            let on = !this.settings.updates();
-                            this.set_updates(on, cx);
-                        }))
-                        .child(icon("icons/unfold-more.svg", pal.dim).size(px(15.)))
-                        .child(t(Key::CheckUpdates))
-                        .child(div().flex_1())
-                        .child(div().text_size(px(11.)).text_color(rgb(pal.faint)).child(t(
-                            if self.settings.updates() {
-                                Key::On
-                            } else {
-                                Key::Off
-                            },
-                        ))),
                 ),
             );
         menu.with_animation(

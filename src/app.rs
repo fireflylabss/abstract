@@ -7,6 +7,7 @@ mod notes;
 mod rename;
 mod save;
 mod search_ui;
+mod settings_ui;
 mod sidebar;
 mod spaces_ui;
 mod tour_ui;
@@ -194,6 +195,8 @@ pub(crate) struct AbstractApp {
     save: SaveState,
     words: usize,
     status_open: bool,
+    settings_open: bool,
+    settings_focus: FocusHandle,
     /// Last seen mtime of each image the editor has shown (`None`: missing).
     image_stamps: HashMap<PathBuf, Option<SystemTime>>,
     /// Serializes on-disk ops on the open note (rename + write + trash mark).
@@ -226,6 +229,7 @@ impl AbstractApp {
         session: Session,
     ) -> Self {
         let editor = cx.new(LiveEditor::new);
+        editor.update(cx, |ed, cx| ed.set_raw_tables(settings.raw_tables(), cx));
         let on_change = cx.subscribe(&editor, |this: &mut Self, editor, _: &Changed, cx| {
             let text = editor.read(cx).text();
             this.words = text.split_whitespace().count();
@@ -292,6 +296,8 @@ impl AbstractApp {
             save: SaveState::Saved,
             words: 0,
             status_open: false,
+            settings_open: false,
+            settings_focus: cx.focus_handle(),
             image_stamps: HashMap::new(),
             write_lock: Arc::new(Mutex::new(())),
             _save_task: None,
@@ -377,9 +383,13 @@ impl Render for AbstractApp {
             )
             .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_step(true, cx)))
             .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.find_step(false, cx)))
+            .on_action(
+                cx.listener(|this, _: &OpenSettings, window, cx| this.toggle_settings(window, cx)),
+            )
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
             .child(self.render_sidebar(cx))
             .child(self.render_main(window, cx))
+            .when(self.settings_open, |el| el.child(self.render_settings(cx)))
     }
 }
 

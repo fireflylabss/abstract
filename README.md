@@ -27,7 +27,7 @@ Your notes are plain `.md` files living in real folders on disk. No accounts, no
 - **Session restore** — reopens your notes, window geometry and sidebar state.
 - **Cross-platform** — Linux (Wayland & X11), macOS and Windows; bundled Noto fonts for consistent rendering.
 - **Interface in English and Portuguese** — auto-detected from the system locale.
-- **Chromeless** — custom titlebar, monochrome light/dark themes, first-run tour.
+- **Chromeless** — custom titlebar, light and dark themes (Abstract, Paper, Sepia, Solarized, Midnight, Nord), first-run tour.
 
 ## Install
 
@@ -112,6 +112,7 @@ cargo build --release
 | Switch space | `Ctrl+O` | `Cmd+O` |
 | Save now | `Ctrl+S` | `Cmd+S` |
 | Cycle theme | `Ctrl+Shift+L` | `Cmd+Shift+L` |
+| Settings | `Ctrl+,` | `Cmd+,` |
 | Toggle sidebar | `Ctrl+\` | `Cmd+\` |
 | Delete note | `Ctrl+Shift+Backspace` | `Cmd+Shift+Backspace` |
 | Search notes | `Ctrl+P` or `Ctrl+Shift+F` | `Cmd+P` or `Cmd+Shift+F` |
@@ -126,7 +127,7 @@ Tour navigation: `Enter`/`→` next, `←` back, `Esc` skip.
 
 Find bar: `Enter`/`Shift+Enter` step through matches. In the replace field `Enter` replaces the active match and `Ctrl+Enter` (`Cmd+Enter`) replaces all of them as one undo step. `Esc` closes.
 
-In a table, `Tab` / `Shift+Tab` realign the columns and move to the next / previous cell; `Tab` in the last cell adds a row.
+Tables render as a grid; with the caret inside one (or with Settings > Raw tables on) you edit its Markdown source. In a table, `Tab` / `Shift+Tab` realign the columns and move to the next / previous cell; `Tab` in the last cell adds a row.
 
 ## Development
 

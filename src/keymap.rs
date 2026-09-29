@@ -26,6 +26,7 @@ actions!(
         ReplaceInNote,
         FindNext,
         FindPrevious,
+        OpenSettings,
         Quit,
     ]
 );
@@ -59,6 +60,8 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-g", FindNext, c),
         KeyBinding::new("shift-f3", FindPrevious, c),
         KeyBinding::new("cmd-shift-g", FindPrevious, c),
+        KeyBinding::new("ctrl-,", OpenSettings, c),
+        KeyBinding::new("cmd-,", OpenSettings, c),
         KeyBinding::new("f2", RenameNote, c),
         KeyBinding::new("f1", StartTour, c),
         KeyBinding::new("cmd-q", Quit, c),
