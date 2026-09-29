@@ -346,6 +346,7 @@ impl AbstractApp {
                     ed.set_text(read.0, cx);
                     ed.restore_view(cursor, scroll, cx);
                 });
+                this.refresh_find(false, None, cx);
                 cx.notify();
             })
             .ok();

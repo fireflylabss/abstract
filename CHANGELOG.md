@@ -6,6 +6,11 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Find and replace in the open note (`Cmd/Ctrl+F`; replace with `Ctrl+H`,
+  `Cmd+Alt+F` on macOS). Matches are highlighted in the editor, case folding
+  is on by default, and Replace all is a single undo step.
+
 ## [0.1.2] - 2026-09-28
 
 ### Added

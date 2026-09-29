@@ -156,7 +156,8 @@ impl AbstractApp {
                             self.mark(2, Anchor::TopLeft, point(px(70.), px(70.)), cx),
                             |s, m| s.child(m),
                         )
-                        .when_some(self.render_completion(cx), |s, m| s.child(m)),
+                        .when_some(self.render_completion(cx), |s, m| s.child(m))
+                        .when_some(self.render_find(cx), |s, m| s.child(m)),
                 )
                 .into_any_element()
         };
