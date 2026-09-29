@@ -105,7 +105,23 @@ enum SaveState {
 /// write. A rename also relinks `[[old stem]]` in the other notes of `space`.
 /// Returns whether the visible tree changed (created or renamed).
 /// Blocking; runs on the background executor under the app's write lock.
+/// Until it lands, the text is kept for the crash report.
 fn write_note(
+    lock: &Arc<Mutex<()>>,
+    file: &Arc<Mutex<NoteFile>>,
+    synced: bool,
+    text: &str,
+    space: Option<&Path>,
+) -> std::io::Result<bool> {
+    let held = crate::crash::unsaved(text);
+    let result = write_note_now(lock, file, synced, text, space);
+    if result.is_ok() {
+        crate::crash::saved(held);
+    }
+    result
+}
+
+fn write_note_now(
     lock: &Arc<Mutex<()>>,
     file: &Arc<Mutex<NoteFile>>,
     synced: bool,
@@ -186,6 +202,8 @@ pub(crate) struct AbstractApp {
     search: Option<search_ui::SearchPalette>,
     completion: Option<links_ui::Completion>,
     backlinks: Vec<(PathBuf, String)>,
+    /// Report left by the previous run's crash, shown until dismissed.
+    pub(crate) crash: Option<crate::crash::Pending>,
     /// Note path and names the current `backlinks` were computed for.
     backlinks_key: Option<(PathBuf, Vec<String>)>,
     link_index: Arc<Mutex<crate::links::LinkIndex>>,
@@ -275,6 +293,7 @@ impl AbstractApp {
             search: None,
             completion: None,
             backlinks: Vec::new(),
+            crash: None,
             backlinks_key: None,
             link_index: Arc::default(),
             _backlinks_task: None,

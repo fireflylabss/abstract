@@ -187,6 +187,13 @@ pub enum Key {
     MinutesAgo,
     HoursAgo,
     DaysAgo,
+    // Crash report
+    CrashTitle,
+    CrashBody,
+    CrashRecovered,
+    CopyReport,
+    OpenIssue,
+    Dismiss,
 }
 
 impl Key {
@@ -298,6 +305,12 @@ impl Key {
         Key::MinutesAgo,
         Key::HoursAgo,
         Key::DaysAgo,
+        Key::CrashTitle,
+        Key::CrashBody,
+        Key::CrashRecovered,
+        Key::CopyReport,
+        Key::OpenIssue,
+        Key::Dismiss,
     ];
 }
 
@@ -421,6 +434,14 @@ fn en(k: Key) -> &'static str {
         Key::MinutesAgo => "{n} min ago",
         Key::HoursAgo => "{n} h ago",
         Key::DaysAgo => "{n} d ago",
+        Key::CrashTitle => "abstract quit unexpectedly",
+        Key::CrashBody => {
+            "A report was saved on this computer and nothing was sent. Review it before sharing, since it can include bits of your note."
+        }
+        Key::CrashRecovered => "Text from a save that didn't finish was kept next to the report.",
+        Key::CopyReport => "Copy report",
+        Key::OpenIssue => "Open issue",
+        Key::Dismiss => "Dismiss",
     }
 }
 
@@ -544,6 +565,16 @@ fn pt(k: Key) -> &'static str {
         Key::MinutesAgo => "há {n} min",
         Key::HoursAgo => "há {n} h",
         Key::DaysAgo => "há {n} d",
+        Key::CrashTitle => "O abstract fechou inesperadamente",
+        Key::CrashBody => {
+            "Um relatório foi salvo neste computador e nada foi enviado. Revise antes de compartilhar, porque ele pode conter trechos da nota."
+        }
+        Key::CrashRecovered => {
+            "O texto de um salvamento que não terminou ficou guardado junto do relatório."
+        }
+        Key::CopyReport => "Copiar relatório",
+        Key::OpenIssue => "Abrir issue",
+        Key::Dismiss => "Fechar",
     }
 }
 
