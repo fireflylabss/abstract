@@ -7,6 +7,9 @@ All notable changes to abstract are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Find and replace in the open note (`Cmd/Ctrl+F`; replace with `Ctrl+H`,
+  `Cmd+Alt+F` on macOS). Matches are highlighted in the editor, case folding
+  is on by default, and Replace all is a single undo step.
 - Footnotes. `[^label]` references and `[^label]: text` definitions show as
   `[label]`, Cmd/Ctrl+click jumps between a reference and its definition, and
   Insert > Footnote adds the next numbered one with its definition at the end

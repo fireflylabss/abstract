@@ -34,6 +34,8 @@ pub struct Palette {
     pub selection: u32,
     /// `==marked==` text background, rgba.
     pub highlight: u32,
+    /// Active find match background, rgba.
+    pub find_current: u32,
     /// Callout accents by `md::Tone`: note, tip, warning, danger.
     pub callout: [u32; 4],
 }
@@ -68,6 +70,7 @@ pub const DARK: Palette = Palette {
     caret: 0xf2f2f2,
     selection: 0xffffff26,
     highlight: 0xe5c07b40,
+    find_current: 0xe5a13bb3,
     callout: [0x6ea8fe, 0x5fc88f, 0xe5b454, 0xf0736b],
 };
 
@@ -99,6 +102,7 @@ pub const LIGHT: Palette = Palette {
     caret: 0x111111,
     selection: 0x0000001f,
     highlight: 0xffd84a80,
+    find_current: 0xff9f1ab3,
     callout: [0x2f6fd6, 0x1f8a52, 0xa66a00, 0xc4372f],
 };
 
