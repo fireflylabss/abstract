@@ -32,6 +32,7 @@ pub enum Kind {
     Code,
     Quote,
     Rule,
+    Table,
 }
 
 /// A `- [ ]` / `- [x]` list-item marker; clicking toggles the task.
@@ -151,6 +152,8 @@ pub struct Analysis {
     pub images: Vec<ImageRef>,
     /// Callout blocks, in line order.
     pub callouts: Vec<Callout>,
+    /// Pipe tables as line indices (end exclusive), in line order.
+    pub tables: Vec<Range<usize>>,
 }
 
 pub struct Analyzer {
@@ -192,6 +195,7 @@ impl Analyzer {
             items: Vec::new(),
             images: Vec::new(),
             callouts: Vec::new(),
+            tables: Vec::new(),
         };
         if len == 0 {
             return out;
@@ -391,6 +395,13 @@ impl Analyzer {
                     out.conceal(line.clone(), line);
                     false
                 }
+                "pipe_table" => {
+                    out.set_kind(range.clone(), Kind::Table);
+                    let first = out.line_of(range.start);
+                    let last = out.line_of(range.end.saturating_sub(1).max(range.start));
+                    out.tables.push(first..last + 1);
+                    true
+                }
                 "html_block"
                 | "minus_metadata"
                 | "plus_metadata"
@@ -584,6 +595,24 @@ impl Analyzer {
             out.mark(close.clone(), MARK);
             out.conceal(r.clone(), open);
             out.conceal(r, close);
+        }
+
+        for t in out.tables.clone() {
+            for ix in t {
+                let line = out.lines[ix].0.clone();
+                let b = text.as_bytes();
+                let mut i = line.start;
+                while i < line.end {
+                    if b[i] == b'\\' {
+                        i += 2;
+                        continue;
+                    }
+                    if b[i] == b'|' && out.flags[i] & CODE == 0 {
+                        out.flags[i] |= MUTED;
+                    }
+                    i += 1;
+                }
+            }
         }
 
         let heads: Vec<(Range<usize>, CalloutHead)> = out
@@ -1089,6 +1118,21 @@ mod tests {
         assert_eq!(toggle_callout("> q"), "> [!note] q");
         assert_eq!(toggle_callout("> [!note] a\n> - b"), "a\n- b");
         assert_eq!(toggle_callout("> [!tip]"), "");
+    }
+
+    #[test]
+    fn pipe_tables_are_table_lines() {
+        let text = "intro\n\n| a | b\\|c |\n| - | - |\n| 1 | 2 |\n\nafter";
+        let a = Analyzer::new().analyze(text);
+        assert_eq!(a.tables, vec![2..5_usize]);
+        let kinds: Vec<Kind> = a.lines.iter().map(|l| l.1).collect();
+        assert_eq!(kinds[2..5], [Kind::Table; 3]);
+        assert_eq!(kinds[6], Kind::Body);
+        let header = a.lines[2].0.start;
+        assert_ne!(a.flags[header] & MUTED, 0);
+        assert_ne!(a.flags[header + 2] & BOLD, 0);
+        let escaped = header + text[header..].find("\\|").unwrap() + 1;
+        assert_eq!(a.flags[escaped] & MUTED, 0);
     }
 
     #[test]

@@ -121,6 +121,8 @@ cargo build --release
 
 Tour navigation: `Enter`/`→` next, `←` back, `Esc` skip.
 
+In a table, `Tab` / `Shift+Tab` realign the columns and move to the next / previous cell; `Tab` in the last cell adds a row.
+
 ## Development
 
 ```bash

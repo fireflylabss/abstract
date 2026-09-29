@@ -6,6 +6,11 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- GFM tables render as a monospace block with dimmed pipes. `Tab` and
+  `Shift+Tab` realign the columns and move between cells (`Tab` in the last
+  cell adds a row), and Insert > Table adds a 2-column table.
+
 ## [0.1.2] - 2026-09-28
 
 ### Added
