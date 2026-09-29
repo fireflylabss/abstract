@@ -71,11 +71,12 @@ impl AbstractApp {
         cx.notify();
     }
 
-    pub(crate) fn close_find(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn close_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.find.take().is_some() {
-            self.editor
-                .update(cx, |ed, cx| ed.set_finds(Vec::new(), None, cx));
-            self.focus_editor(cx);
+            self.editor.update(cx, |ed, cx| {
+                ed.set_finds(Vec::new(), None, cx);
+                ed.focus(window, cx);
+            });
             cx.notify();
         }
     }
@@ -243,7 +244,7 @@ impl AbstractApp {
             )
             .child(
                 small("find-close", "icons/close.svg", Key::CloseFind, false)
-                    .on_click(cx.listener(|this, _, _, cx| this.close_find(cx))),
+                    .on_click(cx.listener(|this, _, window, cx| this.close_find(window, cx))),
             );
         let bottom = div()
             .flex()
@@ -284,7 +285,9 @@ impl AbstractApp {
                 .rounded(px(8.))
                 .shadow_lg()
                 .occlude()
-                .on_action(cx.listener(|this, _: &input::Escape, _, cx| this.close_find(cx)))
+                .on_action(
+                    cx.listener(|this, _: &input::Escape, window, cx| this.close_find(window, cx)),
+                )
                 .child(top)
                 .when(bar.replacing, |el| el.child(bottom))
                 .into_any_element(),
