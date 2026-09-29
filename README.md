@@ -126,6 +126,8 @@ Tour navigation: `Enter`/`→` next, `←` back, `Esc` skip.
 
 Find bar: `Enter`/`Shift+Enter` step through matches. In the replace field `Enter` replaces the active match and `Ctrl+Enter` (`Cmd+Enter`) replaces all of them as one undo step. `Esc` closes.
 
+In a table, `Tab` / `Shift+Tab` realign the columns and move to the next / previous cell; `Tab` in the last cell adds a row.
+
 ## Development
 
 ```bash

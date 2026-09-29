@@ -10,6 +10,9 @@ All notable changes to abstract are documented here. The format follows
 - Find and replace in the open note (`Cmd/Ctrl+F`; replace with `Ctrl+H`,
   `Cmd+Alt+F` on macOS). Matches are highlighted in the editor, case folding
   is on by default, and Replace all is a single undo step.
+- GFM tables render as a monospace block with dimmed pipes. `Tab` and
+  `Shift+Tab` realign the columns and move between cells (`Tab` in the last
+  cell adds a row), and Insert > Table adds a 2-column table.
 - Footnotes. `[^label]` references and `[^label]: text` definitions show as
   `[label]`, Cmd/Ctrl+click jumps between a reference and its definition, and
   Insert > Footnote adds the next numbered one with its definition at the end
