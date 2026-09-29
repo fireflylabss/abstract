@@ -627,6 +627,19 @@ impl Analyzer {
             out.conceal(r, close);
         }
 
+        // tree-sitter-markdown cuts a table short when its last row has
+        // only empty cells, which is what Tab in the last cell appends.
+        for t in &mut out.tables {
+            while let Some((line, kind)) = out.lines.get(t.end) {
+                let row = text[line.clone()].trim();
+                if *kind != Kind::Body || !row.starts_with('|') {
+                    break;
+                }
+                out.lines[t.end].1 = Kind::Table;
+                t.end += 1;
+            }
+        }
+
         // Table cells are padded to their source width, so an escaped
         // pipe's backslash must stay visible to keep columns aligned.
         let mut escapes = Vec::new();
@@ -1171,6 +1184,19 @@ mod tests {
         let escaped = header + text[header..].find("\\|").unwrap() + 1;
         assert_eq!(a.flags[escaped] & MUTED, 0);
         assert!(shown(text, 0).contains("| b\\|c |"));
+    }
+
+    #[test]
+    fn tables_keep_rows_of_empty_cells() {
+        for text in [
+            "| a | b |\n| - | - |\n| 1 | 2 |\n|   |   |\n",
+            "| a | b |\n| - | - |\n| 1 | 2 |\n| | |\n\nafter",
+        ] {
+            let a = Analyzer::new().analyze(text);
+            assert_eq!(a.tables, vec![0..4_usize], "{text:?}");
+            assert_eq!(a.lines[3].1, Kind::Table);
+            assert_eq!(a.lines.last().unwrap().1, Kind::Body);
+        }
     }
 
     #[test]
