@@ -8,6 +8,7 @@ mod chrome;
 mod code;
 mod crash;
 mod editor;
+mod footnote;
 mod i18n;
 mod keymap;
 mod links;

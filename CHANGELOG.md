@@ -6,6 +6,12 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Footnotes. `[^label]` references and `[^label]: text` definitions show as
+  `[label]`, Cmd/Ctrl+click jumps between a reference and its definition, and
+  Insert > Footnote adds the next numbered one with its definition at the end
+  of the note.
+
 ## [0.1.2] - 2026-09-28
 
 ### Added
