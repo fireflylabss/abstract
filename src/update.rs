@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 const REPO: &str = "https://github.com/fireflylabss/abstract";
 /// Minisign public key (the base64 line of `minisign.pub`) that signs
 /// `SHA256SUMS` in the release workflow. `None` keeps updates notify-only.
-const PUBKEY: Option<&str> = None;
+const PUBKEY: Option<&str> = Some("RWTskcntw0E+t/qcblSgILGbXMviKrTcyL3tSsMwKOwsm4ydWSNuCtyD");
 const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
 pub(crate) const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -349,6 +349,11 @@ RUS8t48ZyWicYp6pt1x9D0xXNyQQlWLXzVzhFrlHfI+i2lsqiOeaSD5b4h4apnwY+vSfFVaoeECUTsS+
 trusted comment: abstract test fixture
 iiB8GMTUXh0z0f/SwqrHrMyZs7l+DLP6bS3uTiSjnBLk3D72O1HhTk7brjsq335vDDsREMNHqOAw89ogP0umCg==";
     const NAME: &str = "abstract-0.1.3-linux-x86_64.tar.gz";
+
+    #[test]
+    fn release_key_parses() {
+        minisign_verify::PublicKey::from_base64(PUBKEY.unwrap()).unwrap();
+    }
 
     #[test]
     fn signature_and_hash_both_gate_the_install() {
