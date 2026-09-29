@@ -9,6 +9,7 @@ mod search_ui;
 mod sidebar;
 mod spaces_ui;
 mod tour_ui;
+mod update_ui;
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -202,6 +203,9 @@ pub(crate) struct AbstractApp {
     search: Option<search_ui::SearchPalette>,
     completion: Option<links_ui::Completion>,
     backlinks: Vec<(PathBuf, String)>,
+    update: Option<update_ui::UpdateState>,
+    install: crate::update::Install,
+    _update_task: Option<Task<()>>,
     /// Report left by the previous run's crash, shown until dismissed.
     pub(crate) crash: Option<crate::crash::Pending>,
     /// Note path and names the current `backlinks` were computed for.
@@ -293,6 +297,9 @@ impl AbstractApp {
             search: None,
             completion: None,
             backlinks: Vec::new(),
+            update: None,
+            install: crate::update::Install::detect(),
+            _update_task: None,
             crash: None,
             backlinks_key: None,
             link_index: Arc::default(),
@@ -319,6 +326,7 @@ impl AbstractApp {
             this.update_in(cx, |this, window, cx| this.enter_space(spaces, window, cx))
                 .ok();
         }));
+        app.check_updates(cx);
         app
     }
 }

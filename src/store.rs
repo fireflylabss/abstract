@@ -150,6 +150,27 @@ impl Settings {
         self.kv.set("tour", "done");
     }
 
+    /// `updates = off` disables the daily release check.
+    pub fn updates(&self) -> bool {
+        self.kv.get("updates") != Some("off")
+    }
+
+    pub fn set_updates(&mut self, on: bool) {
+        self.kv.set("updates", if on { "on" } else { "off" });
+    }
+
+    /// Unix seconds of the last release check.
+    pub fn update_checked(&self) -> u64 {
+        self.kv
+            .get("update_checked")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    }
+
+    pub fn set_update_checked(&mut self, secs: u64) {
+        self.kv.set("update_checked", &secs.to_string());
+    }
+
     /// Blocking.
     pub fn save(&self) {
         let file = settings_file();

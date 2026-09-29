@@ -19,6 +19,7 @@ mod spaces;
 mod store;
 mod theme;
 mod tour;
+mod update;
 mod vault;
 mod watch;
 
@@ -33,6 +34,7 @@ use keymap::{Quit, bind_keys};
 use store::{Session, Settings};
 
 fn main() {
+    update::clean_up();
     crash::install();
     let crash = crash::take_pending(&crash::dir());
     gpui_kit::application()

@@ -176,6 +176,7 @@ impl AbstractApp {
             .when(self.status_open, |el| {
                 el.child(self.render_status(has_note, cx))
             })
+            .when_some(self.render_update(cx), |el, card| el.child(card))
             .when_some(self.crash.clone(), |el, c| {
                 el.child(self.render_crash(c, cx))
             })
