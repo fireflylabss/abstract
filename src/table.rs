@@ -5,8 +5,9 @@ use std::ops::Range;
 
 use unicode_width::UnicodeWidthStr;
 
+/// Column alignment, from the delimiter row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Align {
+pub enum Align {
     None,
     Left,
     Center,
@@ -64,6 +65,19 @@ fn align_of(cell: &str) -> Option<Align> {
         (false, true) => Align::Right,
         (false, false) => Align::None,
     })
+}
+
+/// Byte ranges of the trimmed cell contents of `line`.
+pub fn cell_spans(line: &str) -> Vec<Range<usize>> {
+    cells(line).into_iter().map(|r| trimmed(line, r)).collect()
+}
+
+/// Per-column alignment read from delimiter row `line`.
+pub fn aligns(line: &str) -> Vec<Align> {
+    cells(line)
+        .into_iter()
+        .map(|r| align_of(&line[r]).unwrap_or(Align::None))
+        .collect()
 }
 
 /// The table in `block` (rows separated by `\n`, the delimiter row second)
@@ -185,6 +199,18 @@ pub fn template(header: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cell_spans_and_aligns() {
+        let row = "| a  | b \\| c |  |";
+        let spans: Vec<&str> = cell_spans(row).into_iter().map(|r| &row[r]).collect();
+        assert_eq!(spans, ["a", "b \\| c", ""]);
+        assert_eq!(
+            aligns("|:--|:-:|--:|---|"),
+            [Align::Left, Align::Center, Align::Right, Align::None]
+        );
+        assert_eq!(aligns("a | b"), [Align::None, Align::None]);
+    }
 
     #[test]
     fn pads_columns_and_keeps_alignment() {

@@ -376,6 +376,7 @@ impl AbstractApp {
                             .child(notes_n.to_string()),
                     )
                     .child(list)
+                    .child(self.render_settings_button(cx))
                     .when(self.spaces_open, |col| {
                         col.child(self.render_spaces_menu(cx))
                     }),

@@ -205,8 +205,6 @@ pub enum Key {
     DaysAgo,
     // Updates
     CheckUpdates,
-    On,
-    Off,
     UpdateAvailable,
     UpdateManual,
     UpdateInstalling,
@@ -222,6 +220,23 @@ pub enum Key {
     CopyReport,
     OpenIssue,
     Dismiss,
+    // Settings
+    Settings,
+    SettingsTip,
+    Appearance,
+    LightTheme,
+    DarkTheme,
+    EditorSection,
+    RawTables,
+    RawTablesHint,
+    General,
+    About,
+    AboutTagline,
+    Version,
+    SourceCode,
+    ReportIssue,
+    License,
+    Close,
 }
 
 impl Key {
@@ -350,8 +365,6 @@ impl Key {
         Key::HoursAgo,
         Key::DaysAgo,
         Key::CheckUpdates,
-        Key::On,
-        Key::Off,
         Key::UpdateAvailable,
         Key::UpdateManual,
         Key::UpdateInstalling,
@@ -366,6 +379,22 @@ impl Key {
         Key::CopyReport,
         Key::OpenIssue,
         Key::Dismiss,
+        Key::Settings,
+        Key::SettingsTip,
+        Key::Appearance,
+        Key::LightTheme,
+        Key::DarkTheme,
+        Key::EditorSection,
+        Key::RawTables,
+        Key::RawTablesHint,
+        Key::General,
+        Key::About,
+        Key::AboutTagline,
+        Key::Version,
+        Key::SourceCode,
+        Key::ReportIssue,
+        Key::License,
+        Key::Close,
     ];
 }
 
@@ -506,8 +535,6 @@ fn en(k: Key) -> &'static str {
         Key::HoursAgo => "{n} h ago",
         Key::DaysAgo => "{n} d ago",
         Key::CheckUpdates => "Check for updates",
-        Key::On => "On",
-        Key::Off => "Off",
         Key::UpdateAvailable => "abstract {v} is available",
         Key::UpdateManual => "Update it the same way you installed it.",
         Key::UpdateInstalling => "Downloading and verifying…",
@@ -524,6 +551,24 @@ fn en(k: Key) -> &'static str {
         Key::CopyReport => "Copy report",
         Key::OpenIssue => "Open issue",
         Key::Dismiss => "Dismiss",
+        Key::Settings => "Settings",
+        Key::SettingsTip => "Settings ({MOD}+,)",
+        Key::Appearance => "Appearance",
+        Key::LightTheme => "Light theme",
+        Key::DarkTheme => "Dark theme",
+        Key::EditorSection => "Editor",
+        Key::RawTables => "Raw tables",
+        Key::RawTablesHint => "Show tables as Markdown source instead of a grid.",
+        Key::General => "General",
+        Key::About => "About",
+        Key::AboutTagline => {
+            "Local-first Markdown notes. Every note is a plain .md file in a folder you choose."
+        }
+        Key::Version => "Version {v}",
+        Key::SourceCode => "Source code",
+        Key::ReportIssue => "Report an issue",
+        Key::License => "License",
+        Key::Close => "Close",
     }
 }
 
@@ -664,8 +709,6 @@ fn pt(k: Key) -> &'static str {
         Key::HoursAgo => "há {n} h",
         Key::DaysAgo => "há {n} d",
         Key::CheckUpdates => "Procurar atualizações",
-        Key::On => "Ligado",
-        Key::Off => "Desligado",
         Key::UpdateAvailable => "O abstract {v} está disponível",
         Key::UpdateManual => "Atualize pelo mesmo lugar em que você instalou.",
         Key::UpdateInstalling => "Baixando e verificando…",
@@ -684,6 +727,24 @@ fn pt(k: Key) -> &'static str {
         Key::CopyReport => "Copiar relatório",
         Key::OpenIssue => "Abrir issue",
         Key::Dismiss => "Fechar",
+        Key::Settings => "Configurações",
+        Key::SettingsTip => "Configurações ({MOD}+,)",
+        Key::Appearance => "Aparência",
+        Key::LightTheme => "Tema claro",
+        Key::DarkTheme => "Tema escuro",
+        Key::EditorSection => "Editor",
+        Key::RawTables => "Tabelas cruas",
+        Key::RawTablesHint => "Mostra as tabelas como Markdown, em vez de uma grade.",
+        Key::General => "Geral",
+        Key::About => "Sobre",
+        Key::AboutTagline => {
+            "Notas em Markdown, locais. Cada nota é um arquivo .md comum, numa pasta que você escolhe."
+        }
+        Key::Version => "Versão {v}",
+        Key::SourceCode => "Código-fonte",
+        Key::ReportIssue => "Reportar um problema",
+        Key::License => "Licença",
+        Key::Close => "Fechar",
     }
 }
 

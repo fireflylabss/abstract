@@ -99,7 +99,7 @@ fn main() {
                         ..Default::default()
                     },
                     |window, cx| {
-                        theme::apply(settings.theme(), window.appearance(), cx);
+                        theme::apply(&settings, window.appearance(), cx);
                         let view = cx.new(|cx| {
                             let mut app =
                                 AbstractApp::new(window, cx, settings.clone(), session.clone());

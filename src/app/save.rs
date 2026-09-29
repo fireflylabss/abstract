@@ -356,7 +356,7 @@ impl AbstractApp {
 
     pub(crate) fn appearance_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.theme_pref == ThemePref::System {
-            theme::apply(ThemePref::System, window.appearance(), cx);
+            theme::apply(&self.settings, window.appearance(), cx);
             cx.notify();
         }
     }

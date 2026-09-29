@@ -146,6 +146,34 @@ impl Settings {
         self.kv.set("theme", theme.as_str());
     }
 
+    /// Id of the palette used in light mode (`theme::LIGHTS`).
+    pub fn light_theme(&self) -> &str {
+        self.kv.get("light_theme").unwrap_or("abstract")
+    }
+
+    pub fn set_light_theme(&mut self, id: &str) {
+        self.kv.set("light_theme", id);
+    }
+
+    /// Id of the palette used in dark mode (`theme::DARKS`).
+    pub fn dark_theme(&self) -> &str {
+        self.kv.get("dark_theme").unwrap_or("abstract")
+    }
+
+    pub fn set_dark_theme(&mut self, id: &str) {
+        self.kv.set("dark_theme", id);
+    }
+
+    /// `raw_tables = on` shows tables as their Markdown source instead of a
+    /// grid.
+    pub fn raw_tables(&self) -> bool {
+        self.kv.get("raw_tables") == Some("on")
+    }
+
+    pub fn set_raw_tables(&mut self, on: bool) {
+        self.kv.set("raw_tables", if on { "on" } else { "off" });
+    }
+
     pub fn set_tour_done(&mut self) {
         self.kv.set("tour", "done");
     }
@@ -329,6 +357,23 @@ mod tests {
         };
         assert_eq!(s.theme(), ThemePref::System);
         assert!(!s.tour_done());
+    }
+
+    #[test]
+    fn appearance_settings_default_and_roundtrip() {
+        let mut s = Settings::default();
+        assert!(!s.raw_tables());
+        assert_eq!((s.light_theme(), s.dark_theme()), ("abstract", "abstract"));
+        s.set_raw_tables(true);
+        s.set_light_theme("sepia");
+        s.set_dark_theme("nord");
+        let again = Settings {
+            kv: KeyVals::parse(&s.kv.serialize()),
+        };
+        assert!(again.raw_tables());
+        assert_eq!((again.light_theme(), again.dark_theme()), ("sepia", "nord"));
+        s.set_raw_tables(false);
+        assert!(!s.raw_tables());
     }
 
     #[test]

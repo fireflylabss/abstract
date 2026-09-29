@@ -2,6 +2,7 @@
 //! undo; a custom element shapes each logical line at its own size (headings
 //! render large) and conceals markdown syntax the selection is not touching.
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,11 +15,17 @@ use crate::attach::Incoming;
 use crate::buffer::Buffer;
 use crate::i18n::{Key, t};
 use crate::md::{self, Analysis, Analyzer, Kind};
+use crate::table::{self as pipe, Align};
 use crate::theme::Palette;
 
 const MAX_COL: f32 = 700.;
 const PAD_X: f32 = 48.;
 const PAD_TOP: f32 = 28.;
+const GRID_FS: f32 = 15.;
+const GRID_LH: f32 = 22.;
+const GRID_PAD_X: f32 = 12.;
+const GRID_PAD_Y: f32 = 7.;
+const GRID_MIN_COL: f32 = 56.;
 
 actions!(
     live_editor,
@@ -193,6 +200,8 @@ pub struct LiveEditor {
     /// active one.
     finds: Vec<Range<usize>>,
     find_current: Option<usize>,
+    /// Tables stay Markdown source instead of rendering as a grid.
+    raw_tables: bool,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
@@ -226,6 +235,7 @@ impl LiveEditor {
             root: None,
             finds: Vec::new(),
             find_current: None,
+            raw_tables: false,
         }
     }
 
@@ -281,6 +291,13 @@ impl LiveEditor {
         self.finds = finds;
         self.find_current = current;
         cx.notify();
+    }
+
+    pub fn set_raw_tables(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.raw_tables != on {
+            self.raw_tables = on;
+            cx.notify();
+        }
     }
 
     /// Selects `r` and scrolls it into view.
@@ -1207,32 +1224,250 @@ struct LineBox {
     callout: Option<(u32, bool, bool)>,
     /// Whether this table line is its table's first / last.
     table: Option<(bool, bool)>,
+    /// Set when the line's table is drawn as a grid.
+    grid: Option<GridRow>,
+}
+
+/// A table row drawn as grid cells.
+struct GridRow {
+    /// Column (x, width), content coordinates.
+    cols: Vec<(f32, f32)>,
+    cells: Vec<GridCell>,
+    header: bool,
+    stripe: bool,
+    last: bool,
+}
+
+struct GridCell {
+    /// Buffer range of the trimmed cell content.
+    range: Range<usize>,
+    segs: Vec<Range<usize>>,
+    wrapped: WrappedLine,
+    /// Text origin and wrap width, content coordinates.
+    x: f32,
+    top: f32,
+    w: f32,
+}
+
+impl GridRow {
+    /// The cell `off` falls in, or the next one after it.
+    fn cell_for(&self, off: usize) -> Option<&GridCell> {
+        self.cells
+            .iter()
+            .find(|c| off <= c.range.end)
+            .or(self.cells.last())
+    }
+}
+
+/// A table row laid out ahead of the line loop, relative to the table.
+enum Planned {
+    /// The delimiter row, which takes no space in the grid.
+    Delim,
+    Row {
+        cols: Vec<(f32, f32)>,
+        cells: Vec<PlannedCell>,
+        h: f32,
+        header: bool,
+        stripe: bool,
+        last: bool,
+    },
+}
+
+struct PlannedCell {
+    range: Range<usize>,
+    segs: Vec<Range<usize>>,
+    wrapped: WrappedLine,
+    dx: f32,
+    w: f32,
+}
+
+fn shape_cell(
+    window: &mut Window,
+    display: &str,
+    runs: &[TextRun],
+    wrap: Option<f32>,
+) -> WrappedLine {
+    window
+        .text_system()
+        .shape_text(
+            SharedString::from(display.to_string()),
+            px(GRID_FS),
+            runs,
+            wrap.map(px),
+            None,
+        )
+        .ok()
+        .and_then(|mut v| v.pop())
+        .unwrap_or_default()
+}
+
+/// Grid layout of table `t` (line indices), or `None` when it stays source:
+/// the selection touches it, it sits in a quote, or it has no delimiter row.
+fn plan_grid(
+    t: &Range<usize>,
+    text: &str,
+    a: &Analysis,
+    reveal: &Range<usize>,
+    pal: &Palette,
+    avail: f32,
+    window: &mut Window,
+) -> Option<Vec<(usize, Planned)>> {
+    if t.len() < 2 {
+        return None;
+    }
+    let span = |ix: usize| a.lines[ix].0.clone();
+    let (first, last) = (span(t.start), span(t.end - 1));
+    if (reveal.start <= last.end && first.start <= reveal.end)
+        || text[first.clone()].trim_start().starts_with('>')
+    {
+        return None;
+    }
+    let aligns = pipe::aligns(&text[span(t.start + 1)]);
+    let ncols = pipe::cell_spans(&text[first]).len().max(1);
+    let mut rows = Vec::with_capacity(t.len() - 1);
+    for ix in t.clone() {
+        if ix == t.start + 1 {
+            continue;
+        }
+        let line = span(ix);
+        let header = ix == t.start;
+        let visible = a.visible(line.clone(), reveal);
+        let spans = pipe::cell_spans(&text[line.clone()]);
+        let cells: Vec<_> = (0..ncols)
+            .map(|c| {
+                let range = spans.get(c).map_or(line.end..line.end, |r| {
+                    line.start + r.start..line.start + r.end
+                });
+                let mut segs: Vec<Range<usize>> = visible
+                    .iter()
+                    .map(|s| s.start.max(range.start)..s.end.min(range.end))
+                    .filter(|s| s.start < s.end)
+                    .collect();
+                if segs.is_empty() {
+                    segs.push(range.start..range.start);
+                }
+                let mut display = String::new();
+                let mut runs = Vec::new();
+                for s in &segs {
+                    let mut i = s.start;
+                    while i < s.end {
+                        let f = a.flags[i];
+                        let mut j = i + 1;
+                        while j < s.end && a.flags[j] == f {
+                            j += 1;
+                        }
+                        let f = if header { f | md::BOLD } else { f };
+                        runs.push(run(pal, Kind::Body, f, None, j - i));
+                        display.push_str(&text[i..j]);
+                        i = j;
+                    }
+                }
+                let wrapped = shape_cell(window, &display, &runs, None);
+                (range, segs, display, runs, wrapped)
+            })
+            .collect();
+        rows.push((ix, cells));
+    }
+    let mut widths = vec![GRID_MIN_COL; ncols];
+    for (_, cells) in &rows {
+        for (w, cell) in widths.iter_mut().zip(cells) {
+            *w = w.max(f32::from(cell.4.width()).ceil() + GRID_PAD_X * 2.);
+        }
+    }
+    let total: f32 = widths.iter().sum();
+    if total > avail {
+        for w in &mut widths {
+            *w = (*w * avail / total).max(GRID_MIN_COL);
+        }
+    }
+    let mut cols = Vec::with_capacity(ncols);
+    let mut x = 0.;
+    for w in widths {
+        cols.push((x, w));
+        x += w;
+    }
+    let n = rows.len();
+    let mut out = vec![(t.start + 1, Planned::Delim)];
+    for (k, (ix, cells)) in rows.into_iter().enumerate() {
+        let mut lines = 1;
+        let cells = cells
+            .into_iter()
+            .zip(&cols)
+            .enumerate()
+            .map(
+                |(c, ((range, segs, display, runs, mut wrapped), &(_, w)))| {
+                    let inner = w - GRID_PAD_X * 2.;
+                    if f32::from(wrapped.width()) > inner + 0.5 {
+                        wrapped = shape_cell(window, &display, &runs, Some(inner));
+                    }
+                    let dx = if wrapped.wrap_boundaries.is_empty() {
+                        let extra = (inner - f32::from(wrapped.width())).max(0.);
+                        match aligns.get(c) {
+                            Some(Align::Center) => extra / 2.,
+                            Some(Align::Right) => extra,
+                            _ => 0.,
+                        }
+                    } else {
+                        0.
+                    };
+                    lines = lines.max(wrapped.wrap_boundaries.len() + 1);
+                    PlannedCell {
+                        range,
+                        segs,
+                        wrapped,
+                        dx,
+                        w: inner,
+                    }
+                },
+            )
+            .collect();
+        out.push((
+            ix,
+            Planned::Row {
+                cols: cols.clone(),
+                cells,
+                h: lines as f32 * GRID_LH + GRID_PAD_Y * 2.,
+                header: k == 0,
+                stripe: k > 0 && k % 2 == 0,
+                last: k + 1 == n,
+            },
+        ));
+    }
+    Some(out)
+}
+
+fn seg_to_display(segs: &[Range<usize>], off: usize) -> usize {
+    let mut acc = 0;
+    for s in segs {
+        if off < s.start {
+            return acc;
+        }
+        if off <= s.end {
+            return acc + off - s.start;
+        }
+        acc += s.len();
+    }
+    acc
+}
+
+fn seg_to_buffer(segs: &[Range<usize>], end: usize, di: usize) -> usize {
+    let mut acc = 0;
+    for s in segs {
+        if di <= acc + s.len() {
+            return s.start + di - acc;
+        }
+        acc += s.len();
+    }
+    segs.last().map_or(end, |s| s.end)
 }
 
 impl LineBox {
     fn to_display(&self, off: usize) -> usize {
-        let mut acc = 0;
-        for s in &self.segs {
-            if off < s.start {
-                return acc;
-            }
-            if off <= s.end {
-                return acc + off - s.start;
-            }
-            acc += s.len();
-        }
-        acc
+        seg_to_display(&self.segs, off)
     }
 
     fn to_buffer(&self, di: usize) -> usize {
-        let mut acc = 0;
-        for s in &self.segs {
-            if di <= acc + s.len() {
-                return s.start + di - acc;
-            }
-            acc += s.len();
-        }
-        self.segs.last().map_or(self.buf.end, |s| s.end)
+        seg_to_buffer(&self.segs, self.buf.end, di)
     }
 
     fn bottom(&self) -> f32 {
@@ -1261,6 +1496,14 @@ impl Layout {
     /// Top-left of the caret slot for `off`, in content coordinates.
     fn position(&self, off: usize) -> Option<(Point<f32>, f32)> {
         let line = self.line_for(off)?;
+        if let Some(c) = line.grid.as_ref().and_then(|g| g.cell_for(off)) {
+            let di = seg_to_display(&c.segs, off).min(c.wrapped.len());
+            let p = c
+                .wrapped
+                .position_for_index(di, px(line.lh))
+                .unwrap_or_default();
+            return Some((point(c.x + f32::from(p.x), c.top + f32::from(p.y)), line.lh));
+        }
         let di = line.to_display(off).min(line.wrapped.len());
         let p = line
             .wrapped
@@ -1280,6 +1523,18 @@ impl Layout {
         let Some(line) = self.lines.get(ix) else {
             return 0;
         };
+        if let Some(g) = &line.grid {
+            let col = g.cols.iter().rposition(|c| c.0 <= x).unwrap_or(0);
+            if let Some(c) = g.cells.get(col).or(g.cells.last()) {
+                let rows = (c.wrapped.wrap_boundaries.len() + 1) as f32 * line.lh;
+                let local = point(px(x - c.x), px((y - c.top).clamp(0., rows - 1.)));
+                let di = c
+                    .wrapped
+                    .closest_index_for_position(local, px(line.lh))
+                    .unwrap_or_else(|i| i);
+                return seg_to_buffer(&c.segs, c.range.end, di);
+            }
+        }
         let local = point(
             px(x - line.x),
             px((y - line.top).clamp(0., (line.rows_h - 1.).max(0.))),
@@ -1322,16 +1577,53 @@ fn span_rects(
     spans_break: bool,
     full: f32,
 ) -> Vec<(f32, f32, f32, f32)> {
+    if let Some(g) = &line.grid {
+        return g
+            .cells
+            .iter()
+            .filter(|c| s.max(c.range.start) < e.min(c.range.end))
+            .flat_map(|c| {
+                text_rects(
+                    &c.segs,
+                    &c.wrapped,
+                    (c.x, c.top, line.lh),
+                    s.max(c.range.start),
+                    e.min(c.range.end),
+                    false,
+                    c.w,
+                )
+            })
+            .collect();
+    }
+    text_rects(
+        &line.segs,
+        &line.wrapped,
+        (line.x, line.top, line.lh),
+        s,
+        e,
+        spans_break,
+        full,
+    )
+}
+
+/// `span_rects` for one shaped fragment at `(x, top)` with line height `lh`.
+fn text_rects(
+    segs: &[Range<usize>],
+    wrapped: &WrappedLine,
+    (x, top, lh): (f32, f32, f32),
+    s: usize,
+    e: usize,
+    spans_break: bool,
+    full: f32,
+) -> Vec<(f32, f32, f32, f32)> {
     let pos = |off: usize| {
-        let di = line.to_display(off).min(line.wrapped.len());
-        line.wrapped
-            .position_for_index(di, px(line.lh))
-            .unwrap_or_default()
+        let di = seg_to_display(segs, off).min(wrapped.len());
+        wrapped.position_for_index(di, px(lh)).unwrap_or_default()
     };
     let (ps, pe) = (pos(s), pos(e));
     let (r0, r1) = (
-        (f32::from(ps.y) / line.lh).round() as usize,
-        (f32::from(pe.y) / line.lh).round() as usize,
+        (f32::from(ps.y) / lh).round() as usize,
+        (f32::from(pe.y) / lh).round() as usize,
     );
     (r0..=r1)
         .map(|r| {
@@ -1340,12 +1632,7 @@ fn span_rects(
             if r == r1 && spans_break {
                 x1 += 6.;
             }
-            (
-                line.x + x0,
-                line.top + r as f32 * line.lh,
-                (x1 - x0).max(0.),
-                line.lh,
-            )
+            (x + x0, top + r as f32 * lh, (x1 - x0).max(0.), lh)
         })
         .collect()
 }
@@ -1540,6 +1827,14 @@ impl Element for EditorElement {
         let mut items = a.items.iter().peekable();
         let mut callouts = a.callouts.iter().peekable();
         let mut tables = a.tables.iter().peekable();
+        let mut grid_plan: HashMap<usize, Planned> = HashMap::new();
+        if !ed.raw_tables {
+            for t in &a.tables {
+                if let Some(rows) = plan_grid(t, text, a, &reveal, &pal, col_w, window) {
+                    grid_plan.extend(rows);
+                }
+            }
+        }
         for (ix, (buf, kind)) in a.lines.iter().enumerate() {
             while matches!(tables.peek(), Some(t) if t.end <= ix) {
                 tables.next();
@@ -1569,6 +1864,62 @@ impl Element for EditorElement {
             let mut indent = if *kind == Kind::Quote { 18. } else { 0. };
             if let Some(i) = item {
                 indent += 22. * (i.depth as f32 + 1.);
+            }
+            if let Some(plan) = grid_plan.remove(&ix) {
+                let x = col_x + indent;
+                let top = y;
+                let (rows_h, lh, grid) = match plan {
+                    Planned::Delim => (0., 0., None),
+                    Planned::Row {
+                        cols,
+                        cells,
+                        h,
+                        header,
+                        stripe,
+                        last,
+                    } => {
+                        let cells = cells
+                            .into_iter()
+                            .zip(&cols)
+                            .map(|(c, &(cx, _))| GridCell {
+                                range: c.range,
+                                segs: c.segs,
+                                wrapped: c.wrapped,
+                                x: x + cx + GRID_PAD_X + c.dx,
+                                top: top + GRID_PAD_Y,
+                                w: c.w,
+                            })
+                            .collect();
+                        let cols = cols.into_iter().map(|(cx, w)| (x + cx, w)).collect();
+                        let row = GridRow {
+                            cols,
+                            cells,
+                            header,
+                            stripe,
+                            last,
+                        };
+                        (h, GRID_LH, Some(row))
+                    }
+                };
+                y = top + rows_h;
+                lines.push(LineBox {
+                    buf: buf.clone(),
+                    segs: std::iter::once(buf.start..buf.start).collect(),
+                    kind: *kind,
+                    x,
+                    top,
+                    lh,
+                    rows_h,
+                    pad_bottom: 0.,
+                    wrapped: WrappedLine::default(),
+                    bullet: None,
+                    check: None,
+                    images: Vec::new(),
+                    callout: None,
+                    table: None,
+                    grid,
+                });
+                continue;
             }
             display.clear();
             runs.clear();
@@ -1671,6 +2022,7 @@ impl Element for EditorElement {
                 images,
                 callout,
                 table,
+                grid: None,
             });
         }
         let content_h = y + PAD_TOP;
@@ -1784,6 +2136,35 @@ impl Element for EditorElement {
                             Bounds::new(at(layout.col_x - 6., top), size(px(3.), px(h))),
                             hsla(c),
                         ));
+                    }
+                    Kind::Table if let Some(g) = &line.grid => {
+                        let stripe = Hsla {
+                            a: 0.5,
+                            ..hsla(pal.code_bg)
+                        };
+                        for (c, &(x, w)) in g.cols.iter().enumerate() {
+                            let bg = if g.header {
+                                hsla(pal.code_bg)
+                            } else if g.stripe {
+                                stripe
+                            } else {
+                                transparent_black()
+                            };
+                            let edge = |on: bool| px(if on { 1. } else { 0. });
+                            window.paint_quad(quad(
+                                Bounds::new(at(x, line.top), size(px(w), px(line.rows_h))),
+                                px(0.),
+                                bg,
+                                Edges {
+                                    top: px(1.),
+                                    right: edge(c + 1 == g.cols.len()),
+                                    bottom: edge(g.last),
+                                    left: px(1.),
+                                },
+                                hsla(pal.rule),
+                                BorderStyle::Solid,
+                            ));
+                        }
                     }
                     Kind::Table if let Some((first, last)) = line.table => {
                         let r = |edge: bool| px(if edge { 6. } else { 0. });
@@ -1932,6 +2313,15 @@ impl Element for EditorElement {
                 line.wrapped
                     .paint(origin, px(line.lh), TextAlign::Left, None, window, cx)
                     .ok();
+                for c in line.grid.iter().flat_map(|g| &g.cells) {
+                    let o = at(c.x, c.top);
+                    c.wrapped
+                        .paint_background(o, px(line.lh), TextAlign::Left, None, window, cx)
+                        .ok();
+                    c.wrapped
+                        .paint(o, px(line.lh), TextAlign::Left, None, window, cx)
+                        .ok();
+                }
                 for (img, b) in &line.images {
                     let r = Bounds::new(
                         at(b.origin.x, b.origin.y),
