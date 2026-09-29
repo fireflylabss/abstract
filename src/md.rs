@@ -627,6 +627,9 @@ impl Analyzer {
             out.conceal(r, close);
         }
 
+        // Table cells are padded to their source width, so an escaped
+        // pipe's backslash must stay visible to keep columns aligned.
+        let mut escapes = Vec::new();
         for t in out.tables.clone() {
             for ix in t {
                 let line = out.lines[ix].0.clone();
@@ -634,6 +637,9 @@ impl Analyzer {
                 let mut i = line.start;
                 while i < line.end {
                     if b[i] == b'\\' {
+                        if b.get(i + 1) == Some(&b'|') && out.flags[i] & CODE == 0 {
+                            escapes.push(i..i + 1);
+                        }
                         i += 2;
                         continue;
                     }
@@ -644,6 +650,7 @@ impl Analyzer {
                 }
             }
         }
+        drop_overlapping(&mut out.conceals, &escapes);
 
         let heads: Vec<(Range<usize>, CalloutHead)> = out
             .callouts
@@ -1163,6 +1170,7 @@ mod tests {
         assert_ne!(a.flags[header + 2] & BOLD, 0);
         let escaped = header + text[header..].find("\\|").unwrap() + 1;
         assert_eq!(a.flags[escaped] & MUTED, 0);
+        assert!(shown(text, 0).contains("| b\\|c |"));
     }
 
     #[test]
