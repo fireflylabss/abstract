@@ -6,7 +6,18 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-28
+
 ### Added
+- Self-update. Once a day (can be turned off in Settings) the app checks the
+  latest GitHub release and offers to install it. Downloads are verified
+  against a minisign-signed `SHA256SUMS`; AppImage, Windows and tarball
+  installs update in place, while `.deb`, `.rpm` and AUR installs only get a
+  notice.
+- Local crash reports. A panic writes a report (version, OS, backtrace), plus
+  the text of any save that hadn't finished, to a local `crashes` folder; the
+  next launch offers to copy the report or open a prefilled GitHub issue.
+  Nothing is uploaded.
 - Find and replace in the open note (`Cmd/Ctrl+F`; replace with `Ctrl+H`,
   `Cmd+Alt+F` on macOS). Matches are highlighted in the editor, case folding
   is on by default, and Replace all is a single undo step.
@@ -25,6 +36,12 @@ All notable changes to abstract are documented here. The format follows
   `[label]`, Cmd/Ctrl+click jumps between a reference and its definition, and
   Insert > Footnote adds the next numbered one with its definition at the end
   of the note.
+
+### Changed
+- Faster on large notes and spaces: inline Markdown parsing is much cheaper
+  (a 1 MB note parses in about 370 ms instead of 2.5 s), backlinks and link
+  resolution use a cached index, and saving a note no longer rescans the
+  whole space.
 
 ## [0.1.2] - 2026-09-28
 
@@ -104,7 +121,8 @@ First public release.
   `SHA256SUMS`.
 - AUR packages `abstract-editor` (source) and `abstract-editor-bin`.
 
-[Unreleased]: https://github.com/fireflylabss/abstract/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/fireflylabss/abstract/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/fireflylabss/abstract/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/fireflylabss/abstract/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/fireflylabss/abstract/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/fireflylabss/abstract/releases/tag/v0.1.0
