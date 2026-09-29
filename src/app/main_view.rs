@@ -177,6 +177,105 @@ impl AbstractApp {
                 el.child(self.render_status(has_note, cx))
             })
             .when_some(self.render_update(cx), |el, card| el.child(card))
+            .when_some(self.crash.clone(), |el, c| {
+                el.child(self.render_crash(c, cx))
+            })
+    }
+
+    fn render_crash(
+        &self,
+        crash: crate::crash::Pending,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let pal = cx.palette();
+        let button = |id: &'static str, label: &'static str| {
+            div()
+                .id(id)
+                .role(Role::Button)
+                .aria_label(label)
+                .h(px(26.))
+                .px(px(8.))
+                .flex()
+                .items_center()
+                .rounded(px(6.))
+                .cursor_pointer()
+                .text_size(px(12.))
+                .text_color(rgb(pal.body))
+                .hover(|s| s.bg(rgb(pal.hover)))
+                .child(label)
+        };
+        let report = crash.text.clone();
+        let issue = crate::crash::issue_url(&crash.text);
+        let path = crash.path.clone();
+        div()
+            .id("crash-report")
+            .role(Role::Dialog)
+            .aria_label(t(Key::CrashTitle))
+            .absolute()
+            .top(px(52.))
+            .right(px(12.))
+            .w(px(320.))
+            .p(px(14.))
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .bg(rgb(pal.menu_bg))
+            .border_1()
+            .border_color(rgb(pal.menu_border))
+            .rounded(px(8.))
+            .shadow_lg()
+            .occlude()
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(pal.fg))
+                    .child(t(Key::CrashTitle)),
+            )
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .line_height(px(18.))
+                    .text_color(rgb(pal.dim))
+                    .child(t(Key::CrashBody)),
+            )
+            .when(crash.recovered, |el| {
+                el.child(
+                    div()
+                        .text_size(px(12.))
+                        .line_height(px(18.))
+                        .text_color(rgb(pal.dim))
+                        .child(t(Key::CrashRecovered)),
+                )
+            })
+            .child(
+                div()
+                    .mt(px(4.))
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(4.))
+                    .child(
+                        button("crash-copy", t(Key::CopyReport)).on_click(move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(report.clone()))
+                        }),
+                    )
+                    .child(
+                        button("crash-issue", t(Key::OpenIssue))
+                            .on_click(move |_, _, cx| cx.open_url(&issue)),
+                    )
+                    .child(
+                        button("crash-reveal", t(Key::Reveal))
+                            .on_click(move |_, _, cx| cx.reveal_path(&path)),
+                    )
+                    .child(
+                        button("crash-dismiss", t(Key::Dismiss)).on_click(cx.listener(
+                            |this, _, _, cx| {
+                                this.crash = None;
+                                cx.notify();
+                            },
+                        )),
+                    ),
+            )
     }
 
     fn render_status(&self, has_note: bool, cx: &mut Context<Self>) -> impl IntoElement {

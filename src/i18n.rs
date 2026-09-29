@@ -199,6 +199,13 @@ pub enum Key {
     ReleaseNotes,
     Later,
     UpdatesOff,
+    // Crash report
+    CrashTitle,
+    CrashBody,
+    CrashRecovered,
+    CopyReport,
+    OpenIssue,
+    Dismiss,
 }
 
 impl Key {
@@ -321,6 +328,12 @@ impl Key {
         Key::ReleaseNotes,
         Key::Later,
         Key::UpdatesOff,
+        Key::CrashTitle,
+        Key::CrashBody,
+        Key::CrashRecovered,
+        Key::CopyReport,
+        Key::OpenIssue,
+        Key::Dismiss,
     ];
 }
 
@@ -455,6 +468,14 @@ fn en(k: Key) -> &'static str {
         Key::ReleaseNotes => "What's new",
         Key::Later => "Later",
         Key::UpdatesOff => "Don't check",
+        Key::CrashTitle => "abstract quit unexpectedly",
+        Key::CrashBody => {
+            "A report was saved on this computer and nothing was sent. Review it before sharing, since it can include bits of your note."
+        }
+        Key::CrashRecovered => "Text from a save that didn't finish was kept next to the report.",
+        Key::CopyReport => "Copy report",
+        Key::OpenIssue => "Open issue",
+        Key::Dismiss => "Dismiss",
     }
 }
 
@@ -589,6 +610,16 @@ fn pt(k: Key) -> &'static str {
         Key::ReleaseNotes => "Novidades",
         Key::Later => "Depois",
         Key::UpdatesOff => "Não verificar",
+        Key::CrashTitle => "O abstract fechou inesperadamente",
+        Key::CrashBody => {
+            "Um relatório foi salvo neste computador e nada foi enviado. Revise antes de compartilhar, porque ele pode conter trechos da nota."
+        }
+        Key::CrashRecovered => {
+            "O texto de um salvamento que não terminou ficou guardado junto do relatório."
+        }
+        Key::CopyReport => "Copiar relatório",
+        Key::OpenIssue => "Abrir issue",
+        Key::Dismiss => "Fechar",
     }
 }
 

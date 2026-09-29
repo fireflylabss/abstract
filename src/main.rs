@@ -6,6 +6,7 @@ mod attach;
 mod buffer;
 mod chrome;
 mod code;
+mod crash;
 mod editor;
 mod i18n;
 mod keymap;
@@ -34,6 +35,8 @@ use store::{Session, Settings};
 
 fn main() {
     update::clean_up();
+    crash::install();
+    let crash = crash::take_pending(&crash::dir());
     gpui_kit::application()
         .with_assets(AppAssets)
         .run(|cx: &mut App| {
@@ -45,6 +48,12 @@ fn main() {
             tour::bind_keys(cx);
             bind_keys(cx);
             cx.on_action(|_: &Quit, cx| cx.quit());
+            cx.observe_keystrokes(|e, _, _| {
+                if let Some(a) = &e.action {
+                    crash::action(a.name());
+                }
+            })
+            .detach();
             cx.set_menus([Menu::new("abstract").items([MenuItem::action("Quit abstract", Quit)])]);
 
             let settings = Settings::load();
@@ -89,7 +98,10 @@ fn main() {
                     |window, cx| {
                         theme::apply(settings.theme(), window.appearance(), cx);
                         let view = cx.new(|cx| {
-                            AbstractApp::new(window, cx, settings.clone(), session.clone())
+                            let mut app =
+                                AbstractApp::new(window, cx, settings.clone(), session.clone());
+                            app.crash = crash.clone();
+                            app
                         });
                         cx.new(|cx| Root::new(view, window, cx))
                     },
