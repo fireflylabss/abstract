@@ -417,104 +417,113 @@ impl Analyzer {
             }
         });
 
-        if !inline_ranges.is_empty()
-            && self.inline.set_included_ranges(&inline_ranges).is_ok()
-            && let Some(tree) = self.inline.parse(source, None)
-        {
-            walk(&mut tree.walk(), |node| {
-                let range = node.start_byte().min(len)..node.end_byte().min(len);
-                match node.kind() {
-                    "emphasis" => out.mark(range, ITALIC),
-                    "strong_emphasis" => {
-                        // `__x__` underlines; `**x**` bolds.
-                        let flag = if text.as_bytes().get(range.start) == Some(&b'_') {
-                            UNDERLINE
-                        } else {
-                            BOLD
-                        };
-                        out.mark(range, flag);
-                    }
-                    "strikethrough" => out.mark(range, STRIKE),
-                    "emphasis_delimiter" => {
-                        let owner = node.parent().map_or(range.clone(), outermost_same_kind);
-                        out.mark(range.clone(), MARK);
-                        out.conceal(owner, range);
-                        return false;
-                    }
-                    "code_span" => {
-                        let mut cursor = node.walk();
-                        for child in node.children(&mut cursor) {
-                            if child.kind() == "code_span_delimiter" {
-                                let r = child.start_byte().min(len)..child.end_byte().min(len);
-                                out.conceal(range.clone(), r);
-                            }
-                        }
-                        out.mark(range, CODE);
-                        return false;
-                    }
-                    "inline_link"
-                    | "full_reference_link"
-                    | "collapsed_reference_link"
-                    | "shortcut_link"
-                    | "image" => {
-                        let keep = if node.kind() == "image" {
-                            ("image_description", MUTED | ITALIC)
-                        } else {
-                            ("link_text", LINK)
-                        };
-                        let mut pos = range.start;
-                        let mut cursor = node.walk();
-                        let mut visible = None;
-                        let mut dest = None;
-                        for child in node.children(&mut cursor) {
-                            let r = child.start_byte().min(len)..child.end_byte().min(len);
-                            if visible.is_none()
-                                && (child.kind() == keep.0 || child.kind() == "link_label")
-                            {
-                                visible = Some(r);
-                            } else if child.kind() == "link_destination" {
-                                dest = Some(r);
-                            }
-                        }
-                        if node.kind() == "image"
-                            && let Some(src) = dest
-                        {
-                            out.images.push(ImageRef {
-                                range: range.clone(),
-                                src,
-                                embed: false,
-                            });
-                        }
-                        match visible {
-                            Some(v) => {
-                                out.mark(v.clone(), keep.1);
-                                out.mark(pos..v.start, MARK);
-                                out.conceal(range.clone(), pos..v.start);
-                                pos = v.end;
-                                out.mark(pos..range.end, MARK);
-                                out.conceal(range.clone(), pos..range.end);
-                            }
-                            None => out.mark(range, MUTED),
-                        }
-                        return false;
-                    }
-                    "uri_autolink" | "email_autolink" => {
-                        out.mark(range, LINK);
-                        return false;
-                    }
-                    "backslash_escape" => {
-                        out.mark(range.start..range.start + 1, MARK);
-                        out.conceal(range.clone(), range.start..range.start + 1);
-                        return false;
-                    }
-                    "html_tag" | "latex_block" => {
-                        out.mark(range, MUTED);
-                        return false;
-                    }
-                    _ => {}
+        // One parse per inline node: a single parse over thousands of
+        // included ranges scales poorly with the range count.
+        let mut visit = |node: Node<'_>| -> bool {
+            let range = node.start_byte().min(len)..node.end_byte().min(len);
+            match node.kind() {
+                "emphasis" => out.mark(range, ITALIC),
+                "strong_emphasis" => {
+                    // `__x__` underlines; `**x**` bolds.
+                    let flag = if text.as_bytes().get(range.start) == Some(&b'_') {
+                        UNDERLINE
+                    } else {
+                        BOLD
+                    };
+                    out.mark(range, flag);
                 }
-                true
-            });
+                "strikethrough" => out.mark(range, STRIKE),
+                "emphasis_delimiter" => {
+                    let owner = node.parent().map_or(range.clone(), outermost_same_kind);
+                    out.mark(range.clone(), MARK);
+                    out.conceal(owner, range);
+                    return false;
+                }
+                "code_span" => {
+                    let mut cursor = node.walk();
+                    for child in node.children(&mut cursor) {
+                        if child.kind() == "code_span_delimiter" {
+                            let r = child.start_byte().min(len)..child.end_byte().min(len);
+                            out.conceal(range.clone(), r);
+                        }
+                    }
+                    out.mark(range, CODE);
+                    return false;
+                }
+                "inline_link"
+                | "full_reference_link"
+                | "collapsed_reference_link"
+                | "shortcut_link"
+                | "image" => {
+                    let keep = if node.kind() == "image" {
+                        ("image_description", MUTED | ITALIC)
+                    } else {
+                        ("link_text", LINK)
+                    };
+                    let mut pos = range.start;
+                    let mut cursor = node.walk();
+                    let mut visible = None;
+                    let mut dest = None;
+                    for child in node.children(&mut cursor) {
+                        let r = child.start_byte().min(len)..child.end_byte().min(len);
+                        if visible.is_none()
+                            && (child.kind() == keep.0 || child.kind() == "link_label")
+                        {
+                            visible = Some(r);
+                        } else if child.kind() == "link_destination" {
+                            dest = Some(r);
+                        }
+                    }
+                    if node.kind() == "image"
+                        && let Some(src) = dest
+                    {
+                        out.images.push(ImageRef {
+                            range: range.clone(),
+                            src,
+                            embed: false,
+                        });
+                    }
+                    match visible {
+                        Some(v) => {
+                            out.mark(v.clone(), keep.1);
+                            out.mark(pos..v.start, MARK);
+                            out.conceal(range.clone(), pos..v.start);
+                            pos = v.end;
+                            out.mark(pos..range.end, MARK);
+                            out.conceal(range.clone(), pos..range.end);
+                        }
+                        None => out.mark(range, MUTED),
+                    }
+                    return false;
+                }
+                "uri_autolink" | "email_autolink" => {
+                    out.mark(range, LINK);
+                    return false;
+                }
+                "backslash_escape" => {
+                    out.mark(range.start..range.start + 1, MARK);
+                    out.conceal(range.clone(), range.start..range.start + 1);
+                    return false;
+                }
+                "html_tag" | "latex_block" => {
+                    out.mark(range, MUTED);
+                    return false;
+                }
+                _ => {}
+            }
+            true
+        };
+        for r in &inline_ranges {
+            if self
+                .inline
+                .set_included_ranges(std::slice::from_ref(r))
+                .is_err()
+            {
+                continue;
+            }
+            if let Some(tree) = self.inline.parse(source, None) {
+                walk(&mut tree.walk(), &mut visit);
+            }
         }
 
         // Wiki-links last: zero prior flags, drop overlapping conceals
@@ -523,12 +532,12 @@ impl Analyzer {
         out.wiki_links = crate::links::parse(text, |o| {
             out.flags[o] & CODE != 0 || matches!(out.lines[out.line_of(o)].1, Kind::Code)
         });
+        let spans: Vec<Range<usize>> = out.wiki_links.iter().map(|l| l.range.clone()).collect();
+        drop_overlapping(&mut out.conceals, &spans);
         for l in std::mem::take(&mut out.wiki_links) {
             for f in &mut out.flags[l.range.clone()] {
                 *f = 0;
             }
-            out.conceals
-                .retain(|c| c.hidden.end <= l.range.start || c.hidden.start >= l.range.end);
             if l.range.start > 0
                 && text.as_bytes()[l.range.start - 1] == b'!'
                 && is_image_path(&text[l.target.clone()])
@@ -577,19 +586,26 @@ impl Analyzer {
             out.conceal(r, close);
         }
 
-        for c in out.callouts.clone() {
-            let line = out.lines[c.lines.start].0.clone();
-            let Some(h) = callout_head(&text[line.clone()]) else {
-                continue;
-            };
+        let heads: Vec<(Range<usize>, CalloutHead)> = out
+            .callouts
+            .iter()
+            .filter_map(|c| {
+                let line = out.lines[c.lines.start].0.clone();
+                callout_head(&text[line.clone()]).map(|h| (line, h))
+            })
+            .collect();
+        let markers: Vec<Range<usize>> = heads
+            .iter()
+            .map(|(line, h)| line.start + h.marker.start..line.start + h.marker.end)
+            .collect();
+        // tree-sitter may have read `[!type]` as a shortcut link.
+        drop_overlapping(&mut out.conceals, &markers);
+        for (line, h) in heads {
             let at = |r: Range<usize>| line.start + r.start..line.start + r.end;
             let marker = at(h.marker.clone());
-            // tree-sitter may have read `[!type]` as a shortcut link.
             for f in &mut out.flags[marker.clone()] {
                 *f = 0;
             }
-            out.conceals
-                .retain(|k| k.hidden.end <= marker.start || k.hidden.start >= marker.end);
             if h.body < line.len() {
                 let hidden = marker.start..line.start + h.body;
                 out.mark(hidden.clone(), MARK);
@@ -610,6 +626,18 @@ impl Analyzer {
         out.images.sort_by_key(|i| i.range.start);
         out
     }
+}
+
+/// Remove conceals whose hidden range overlaps any of `spans`, which are
+/// sorted and disjoint.
+fn drop_overlapping(conceals: &mut Vec<Conceal>, spans: &[Range<usize>]) {
+    if spans.is_empty() {
+        return;
+    }
+    conceals.retain(|c| {
+        let i = spans.partition_point(|s| s.end <= c.hidden.start);
+        spans.get(i).is_none_or(|s| s.start >= c.hidden.end)
+    });
 }
 
 pub const IMAGE_EXTS: &[&str] = &[
@@ -868,6 +896,17 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn emphasis_stays_inside_its_paragraph() {
+        let t = "*a\n\nb*\n\n**c** or *d*\n";
+        let a = Analyzer::new().analyze(t);
+        let at = |s: &str| t.find(s).unwrap();
+        assert_eq!(a.flags[at("a")] & ITALIC, 0);
+        assert_eq!(a.flags[at("b")] & ITALIC, 0);
+        assert_ne!(a.flags[at("c")] & BOLD, 0);
+        assert_ne!(a.flags[at("d")] & ITALIC, 0);
     }
 
     #[test]

@@ -57,7 +57,7 @@ impl AbstractApp {
                 if changed {
                     self.rescan_tree(cx);
                 }
-                self.refresh_backlinks(cx);
+                self.refresh_backlinks_if_renamed(cx);
             }
             Err(err) => {
                 eprintln!("abstract: failed to save note: {err}");
@@ -190,18 +190,55 @@ impl AbstractApp {
         self._watcher = Some(watcher);
         self._watch_task = Some(cx.spawn(async move |this, cx| {
             use futures::StreamExt;
-            while rx.next().await.is_some() {
+            while let Some(mut changes) = rx.next().await {
                 cx.background_executor()
                     .timer(Duration::from_millis(300))
                     .await;
                 // Drain the burst that piled up during the debounce.
-                while rx.try_recv().is_ok() {}
+                while let Ok(more) = rx.try_recv() {
+                    changes.extend(more);
+                }
+                let Ok(open) = this.update(cx, |this, _| {
+                    this.current.as_ref().map(|c| {
+                        let f = guard(&c.file);
+                        (f.path.clone(), f.mtime)
+                    })
+                }) else {
+                    break;
+                };
+                // Our own save lands as a rename onto the open note; the
+                // mtime it recorded tells it apart from an outside edit.
+                if let Some((path, Some(recorded))) = open {
+                    let now = cx
+                        .background_executor()
+                        .spawn({
+                            let p = path.clone();
+                            async move { std::fs::metadata(&p).and_then(|m| m.modified()).ok() }
+                        })
+                        .await;
+                    if now == Some(recorded) {
+                        changes.retain(|c| c.path != path);
+                    }
+                }
+                if changes.is_empty() {
+                    continue;
+                }
+                let tree = changes.iter().any(|c| !c.content);
+                let is_note = |p: &Path| p.extension().is_some_and(|x| x == "md");
+                let notes = tree || changes.iter().any(|c| is_note(&c.path));
+                let assets = tree || changes.iter().any(|c| !is_note(&c.path));
                 if this
                     .update(cx, |this, cx| {
-                        this.rescan_tree(cx);
+                        if tree {
+                            this.rescan_tree(cx);
+                        }
                         this.check_open_file(cx);
-                        this.refresh_backlinks(cx);
-                        this.refresh_images(cx);
+                        if notes {
+                            this.refresh_backlinks(cx);
+                        }
+                        if assets {
+                            this.refresh_images(cx);
+                        }
                     })
                     .is_err()
                 {

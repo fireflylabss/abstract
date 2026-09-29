@@ -60,7 +60,6 @@ impl AbstractApp {
             synced,
         });
         self.clear_completion(cx);
-        self.refresh_backlinks(cx);
         self.open_gen += 1;
         self.save = SaveState::Saved;
         self.words = text.split_whitespace().count();
@@ -73,6 +72,7 @@ impl AbstractApp {
             }
             ed.focus(window, cx);
         });
+        self.refresh_backlinks(cx);
         self.refresh_images(cx);
         cx.notify();
     }

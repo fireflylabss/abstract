@@ -2,8 +2,10 @@
 //! target against the note tree, autocompletion stems, and backlink lookup.
 //! Pure — no gpui — so it is testable headless.
 
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use crate::vault::{self, NodeKind};
 
@@ -115,28 +117,68 @@ pub(crate) fn resolve(tree: &[vault::Node], target: &str) -> Option<PathBuf> {
     })
 }
 
-/// Notes (excluding `note`) containing a `[[link]]` whose lowercased, trimmed
-/// target is in `names`. Returns (path, title) sorted by title.
-pub(crate) fn backlinks(root: &Path, note: &Path, names: &[String]) -> Vec<(PathBuf, String)> {
-    let mut files = Vec::new();
-    crate::search::collect(root, &mut files);
-    let mut out = Vec::new();
-    for (path, _) in files {
-        if path == note {
-            continue;
+struct IndexedNote {
+    modified: SystemTime,
+    title: String,
+    /// Lowercased, trimmed `[[link]]` targets.
+    targets: Vec<String>,
+}
+
+/// Per-note link targets and titles, re-read only when a file's mtime moves.
+#[derive(Default)]
+pub(crate) struct LinkIndex {
+    notes: HashMap<PathBuf, IndexedNote>,
+}
+
+impl LinkIndex {
+    /// Notes (excluding `note`) containing a `[[link]]` whose lowercased,
+    /// trimmed target is in `names`. Returns (path, title) sorted by title.
+    pub(crate) fn backlinks(
+        &mut self,
+        root: &Path,
+        note: &Path,
+        names: &[String],
+    ) -> Vec<(PathBuf, String)> {
+        let mut files = Vec::new();
+        crate::search::collect(root, &mut files);
+        let live: HashSet<&Path> = files.iter().map(|(p, _)| p.as_path()).collect();
+        self.notes.retain(|p, _| live.contains(p.as_path()));
+        let mut out = Vec::new();
+        for (path, modified) in &files {
+            if path == note {
+                continue;
+            }
+            let fresh = self
+                .notes
+                .get(path)
+                .is_some_and(|n| n.modified == *modified);
+            if !fresh {
+                let Ok(text) = std::fs::read_to_string(path) else {
+                    self.notes.remove(path);
+                    continue;
+                };
+                let targets = parse(&text, |_| false)
+                    .into_iter()
+                    .map(|l| text[l.target].trim().to_lowercase())
+                    .collect();
+                let title = crate::search::file_title(path, &text);
+                self.notes.insert(
+                    path.clone(),
+                    IndexedNote {
+                        modified: *modified,
+                        title,
+                        targets,
+                    },
+                );
+            }
+            let n = &self.notes[path];
+            if n.targets.iter().any(|t| names.contains(t)) {
+                out.push((path.clone(), n.title.clone()));
+            }
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let hit = parse(&text, |_| false)
-            .into_iter()
-            .any(|l| names.contains(&text[l.target].trim().to_lowercase()));
-        if hit {
-            out.push((path.clone(), crate::search::file_title(&path, &text)));
-        }
+        out.sort_by(|a, b| a.1.cmp(&b.1));
+        out
     }
-    out.sort_by(|a, b| a.1.cmp(&b.1));
-    out
 }
 
 /// Edits pointing each `[[old]]` / `[[old|alias]]` in `links` at `new`, last
@@ -331,6 +373,35 @@ mod tests {
     }
 
     #[test]
+    fn link_index_follows_edits_and_deletes() {
+        let dir = space("index");
+        let alpha = dir.join("alpha.md");
+        let beta = dir.join("beta.md");
+        std::fs::write(&alpha, "# Alpha\n").unwrap();
+        std::fs::write(&beta, "# Beta\nsee [[alpha]]\n").unwrap();
+        let names = names_of(&alpha, "# Alpha\n");
+        let mut index = LinkIndex::default();
+        assert_eq!(index.backlinks(&dir, &alpha, &names).len(), 1);
+
+        std::fs::write(&beta, "# Beta\nno link\n").unwrap();
+        let later = SystemTime::now() + std::time::Duration::from_secs(5);
+        std::fs::File::options()
+            .write(true)
+            .open(&beta)
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        assert!(index.backlinks(&dir, &alpha, &names).is_empty());
+
+        std::fs::write(&beta, "# Beta\n[[Alpha]]\n").unwrap();
+        assert_eq!(index.backlinks(&dir, &alpha, &names).len(), 1);
+        std::fs::remove_file(&beta).unwrap();
+        assert!(index.backlinks(&dir, &alpha, &names).is_empty());
+        assert!(index.notes.is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn backlinks_finds_referrers() {
         let dir = space("backlinks");
         let alpha = dir.join("alpha.md");
@@ -339,7 +410,8 @@ mod tests {
         std::fs::write(dir.join("gamma.md"), "# Gamma\n[[alpha|see]] here\n").unwrap();
         std::fs::write(dir.join("delta.md"), "# Delta\n[[alphabet]] no\n").unwrap();
         let names = names_of(&alpha, "# Alpha\n");
-        let mut titles: Vec<String> = backlinks(&dir, &alpha, &names)
+        let mut titles: Vec<String> = LinkIndex::default()
+            .backlinks(&dir, &alpha, &names)
             .into_iter()
             .map(|(_, t)| t)
             .collect();
