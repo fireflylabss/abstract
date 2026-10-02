@@ -73,16 +73,16 @@ impl AbstractApp {
             .group("note-row")
             .role(Role::Button)
             .aria_label(row.name.clone())
-            .h(px(30.))
-            .pl(px(10. + row.depth as f32 * 14.))
-            .pr(px(4.))
+            .h(z(30.))
+            .pl(z(10. + row.depth as f32 * 14.))
+            .pr(z(4.))
             .flex()
             .items_center()
-            .gap(px(6.))
-            .rounded(px(6.))
+            .gap(z(6.))
+            .rounded(z(6.))
             .cursor_pointer()
-            .text_size(px(13.))
-            .line_height(px(18.))
+            .text_size(z(13.))
+            .line_height(z(18.))
             .text_color(rgb(if active { pal.fg } else { pal.dim }))
             .when(active, |s| s.bg(rgb(pal.active)))
             .when(!active, |s| {
@@ -127,14 +127,14 @@ impl AbstractApp {
                         },
                         pal.faint,
                     )
-                    .size(px(12.)),
+                    .size(z(12.)),
                 )
-                .child(icon("icons/folder.svg", pal.faint).size(px(15.)));
+                .child(icon("icons/folder.svg", pal.faint).size(z(15.)));
         } else {
             pill = pill.child(
                 icon("icons/note.svg", if active { pal.fg } else { pal.faint })
-                    .size(px(15.))
-                    .ml(px(18.)),
+                    .size(z(15.))
+                    .ml(z(18.)),
             );
         }
         if editing && let Some(ed) = &self.editing {
@@ -148,9 +148,9 @@ impl AbstractApp {
                         Input::new(&state)
                             .appearance(false)
                             .bordered(false)
-                            .h(px(24.))
+                            .h(z(24.))
                             .w_full()
-                            .text_size(px(13.))
+                            .text_size(z(13.))
                             .text_color(rgb(pal.fg)),
                     ),
             );
@@ -163,12 +163,12 @@ impl AbstractApp {
                         .id(("row-rename", ix))
                         .role(Role::Button)
                         .aria_label(t(Key::Rename))
-                        .size(px(20.))
+                        .size(z(20.))
                         .flex_none()
                         .flex()
                         .items_center()
                         .justify_center()
-                        .rounded(px(4.))
+                        .rounded(z(4.))
                         .invisible()
                         .group_hover("note-row", |s| s.visible())
                         .hover(|s| s.bg(rgb(pal.active)))
@@ -179,19 +179,19 @@ impl AbstractApp {
                                 this.start_rename(path.clone(), kind, window, cx);
                             }
                         }))
-                        .child(icon("icons/pencil.svg", pal.dim).size(px(12.))),
+                        .child(icon("icons/pencil.svg", pal.dim).size(z(12.))),
                 )
                 .child(
                     div()
                         .id(("row-delete", ix))
                         .role(Role::Button)
                         .aria_label(t(Key::MoveToTrash))
-                        .size(px(20.))
+                        .size(z(20.))
                         .flex_none()
                         .flex()
                         .items_center()
                         .justify_center()
-                        .rounded(px(4.))
+                        .rounded(z(4.))
                         .invisible()
                         .group_hover("note-row", |s| s.visible())
                         .hover(|s| s.bg(rgb(pal.active)))
@@ -199,7 +199,7 @@ impl AbstractApp {
                             cx.stop_propagation();
                             this.delete_row(path.clone(), kind, window, cx);
                         }))
-                        .child(icon("icons/delete.svg", pal.dim).size(px(12.))),
+                        .child(icon("icons/delete.svg", pal.dim).size(z(12.))),
                 );
         }
         pill
@@ -224,7 +224,7 @@ impl AbstractApp {
                             div().size_full().child(pill.context_menu(move |m, _, _| {
                                 Self::row_menu(&weak, &path, kind, m)
                             }));
-                        div().h(px(32.)).px(px(8.)).pb(px(2.)).child(rise(
+                        div().h(z(32.)).px(z(8.)).pb(z(2.)).child(rise(
                             pill,
                             ("note-in", ix),
                             360,
@@ -257,20 +257,20 @@ impl AbstractApp {
             .child(
                 div()
                     .relative()
-                    .w(px(SIDEBAR_W))
+                    .w(z(SIDEBAR_W))
                     .h_full()
                     .flex()
                     .flex_col()
                     // 48px header = toolbar height; drags the window.
                     .child(
                         drag_fallback(div().id("sidebar-head"))
-                            .h(px(48.))
+                            .h(z(48.))
                             .flex_none()
                             .flex()
                             .items_center()
-                            .gap(px(4.))
+                            .gap(z(4.))
                             .pl(px(chrome_left_pad(true)))
-                            .pr(px(9.))
+                            .pr(z(9.))
                             .child(
                                 self.ring(
                                     0,
@@ -280,12 +280,12 @@ impl AbstractApp {
                                         .aria_label(tf(Key::SwitchSpace, &[]).as_str())
                                         .flex_1()
                                         .min_w_0()
-                                        .h(px(30.))
-                                        .px(px(8.))
+                                        .h(z(30.))
+                                        .px(z(8.))
                                         .flex()
                                         .items_center()
-                                        .gap(px(8.))
-                                        .rounded(px(6.))
+                                        .gap(z(8.))
+                                        .rounded(z(6.))
                                         .cursor_pointer()
                                         .occlude()
                                         .when(self.spaces_open, |s| s.bg(rgb(pal.active)))
@@ -297,25 +297,20 @@ impl AbstractApp {
                                         .on_click(
                                             cx.listener(|this, _, _, cx| this.toggle_spaces(cx)),
                                         )
-                                        .child(icon("icons/folder.svg", pal.fg).size(px(15.)))
+                                        .child(icon("icons/folder.svg", pal.fg).size(z(15.)))
                                         .child(
                                             div()
                                                 .flex_1()
                                                 .min_w_0()
                                                 .truncate()
-                                                .text_size(px(13.))
+                                                .text_size(z(13.))
                                                 .font_weight(FontWeight::SEMIBOLD)
                                                 .text_color(rgb(pal.fg))
                                                 .child(space_name),
                                         )
-                                        .child(icon("icons/chevrons.svg", pal.faint).size(px(14.)))
+                                        .child(icon("icons/chevrons.svg", pal.faint).size(z(14.)))
                                         .when_some(
-                                            self.mark(
-                                                0,
-                                                Anchor::TopLeft,
-                                                point(px(0.), px(38.)),
-                                                cx,
-                                            ),
+                                            self.mark(0, Anchor::TopLeft, point(z(0.), z(38.)), cx),
                                             |s, m| s.child(m),
                                         ),
                                     &pal,
@@ -337,7 +332,7 @@ impl AbstractApp {
                                     &pal,
                                 )
                                 .when_some(
-                                    self.mark(1, Anchor::TopRight, point(px(30.), px(38.)), cx),
+                                    self.mark(1, Anchor::TopRight, point(z(30.), z(38.)), cx),
                                     |s, m| s.child(m),
                                 ),
                             )
@@ -357,7 +352,7 @@ impl AbstractApp {
                     .child(
                         div()
                             .id("notes-head")
-                            .h(px(28.))
+                            .h(z(28.))
                             .flex_none()
                             .drag_over::<files_menu::DraggedRow>(move |s, _, _, _| {
                                 s.bg(rgb(pal.active)).text_color(rgb(pal.fg))
@@ -368,8 +363,8 @@ impl AbstractApp {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .px(px(18.))
-                            .text_size(px(11.))
+                            .px(z(18.))
+                            .text_size(z(11.))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(rgb(pal.faint))
                             .child(t(Key::Notes))
@@ -382,13 +377,13 @@ impl AbstractApp {
                     }),
             );
         if self.sidebar_gen == 0 {
-            return panel.w(px(to)).into_any_element();
+            return panel.w(z(to)).into_any_element();
         }
         panel
             .with_animation(
                 ("sidebar-slide", self.sidebar_gen),
                 Animation::new(Duration::from_millis(280)).with_easing(ease_out_quint),
-                move |el, d| el.w(px(from + (to - from) * d)),
+                move |el, d| el.w(z(from + (to - from) * d)),
             )
             .into_any_element()
     }

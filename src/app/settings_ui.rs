@@ -49,7 +49,7 @@ impl AbstractApp {
         let tip = SharedString::from(tf(Key::SettingsTip, &[]));
         div()
             .flex_none()
-            .p(px(8.))
+            .p(z(8.))
             .border_t_1()
             .border_color(rgb(pal.line))
             .child(
@@ -60,20 +60,20 @@ impl AbstractApp {
                     .tooltip(move |window, cx| {
                         gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
                     })
-                    .h(px(30.))
-                    .px(px(8.))
+                    .h(z(30.))
+                    .px(z(8.))
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .rounded(px(6.))
+                    .gap(z(8.))
+                    .rounded(z(6.))
                     .cursor_pointer()
-                    .text_size(px(13.))
+                    .text_size(z(13.))
                     .text_color(rgb(pal.body))
                     .when(self.settings_open, |s| s.bg(rgb(pal.active)))
                     .hover(|s| s.bg(rgb(pal.hover)))
                     .active(|s| s.bg(rgb(pal.active)))
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_settings(window, cx)))
-                    .child(icon("icons/settings.svg", pal.dim).size(px(15.)))
+                    .child(icon("icons/settings.svg", pal.dim).size(z(15.)))
                     .child(t(Key::Settings)),
             )
     }
@@ -82,24 +82,24 @@ impl AbstractApp {
         let pal = cx.palette();
         let section = |label: &'static str| {
             div()
-                .pt(px(14.))
-                .pb(px(6.))
-                .text_size(px(11.))
+                .pt(z(14.))
+                .pb(z(6.))
+                .text_size(z(11.))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(rgb(pal.faint))
                 .child(label)
         };
         let sub = |label: &'static str| {
             div()
-                .pt(px(10.))
-                .pb(px(6.))
-                .text_size(px(12.))
+                .pt(z(10.))
+                .pb(z(6.))
+                .text_size(z(12.))
                 .text_color(rgb(pal.dim))
                 .child(label)
         };
 
         let modes =
-            div().flex().gap(px(4.)).children(
+            div().flex().gap(z(4.)).children(
                 [ThemePref::System, ThemePref::Light, ThemePref::Dark].map(|pref| {
                     let on = self.theme_pref == pref;
                     div()
@@ -107,23 +107,23 @@ impl AbstractApp {
                         .role(Role::RadioButton)
                         .aria_selected(on)
                         .flex_1()
-                        .h(px(30.))
+                        .h(z(30.))
                         .flex()
                         .items_center()
                         .justify_center()
-                        .gap(px(6.))
-                        .rounded(px(6.))
+                        .gap(z(6.))
+                        .rounded(z(6.))
                         .border_1()
                         .border_color(rgb(if on { pal.fg } else { pal.line }))
                         .cursor_pointer()
-                        .text_size(px(12.))
+                        .text_size(z(12.))
                         .text_color(rgb(if on { pal.fg } else { pal.body }))
                         .when(on, |s| s.bg(rgb(pal.active)))
                         .hover(|s| s.bg(rgb(pal.hover)))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.set_theme_pref(pref, window, cx)
                         }))
-                        .child(icon(pref.icon(), if on { pal.fg } else { pal.dim }).size(px(14.)))
+                        .child(icon(pref.icon(), if on { pal.fg } else { pal.dim }).size(z(14.)))
                         .child(t(match pref {
                             ThemePref::System => Key::ThemeSystem,
                             ThemePref::Light => Key::ThemeLight,
@@ -139,7 +139,7 @@ impl AbstractApp {
                 (&theme::LIGHTS, self.settings.light_theme())
             };
             let current = theme::named(list, current).id;
-            div().flex().gap(px(8.)).children(list.iter().map(|n| {
+            div().flex().gap(z(8.)).children(list.iter().map(|n| {
                 let on = n.id == current;
                 let p = n.palette;
                 let id = n.id;
@@ -153,11 +153,11 @@ impl AbstractApp {
                     .aria_selected(on)
                     .flex_1()
                     .min_w_0()
-                    .p(px(4.))
+                    .p(z(4.))
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
-                    .rounded(px(8.))
+                    .gap(z(6.))
+                    .rounded(z(8.))
                     .border_1()
                     .border_color(rgb(if on { pal.fg } else { pal.line }))
                     .cursor_pointer()
@@ -167,39 +167,37 @@ impl AbstractApp {
                     }))
                     .child(
                         div()
-                            .h(px(46.))
-                            .p(px(7.))
+                            .h(z(46.))
+                            .p(z(7.))
                             .flex()
                             .flex_col()
-                            .gap(px(4.))
-                            .rounded(px(5.))
+                            .gap(z(4.))
+                            .rounded(z(5.))
                             .bg(rgb(p.bg))
                             .border_1()
                             .border_color(rgb(p.line))
-                            .child(div().w(px(34.)).h(px(5.)).rounded(px(2.)).bg(rgb(p.head)))
-                            .child(div().w_full().h(px(3.)).rounded(px(2.)).bg(rgb(p.dim)))
+                            .child(div().w(z(34.)).h(z(5.)).rounded(z(2.)).bg(rgb(p.head)))
+                            .child(div().w_full().h(z(3.)).rounded(z(2.)).bg(rgb(p.dim)))
                             .child(
                                 div()
                                     .flex()
-                                    .gap(px(3.))
-                                    .child(
-                                        div().w(px(18.)).h(px(3.)).rounded(px(2.)).bg(rgb(p.dim)),
-                                    )
+                                    .gap(z(3.))
+                                    .child(div().w(z(18.)).h(z(3.)).rounded(z(2.)).bg(rgb(p.dim)))
                                     .child(
                                         div()
-                                            .w(px(12.))
-                                            .h(px(3.))
-                                            .rounded(px(2.))
+                                            .w(z(12.))
+                                            .h(z(3.))
+                                            .rounded(z(2.))
                                             .bg(rgb(p.callout[0])),
                                     ),
                             ),
                     )
                     .child(
                         div()
-                            .px(px(2.))
-                            .pb(px(2.))
+                            .px(z(2.))
+                            .pb(z(2.))
                             .truncate()
-                            .text_size(px(12.))
+                            .text_size(z(12.))
                             .text_color(rgb(if on { pal.fg } else { pal.body }))
                             .child(n.name),
                     )
@@ -213,13 +211,13 @@ impl AbstractApp {
                     .role(Role::Switch)
                     .aria_label(label)
                     .aria_toggled(on.into())
-                    .px(px(8.))
-                    .py(px(7.))
-                    .mx(px(-8.))
+                    .px(z(8.))
+                    .py(z(7.))
+                    .mx(z(-8.))
                     .flex()
                     .items_center()
-                    .gap(px(12.))
-                    .rounded(px(6.))
+                    .gap(z(12.))
+                    .rounded(z(6.))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgb(pal.hover)))
                     .child(
@@ -228,18 +226,18 @@ impl AbstractApp {
                             .min_w_0()
                             .flex()
                             .flex_col()
-                            .gap(px(2.))
+                            .gap(z(2.))
                             .child(
                                 div()
-                                    .text_size(px(13.))
+                                    .text_size(z(13.))
                                     .text_color(rgb(pal.body))
                                     .child(label),
                             )
                             .when_some(hint, |el, h| {
                                 el.child(
                                     div()
-                                        .text_size(px(12.))
-                                        .line_height(px(17.))
+                                        .text_size(z(12.))
+                                        .line_height(z(17.))
                                         .text_color(rgb(pal.dim))
                                         .child(h),
                                 )
@@ -248,15 +246,15 @@ impl AbstractApp {
                     .child(
                         div()
                             .flex_none()
-                            .w(px(30.))
-                            .h(px(18.))
-                            .p(px(2.))
+                            .w(z(30.))
+                            .h(z(18.))
+                            .p(z(2.))
                             .flex()
                             .items_center()
                             .when(on, |s| s.justify_end())
                             .rounded_full()
                             .bg(rgb(if on { pal.fg } else { pal.active }))
-                            .child(div().size(px(14.)).rounded_full().bg(rgb(if on {
+                            .child(div().size(z(14.)).rounded_full().bg(rgb(if on {
                                 pal.bg
                             } else {
                                 pal.dim
@@ -269,20 +267,20 @@ impl AbstractApp {
                 .id(id)
                 .role(Role::Link)
                 .aria_label(label)
-                .h(px(28.))
-                .px(px(8.))
+                .h(z(28.))
+                .px(z(8.))
                 .flex()
                 .items_center()
-                .gap(px(6.))
-                .rounded(px(6.))
+                .gap(z(6.))
+                .rounded(z(6.))
                 .border_1()
                 .border_color(rgb(pal.line))
                 .cursor_pointer()
-                .text_size(px(12.))
+                .text_size(z(12.))
                 .text_color(rgb(pal.body))
                 .hover(|s| s.bg(rgb(pal.hover)))
                 .on_click(move |_, _, cx| cx.open_url(&url))
-                .child(icon(glyph, pal.dim).size(px(13.)))
+                .child(icon(glyph, pal.dim).size(z(13.)))
                 .child(label)
         };
 
@@ -293,8 +291,8 @@ impl AbstractApp {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .px(px(20.))
-            .pb(px(20.))
+            .px(z(20.))
+            .pb(z(20.))
             .child(section(t(Key::Appearance)))
             .child(modes)
             .child(sub(t(Key::LightTheme)))
@@ -319,15 +317,15 @@ impl AbstractApp {
                     .id("lang-cycle")
                     .role(Role::Button)
                     .aria_label(t(Key::Language))
-                    .px(px(8.))
-                    .py(px(7.))
-                    .mx(px(-8.))
+                    .px(z(8.))
+                    .py(z(7.))
+                    .mx(z(-8.))
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .rounded(px(6.))
+                    .gap(z(8.))
+                    .rounded(z(6.))
                     .cursor_pointer()
-                    .text_size(px(13.))
+                    .text_size(z(13.))
                     .text_color(rgb(pal.body))
                     .hover(|s| s.bg(rgb(pal.hover)))
                     .on_click(cx.listener(|this, _, _, cx| this.cycle_lang(cx)))
@@ -336,11 +334,11 @@ impl AbstractApp {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(4.))
-                            .text_size(px(12.))
+                            .gap(z(4.))
+                            .text_size(z(12.))
                             .text_color(rgb(pal.dim))
                             .child(self.lang_label())
-                            .child(icon("icons/chevrons.svg", pal.faint).size(px(13.))),
+                            .child(icon("icons/chevrons.svg", pal.faint).size(z(13.))),
                     ),
             )
             .child(
@@ -352,35 +350,35 @@ impl AbstractApp {
                 div()
                     .flex()
                     .items_baseline()
-                    .gap(px(8.))
+                    .gap(z(8.))
                     .child(
                         div()
-                            .text_size(px(15.))
+                            .text_size(z(15.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(pal.fg))
                             .child("Abstract"),
                     )
                     .child(
                         div()
-                            .text_size(px(12.))
+                            .text_size(z(12.))
                             .text_color(rgb(pal.dim))
                             .child(tf(Key::Version, &[("v", VERSION)])),
                     ),
             )
             .child(
                 div()
-                    .pt(px(4.))
-                    .text_size(px(12.))
-                    .line_height(px(18.))
+                    .pt(z(4.))
+                    .text_size(z(12.))
+                    .line_height(z(18.))
                     .text_color(rgb(pal.dim))
                     .child(t(Key::AboutTagline)),
             )
             .child(
                 div()
-                    .pt(px(12.))
+                    .pt(z(12.))
                     .flex()
                     .flex_wrap()
-                    .gap(px(6.))
+                    .gap(z(6.))
                     .child(link(
                         "about-source",
                         "icons/github.svg",
@@ -412,14 +410,14 @@ impl AbstractApp {
             .role(Role::Dialog)
             .aria_label(t(Key::Settings))
             .track_focus(&self.settings_focus)
-            .w(px(480.))
+            .w(z(480.))
             .max_h(relative(0.86))
             .flex()
             .flex_col()
             .bg(rgb(pal.menu_bg))
             .border_1()
             .border_color(rgb(pal.menu_border))
-            .rounded(px(10.))
+            .rounded(z(10.))
             .shadow_lg()
             .occlude()
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
@@ -432,9 +430,9 @@ impl AbstractApp {
             .child(
                 div()
                     .flex_none()
-                    .h(px(48.))
-                    .pl(px(20.))
-                    .pr(px(10.))
+                    .h(z(48.))
+                    .pl(z(20.))
+                    .pr(z(10.))
                     .flex()
                     .items_center()
                     .border_b_1()
@@ -442,7 +440,7 @@ impl AbstractApp {
                     .child(
                         div()
                             .flex_1()
-                            .text_size(px(14.))
+                            .text_size(z(14.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(pal.fg))
                             .child(t(Key::Settings)),

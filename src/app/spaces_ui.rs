@@ -188,7 +188,7 @@ impl AbstractApp {
     pub(crate) fn render_spaces_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let pal = cx.palette();
         let removable = self.spaces.paths.len() > 1;
-        let mut rows = div().flex().flex_col().gap(px(2.)).p(px(4.));
+        let mut rows = div().flex().flex_col().gap(z(2.)).p(z(4.));
         for (ix, path) in self.spaces.paths.iter().enumerate() {
             let active = ix == self.spaces.active;
             rows = rows.child(
@@ -197,12 +197,12 @@ impl AbstractApp {
                     .group("space-row")
                     .role(Role::MenuItem)
                     .aria_label(SharedString::from(spaces::name_of(path)))
-                    .h(px(40.))
-                    .px(px(8.))
+                    .h(z(40.))
+                    .px(z(8.))
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .rounded(px(6.))
+                    .gap(z(8.))
+                    .rounded(z(6.))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgb(pal.hover)))
                     .active(|s| s.bg(rgb(pal.active)))
@@ -218,22 +218,22 @@ impl AbstractApp {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(13.))
-                                    .line_height(px(17.))
+                                    .text_size(z(13.))
+                                    .line_height(z(17.))
                                     .text_color(rgb(if active { pal.fg } else { pal.body }))
                                     .child(SharedString::from(spaces::name_of(path))),
                             )
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(11.))
-                                    .line_height(px(15.))
+                                    .text_size(z(11.))
+                                    .line_height(z(15.))
                                     .text_color(rgb(pal.faint))
                                     .child(SharedString::from(path.display().to_string())),
                             ),
                     )
                     .when(active, |row| {
-                        row.child(icon("icons/check.svg", pal.fg).size(px(14.)))
+                        row.child(icon("icons/check.svg", pal.fg).size(z(14.)))
                     })
                     .when(!active && removable, |row| {
                         row.child(
@@ -241,11 +241,11 @@ impl AbstractApp {
                                 .id(("space-remove", ix))
                                 .role(Role::Button)
                                 .aria_label(t(Key::RemoveFromList))
-                                .size(px(22.))
+                                .size(z(22.))
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded(px(4.))
+                                .rounded(z(4.))
                                 .invisible()
                                 .group_hover("space-row", |s| s.visible())
                                 .hover(|s| s.bg(rgb(pal.active)))
@@ -253,7 +253,7 @@ impl AbstractApp {
                                     cx.stop_propagation();
                                     this.remove_space(ix, window, cx);
                                 }))
-                                .child(icon("icons/close.svg", pal.dim).size(px(12.))),
+                                .child(icon("icons/close.svg", pal.dim).size(z(12.))),
                         )
                     }),
             );
@@ -262,13 +262,13 @@ impl AbstractApp {
             .id("spaces-menu")
             .role(Role::Menu)
             .absolute()
-            .top(px(44.))
-            .left(px(8.))
-            .w(px(SIDEBAR_W - 16.))
+            .top(z(44.))
+            .left(z(8.))
+            .w(z(SIDEBAR_W - 16.))
             .bg(rgb(pal.menu_bg))
             .border_1()
             .border_color(rgb(pal.menu_border))
-            .rounded(px(8.))
+            .rounded(z(8.))
             .shadow_lg()
             .occlude()
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
@@ -277,41 +277,41 @@ impl AbstractApp {
             }))
             .child(
                 div()
-                    .px(px(12.))
-                    .pt(px(10.))
-                    .pb(px(2.))
-                    .text_size(px(11.))
+                    .px(z(12.))
+                    .pt(z(10.))
+                    .pb(z(2.))
+                    .text_size(z(11.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(pal.faint))
                     .child(t(Key::Spaces)),
             )
             .child(rows)
-            .child(div().h(px(1.)).bg(rgb(pal.line)))
+            .child(div().h(z(1.)).bg(rgb(pal.line)))
             .child(
-                div().p(px(4.)).child(
+                div().p(z(4.)).child(
                     div()
                         .id("open-space")
                         .role(Role::MenuItem)
-                        .h(px(32.))
-                        .px(px(8.))
+                        .h(z(32.))
+                        .px(z(8.))
                         .flex()
                         .items_center()
-                        .gap(px(8.))
-                        .rounded(px(6.))
+                        .gap(z(8.))
+                        .rounded(z(6.))
                         .cursor_pointer()
-                        .text_size(px(13.))
+                        .text_size(z(13.))
                         .text_color(rgb(pal.body))
                         .hover(|s| s.bg(rgb(pal.hover)))
                         .active(|s| s.bg(rgb(pal.active)))
                         .on_click(cx.listener(|this, _, window, cx| this.open_space(window, cx)))
-                        .child(icon("icons/folder-add.svg", pal.dim).size(px(15.)))
+                        .child(icon("icons/folder-add.svg", pal.dim).size(z(15.)))
                         .child(t(Key::OpenFolderAsSpace)),
                 ),
             );
         menu.with_animation(
             "spaces-menu-in",
             Animation::new(Duration::from_millis(180)).with_easing(ease_out_quint),
-            |el, d| el.opacity(d).top(px(38. + 6. * d)),
+            |el, d| el.opacity(d).top(z(38. + 6. * d)),
         )
     }
 }

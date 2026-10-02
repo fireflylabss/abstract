@@ -30,6 +30,9 @@ actions!(
         Quit,
         ExportHtml,
         CopyAsHtml,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
     ]
 );
 
@@ -67,5 +70,15 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("f2", RenameNote, c),
         KeyBinding::new("f1", StartTour, c),
         KeyBinding::new("cmd-q", Quit, c),
+        KeyBinding::new("ctrl-=", ZoomIn, c),
+        KeyBinding::new("cmd-=", ZoomIn, c),
+        KeyBinding::new("ctrl-+", ZoomIn, c),
+        KeyBinding::new("cmd-+", ZoomIn, c),
+        KeyBinding::new("ctrl-shift-=", ZoomIn, c),
+        KeyBinding::new("ctrl-shift-+", ZoomIn, c),
+        KeyBinding::new("ctrl--", ZoomOut, c),
+        KeyBinding::new("cmd--", ZoomOut, c),
+        KeyBinding::new("ctrl-0", ZoomReset, c),
+        KeyBinding::new("cmd-0", ZoomReset, c),
     ]);
 }

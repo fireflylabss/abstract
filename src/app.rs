@@ -13,6 +13,7 @@ mod sidebar;
 mod spaces_ui;
 mod tour_ui;
 mod update_ui;
+mod zoom;
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -38,6 +39,7 @@ use crate::theme::{self, Palette, PaletteAccess, ThemePref};
 use crate::tour;
 use crate::vault::{self, NodeKind};
 use crate::watch::SpaceWatcher;
+pub(crate) use crate::zoom::z;
 
 /// Locks `m`, recovering the guard if a previous holder panicked.
 pub(crate) fn guard<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -392,6 +394,9 @@ impl Render for AbstractApp {
                 cx.listener(|this, _: &ExportHtml, window, cx| this.export_current(window, cx)),
             )
             .on_action(cx.listener(|this, _: &CopyAsHtml, _, cx| this.copy_as_html(cx)))
+            .on_action(cx.listener(|this, _: &ZoomIn, window, cx| this.zoom_in(window, cx)))
+            .on_action(cx.listener(|this, _: &ZoomOut, window, cx| this.zoom_out(window, cx)))
+            .on_action(cx.listener(|this, _: &ZoomReset, window, cx| this.zoom_reset(window, cx)))
             .child(self.render_sidebar(cx))
             .child(self.render_main(window, cx))
             .when(self.settings_open, |el| el.child(self.render_settings(cx)))

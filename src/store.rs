@@ -199,6 +199,19 @@ impl Settings {
         self.kv.set("update_checked", &secs.to_string());
     }
 
+    /// `zoom = 1.2` scales the whole UI; default 1.0 (100%).
+    pub fn zoom(&self) -> f32 {
+        self.kv
+            .get("zoom")
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(1.)
+            .clamp(crate::zoom::MIN, crate::zoom::MAX)
+    }
+
+    pub fn set_zoom(&mut self, factor: f32) {
+        self.kv.set("zoom", &format!("{factor:.2}"));
+    }
+
     /// Blocking.
     pub fn save(&self) {
         let file = settings_file();

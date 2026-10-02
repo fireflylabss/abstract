@@ -242,6 +242,7 @@ pub enum Key {
     Exported,
     ExportFailed,
     CopyFailed,
+    Zoom,
 }
 
 impl Key {
@@ -405,6 +406,7 @@ impl Key {
         Key::Exported,
         Key::ExportFailed,
         Key::CopyFailed,
+        Key::Zoom,
     ];
 }
 
@@ -584,6 +586,7 @@ fn en(k: Key) -> &'static str {
         Key::Exported => "Exported {name}",
         Key::ExportFailed => "Couldn't export",
         Key::CopyFailed => "Couldn't copy",
+        Key::Zoom => "Zoom {pct}%",
     }
 }
 
@@ -765,6 +768,7 @@ fn pt(k: Key) -> &'static str {
         Key::Exported => "{name} exportado",
         Key::ExportFailed => "Não foi possível exportar",
         Key::CopyFailed => "Não foi possível copiar",
+        Key::Zoom => "Zoom {pct}%",
     }
 }
 

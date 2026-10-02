@@ -22,13 +22,13 @@ impl AbstractApp {
         ));
 
         let toolbar = drag_fallback(div().id("toolbar"))
-            .h(px(48.))
+            .h(z(48.))
             .flex_none()
             .flex()
             .items_center()
-            .gap(px(2.))
+            .gap(z(2.))
             .pl(px(chrome_left_pad(!self.sidebar_open)))
-            .pr(px(9.))
+            .pr(z(9.))
             .child(
                 self.ring(
                     5,
@@ -43,7 +43,7 @@ impl AbstractApp {
                     &pal,
                 )
                 .when_some(
-                    self.mark(5, Anchor::TopLeft, point(px(0.), px(38.)), cx),
+                    self.mark(5, Anchor::TopLeft, point(z(0.), z(38.)), cx),
                     |s, m| s.child(m),
                 ),
             )
@@ -66,13 +66,13 @@ impl AbstractApp {
                         .role(Role::Button)
                         .aria_label(t(Key::NoteStatus))
                         .debug_selector(|| "status".into())
-                        .w(px(140.))
-                        .h(px(28.))
+                        .w(z(140.))
+                        .h(z(28.))
                         .flex()
                         .items_center()
                         .justify_end()
-                        .px(px(8.))
-                        .rounded(px(6.))
+                        .px(z(8.))
+                        .rounded(z(6.))
                         .cursor_pointer()
                         .when(self.status_open, |s| s.bg(rgb(pal.active)))
                         .hover(|s| s.bg(rgb(pal.hover)))
@@ -81,7 +81,7 @@ impl AbstractApp {
                             this.status_open = !this.status_open;
                             cx.notify();
                         }))
-                        .text_size(px(12.))
+                        .text_size(z(12.))
                         .text_color(rgb(if self.save == SaveState::Failed {
                             pal.fg
                         } else {
@@ -91,7 +91,7 @@ impl AbstractApp {
                     &pal,
                 )
                 .when_some(
-                    self.mark(3, Anchor::TopRight, point(px(140.), px(34.)), cx),
+                    self.mark(3, Anchor::TopRight, point(z(140.), z(34.)), cx),
                     |s, m| s.child(m),
                 ),
                 ("status", self.save as usize),
@@ -107,7 +107,7 @@ impl AbstractApp {
                     &pal,
                 )
                 .when_some(
-                    self.mark(4, Anchor::TopRight, point(px(30.), px(38.)), cx),
+                    self.mark(4, Anchor::TopRight, point(z(30.), z(38.)), cx),
                     |s, m| s.child(m),
                 ),
             )
@@ -153,7 +153,7 @@ impl AbstractApp {
                         )))
                         .when_some(self.render_backlinks(cx), |s, m| s.child(m))
                         .when_some(
-                            self.mark(2, Anchor::TopLeft, point(px(70.), px(70.)), cx),
+                            self.mark(2, Anchor::TopLeft, point(z(70.), z(70.)), cx),
                             |s, m| s.child(m),
                         )
                         .when_some(self.render_completion(cx), |s, m| s.child(m))
@@ -194,13 +194,13 @@ impl AbstractApp {
                 .id(id)
                 .role(Role::Button)
                 .aria_label(label)
-                .h(px(26.))
-                .px(px(8.))
+                .h(z(26.))
+                .px(z(8.))
                 .flex()
                 .items_center()
-                .rounded(px(6.))
+                .rounded(z(6.))
                 .cursor_pointer()
-                .text_size(px(12.))
+                .text_size(z(12.))
                 .text_color(rgb(pal.body))
                 .hover(|s| s.bg(rgb(pal.hover)))
                 .child(label)
@@ -213,48 +213,48 @@ impl AbstractApp {
             .role(Role::Dialog)
             .aria_label(t(Key::CrashTitle))
             .absolute()
-            .top(px(52.))
-            .right(px(12.))
-            .w(px(320.))
-            .p(px(14.))
+            .top(z(52.))
+            .right(z(12.))
+            .w(z(320.))
+            .p(z(14.))
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(z(6.))
             .bg(rgb(pal.menu_bg))
             .border_1()
             .border_color(rgb(pal.menu_border))
-            .rounded(px(8.))
+            .rounded(z(8.))
             .shadow_lg()
             .occlude()
             .child(
                 div()
-                    .text_size(px(13.))
+                    .text_size(z(13.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(pal.fg))
                     .child(t(Key::CrashTitle)),
             )
             .child(
                 div()
-                    .text_size(px(12.))
-                    .line_height(px(18.))
+                    .text_size(z(12.))
+                    .line_height(z(18.))
                     .text_color(rgb(pal.dim))
                     .child(t(Key::CrashBody)),
             )
             .when(crash.recovered, |el| {
                 el.child(
                     div()
-                        .text_size(px(12.))
-                        .line_height(px(18.))
+                        .text_size(z(12.))
+                        .line_height(z(18.))
                         .text_color(rgb(pal.dim))
                         .child(t(Key::CrashRecovered)),
                 )
             })
             .child(
                 div()
-                    .mt(px(4.))
+                    .mt(z(4.))
                     .flex()
                     .flex_wrap()
-                    .gap(px(4.))
+                    .gap(z(4.))
                     .child(
                         button("crash-copy", t(Key::CopyReport)).on_click(move |_, _, cx| {
                             cx.write_to_clipboard(ClipboardItem::new_string(report.clone()))
@@ -315,8 +315,8 @@ impl AbstractApp {
         };
         let stat = |label: String| {
             div()
-                .text_size(px(12.))
-                .line_height(px(18.))
+                .text_size(z(12.))
+                .line_height(z(18.))
                 .text_color(rgb(pal.dim))
                 .child(label)
         };
@@ -325,13 +325,13 @@ impl AbstractApp {
                 .id(id)
                 .role(Role::Button)
                 .aria_label(label)
-                .h(px(26.))
-                .px(px(8.))
+                .h(z(26.))
+                .px(z(8.))
                 .flex()
                 .items_center()
-                .rounded(px(6.))
+                .rounded(z(6.))
                 .cursor_pointer()
-                .text_size(px(12.))
+                .text_size(z(12.))
                 .text_color(rgb(pal.body))
                 .hover(|s| s.bg(rgb(pal.hover)))
                 .child(label)
@@ -341,17 +341,17 @@ impl AbstractApp {
             .role(Role::Dialog)
             .aria_label(t(Key::NoteStatus))
             .absolute()
-            .top(px(44.))
-            .right(px(if has_note { 72. } else { 40. }))
-            .w(px(240.))
-            .p(px(12.))
+            .top(z(44.))
+            .right(z(if has_note { 72. } else { 40. }))
+            .w(z(240.))
+            .p(z(12.))
             .flex()
             .flex_col()
-            .gap(px(2.))
+            .gap(z(2.))
             .bg(rgb(pal.menu_bg))
             .border_1()
             .border_color(rgb(pal.menu_border))
-            .rounded(px(8.))
+            .rounded(z(8.))
             .shadow_lg()
             .occlude()
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
@@ -362,17 +362,17 @@ impl AbstractApp {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .text_size(px(11.))
+                    .gap(z(6.))
+                    .text_size(z(11.))
                     .text_color(rgb(pal.faint))
-                    .child(div().size(px(6.)).rounded_full().bg(rgb(dot)))
+                    .child(div().size(z(6.)).rounded_full().bg(rgb(dot)))
                     .child(state),
             )
             .child(
                 div()
-                    .mt(px(4.))
+                    .mt(z(4.))
                     .truncate()
-                    .text_size(px(13.))
+                    .text_size(z(13.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(pal.fg))
                     .child(name),
@@ -380,11 +380,11 @@ impl AbstractApp {
             .child(
                 div()
                     .truncate()
-                    .text_size(px(11.))
+                    .text_size(z(11.))
                     .text_color(rgb(pal.faint))
                     .child(folder),
             )
-            .child(div().h(px(1.)).my(px(8.)).bg(rgb(pal.line)))
+            .child(div().h(z(1.)).my(z(8.)).bg(rgb(pal.line)))
             .child(stat(tf(Key::Words, &[("n", &self.words.to_string())])))
             .child(stat(tf(Key::Characters, &[("n", &chars.to_string())])))
             .child(stat(tf(
@@ -400,23 +400,22 @@ impl AbstractApp {
             .child(stat(modified))
             .when_some(path.filter(|p| p.exists()), |el, p| {
                 let copy = p.clone();
-                el.child(div().h(px(1.)).my(px(8.)).bg(rgb(pal.line)))
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(4.))
-                            .child(
-                                action("status-reveal", t(Key::Reveal))
-                                    .on_click(move |_, _, cx| cx.reveal_path(&p)),
-                            )
-                            .child(action("status-copy-path", t(Key::CopyPath)).on_click(
-                                move |_, _, cx| {
-                                    cx.write_to_clipboard(ClipboardItem::new_string(
-                                        copy.display().to_string(),
-                                    ))
-                                },
-                            )),
-                    )
+                el.child(div().h(z(1.)).my(z(8.)).bg(rgb(pal.line))).child(
+                    div()
+                        .flex()
+                        .gap(z(4.))
+                        .child(
+                            action("status-reveal", t(Key::Reveal))
+                                .on_click(move |_, _, cx| cx.reveal_path(&p)),
+                        )
+                        .child(action("status-copy-path", t(Key::CopyPath)).on_click(
+                            move |_, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                    copy.display().to_string(),
+                                ))
+                            },
+                        )),
+                )
             })
     }
 }
