@@ -189,6 +189,35 @@ pub(crate) fn offset_of_line(path: &Path, line: usize) -> Option<usize> {
     Some(off.min(text.len()))
 }
 
+/// Subsequence fuzzy match for the palette's `>` command mode: needle chars
+/// must appear in order; consecutive runs and word-start hits score higher.
+/// `needle_lower` must already be lowercase.
+pub(crate) fn fuzzy_score(hay: &str, needle_lower: &str) -> Option<u32> {
+    let hay: Vec<char> = hay.chars().collect();
+    let mut needle = needle_lower.chars().peekable();
+    let mut score = 0u32;
+    let mut last: Option<usize> = None;
+    for (i, &hc) in hay.iter().enumerate() {
+        let Some(&nc) = needle.peek() else { break };
+        let mut lower = hc.to_lowercase();
+        if lower.next() != Some(nc) || lower.next().is_some() {
+            continue;
+        }
+        needle.next();
+        score += 1;
+        if last == i.checked_sub(1) {
+            score += 6; // consecutive run
+        } else if i == 0 || hay[i - 1] == ' ' {
+            score += 3; // word start
+        }
+        last = Some(i);
+    }
+    if needle.peek().is_some() {
+        return None;
+    }
+    Some(score)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,5 +301,20 @@ mod tests {
         assert_eq!(&"Héllo World"[r], "World");
         // 'İ' lowercases to 2 chars and must never match/slice wrongly.
         assert_eq!(match_range("İx", "i"), None);
+    }
+
+    #[test]
+    fn fuzzy_score_ranks_runs_and_word_starts() {
+        // Subsequence required.
+        assert_eq!(fuzzy_score("Save now", "to"), None);
+        // Consecutive run beats scattered hits.
+        assert!(fuzzy_score("Toggle outline", "to") > fuzzy_score("Start tour", "to"));
+        // Word start beats mid-word.
+        assert!(fuzzy_score("Save now", "s") > fuzzy_score("Open settings…", "s"));
+        // Empty query matches everything at score 0.
+        assert_eq!(fuzzy_score("anything", ""), Some(0));
+        // Case-insensitive; multi-char lowercases never match single chars.
+        assert!(fuzzy_score("CYCLE theme", "ct").is_some());
+        assert_eq!(fuzzy_score("İx", "i"), None);
     }
 }

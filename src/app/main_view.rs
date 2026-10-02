@@ -123,6 +123,16 @@ impl AbstractApp {
                     .on_click(cx.listener(|this, _, window, cx| this.delete_note(window, cx))),
                 )
             })
+            .child(
+                icon_btn(
+                    "toggle-outline",
+                    "icons/panel-right.svg",
+                    tf(Key::OutlineTip, &[]).into(),
+                    !self.outline_open,
+                    &pal,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.toggle_outline(cx))),
+            )
             .when(cfg!(not(target_os = "macos")), |t| {
                 t.child(window_controls(window, &pal))
             });
@@ -160,6 +170,7 @@ impl AbstractApp {
                         .when_some(self.render_find(cx), |s, m| s.child(m))
                         .when_some(self.render_preview(cx), |s, m| s.child(m)),
                 )
+                .child(self.render_outline(cx))
                 .into_any_element()
         };
 
