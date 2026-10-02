@@ -77,6 +77,7 @@ impl AbstractApp {
         self.tree.clear();
         self.expanded.clear();
         self.current = None;
+        self.presence.set(None, spaces::name_of(&self.dir));
         self.loading = true;
         let dir = self.dir.clone();
         let snapshot = self.spaces.clone();
