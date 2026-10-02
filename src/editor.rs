@@ -87,6 +87,11 @@ actions!(
     ]
 );
 
+/// `=={tint}…==` the selection, or recolor the mark it sits in.
+#[derive(Clone, PartialEq, gpui_kit::Action)]
+#[action(namespace = live_editor, no_json)]
+pub struct HighlightTint(pub md::Tint);
+
 pub fn bind_keys(cx: &mut App) {
     let c = Some("LiveEditor");
     cx.bind_keys([
@@ -586,7 +591,8 @@ impl LiveEditor {
             )
             .menu(t(Key::FindInNote), Box::new(crate::keymap::FindInNote))
             .separator()
-            .submenu(t(Key::Format), window, cx, move |m, _, _| {
+            .submenu(t(Key::Format), window, cx, move |m, w, c| {
+                let f4 = f1.clone();
                 m.action_context(f1.clone())
                     .menu(t(Key::Bold), Box::new(Bold))
                     .menu(t(Key::Italic), Box::new(Italic))
@@ -594,6 +600,24 @@ impl LiveEditor {
                     .menu(t(Key::InlineCode), Box::new(InlineCode))
                     .menu(t(Key::Highlight), Box::new(Highlight))
                     .menu(t(Key::Comment), Box::new(Comment))
+                    .submenu(t(Key::HighlightColor), w, c, move |m2, _, _| {
+                        m2.action_context(f4.clone())
+                            .menu(t(Key::TintRed), Box::new(HighlightTint(md::Tint::Red)))
+                            .menu(
+                                t(Key::TintOrange),
+                                Box::new(HighlightTint(md::Tint::Orange)),
+                            )
+                            .menu(
+                                t(Key::TintYellow),
+                                Box::new(HighlightTint(md::Tint::Yellow)),
+                            )
+                            .menu(t(Key::TintGreen), Box::new(HighlightTint(md::Tint::Green)))
+                            .menu(t(Key::TintBlue), Box::new(HighlightTint(md::Tint::Blue)))
+                            .menu(
+                                t(Key::TintPurple),
+                                Box::new(HighlightTint(md::Tint::Purple)),
+                            )
+                    })
                     .separator()
                     .menu(t(Key::CopyAsHtml), Box::new(crate::keymap::CopyAsHtml))
             })
@@ -729,6 +753,34 @@ impl LiveEditor {
     fn wrap(&mut self, marker: &str, cx: &mut Context<Self>) {
         self.buf.wrap(marker);
         self.changed(cx);
+    }
+
+    /// `=={tint}…==` the selection; inside an existing mark (or over it),
+    /// swap its `{color}` — `Yellow` is bare `==…==` again.
+    fn tint(&mut self, tint: md::Tint, cx: &mut Context<Self>) {
+        let sel = self.buf.sel();
+        let prefix = match tint {
+            md::Tint::Yellow => String::new(),
+            t => format!("{{{}}}", t.name()),
+        };
+        if let Some(span) = self
+            .analysis
+            .marks
+            .iter()
+            .find(|m| m.range.start <= sel.start && sel.end <= m.range.end)
+            .map(|m| m.range.clone())
+        {
+            let inner = self.buf.text()[span.start + 2..span.end - 2].to_string();
+            let inner = inner[md::tint_prefix(&inner).1..].to_string();
+            let new = format!("=={prefix}{inner}==");
+            let start = span.start + 2 + prefix.len();
+            self.edit(span, &new, Some(start..start + inner.len()), cx);
+            return;
+        }
+        let inner = self.buf.text()[sel.clone()].to_string();
+        let new = format!("=={prefix}{inner}==");
+        let start = sel.start + 2 + prefix.len();
+        self.edit(sel, &new, Some(start..start + inner.len()), cx);
     }
 
     // ── Movement ─────────────────────────────────────────────────────────
@@ -1167,6 +1219,7 @@ impl Render for LiveEditor {
             .on_action(cx.listener(|this, _: &Strike, _, cx| this.wrap("~~", cx)))
             .on_action(cx.listener(|this, _: &InlineCode, _, cx| this.wrap("`", cx)))
             .on_action(cx.listener(|this, _: &Highlight, _, cx| this.wrap("==", cx)))
+            .on_action(cx.listener(|this, a: &HighlightTint, _, cx| this.tint(a.0, cx)))
             .on_action(cx.listener(|this, _: &Comment, _, cx| this.wrap("%%", cx)))
             .on_action(cx.listener(|this, _: &Callout, _, cx| this.callout(cx)))
             .on_action(cx.listener(|this, _: &WikiLink, _, cx| this.link(true, cx)))
@@ -1373,7 +1426,7 @@ fn plan_grid(
                             j += 1;
                         }
                         let f = if header { f | md::BOLD } else { f };
-                        runs.push(run(style, Kind::Body, f, None, j - i));
+                        runs.push(run(style, Kind::Body, f, None, j - i, a.tint_at(i)));
                         display.push_str(&text[i..j]);
                         i = j;
                     }
@@ -1694,8 +1747,16 @@ fn tone_color(pal: &Palette, tone: md::Tone) -> u32 {
     pal.callout[tone as usize]
 }
 
-/// `accent` is the callout colour of the line, if it is in one.
-fn run(style: &RunStyle, kind: Kind, flags: u16, accent: Option<u32>, len: usize) -> TextRun {
+/// `accent` is the callout colour of the line, if it is in one; `tint` the
+/// `=={tint}…==` colour of the run's mark.
+fn run(
+    style: &RunStyle,
+    kind: Kind,
+    flags: u16,
+    accent: Option<u32>,
+    len: usize,
+    tint: Option<md::Tint>,
+) -> TextRun {
     let pal = style.pal;
     let heading = matches!(kind, Kind::Heading(_));
     let code = matches!(kind, Kind::Code | Kind::Table) || flags & md::CODE != 0;
@@ -1762,7 +1823,7 @@ fn run(style: &RunStyle, kind: Kind, flags: u16, accent: Option<u32>, len: usize
     let background_color = if flags & md::CODE != 0 && !matches!(kind, Kind::Code | Kind::Table) {
         Some(hsla(pal.inline_code_bg))
     } else if flags & md::HIGHLIGHT != 0 && flags & md::MARK == 0 {
-        Some(rgba(pal.highlight).into())
+        Some(rgba(pal.marks[tint.unwrap_or_default() as usize]).into())
     } else {
         None
     };
@@ -1963,7 +2024,14 @@ impl Element for EditorElement {
             let segs = if text.is_empty() && ix == 0 {
                 let placeholder = crate::i18n::t(crate::i18n::Key::EditorPlaceholder);
                 display.push_str(placeholder);
-                runs.push(run(&style, *kind, md::MARK, accent, placeholder.len()));
+                runs.push(run(
+                    &style,
+                    *kind,
+                    md::MARK,
+                    accent,
+                    placeholder.len(),
+                    None,
+                ));
                 std::iter::once(0..0).collect()
             } else {
                 let mut segs = a.visible(buf.clone(), &reveal);
@@ -1985,7 +2053,7 @@ impl Element for EditorElement {
                         while j < s.end && a.flags[j] == f {
                             j += 1;
                         }
-                        runs.push(run(&style, *kind, f, accent, j - i));
+                        runs.push(run(&style, *kind, f, accent, j - i, a.tint_at(i)));
                         display.push_str(&text[i..j]);
                         i = j;
                     }
