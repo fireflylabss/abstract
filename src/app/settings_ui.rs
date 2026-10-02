@@ -39,7 +39,9 @@ impl AbstractApp {
 
     fn set_raw_tables(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.settings.set_raw_tables(on);
-        self.editor.update(cx, |ed, cx| ed.set_raw_tables(on, cx));
+        for tab in &self.tabs {
+            tab.editor.update(cx, |ed, cx| ed.set_raw_tables(on, cx));
+        }
         self.save_settings(window, cx);
     }
 

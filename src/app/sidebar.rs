@@ -52,13 +52,15 @@ impl AbstractApp {
             rows[ix].path = ed.target.join(NEW_FOLDER_ROW);
             rows[ix].kind = NodeKind::Folder;
         }
-        if let Some(p) = &self.pending_new
-            && !rows.iter().any(|r| r.path == *p)
-            && let Some(parent) = p.parent()
-        {
-            let ix = insert(&mut rows, parent);
-            rows[ix].path = p.clone();
-            rows[ix].name = t(Key::Untitled).into();
+        for p in self.tabs.iter().filter(|t| t.pending).map(NoteTab::path) {
+            if rows.iter().any(|r| r.path == p) {
+                continue;
+            }
+            if let Some(parent) = p.parent() {
+                let ix = insert(&mut rows, parent);
+                rows[ix].path = p.clone();
+                rows[ix].name = t(Key::Untitled).into();
+            }
         }
         // Pinned aliases on top (skipped while a tag filter is active): the
         // filtered view is already narrowed to what the user asked for.

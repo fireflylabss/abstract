@@ -143,13 +143,6 @@ pub fn newest_note(nodes: &[Node], except: Option<&Path>) -> Option<PathBuf> {
     best.map(|n| n.path.clone())
 }
 
-/// Whether `path` exists anywhere in the tree.
-pub fn contains(nodes: &[Node], path: &Path) -> bool {
-    nodes
-        .iter()
-        .any(|n| n.path == path || contains(&n.children, path))
-}
-
 /// A filesystem-safe note/file name: no separators, reserved characters or
 /// control codes, no leading/trailing dots, capped at 80 chars.
 pub fn stem_for_title(title: &str) -> String {

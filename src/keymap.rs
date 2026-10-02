@@ -32,6 +32,11 @@ actions!(
         ToggleOutline,
         ExportHtml,
         CopyAsHtml,
+        NextTab,
+        PrevTab,
+        GoBack,
+        GoForward,
+        CloseTab,
     ]
 );
 
@@ -73,6 +78,18 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-d", DailyNote, c),
         KeyBinding::new("ctrl-shift-o", ToggleOutline, c),
         KeyBinding::new("cmd-shift-o", ToggleOutline, c),
+        KeyBinding::new("ctrl-tab", NextTab, c),
+        KeyBinding::new("ctrl-shift-tab", PrevTab, c),
+        KeyBinding::new("cmd-shift-]", NextTab, c),
+        KeyBinding::new("cmd-shift-[", PrevTab, c),
+        // On macOS Alt+Left/Right stays word-move in the editor; Cmd+[/]
+        // is the browser convention. Elsewhere Alt+Left/Right navigates.
+        KeyBinding::new("alt-left", GoBack, c),
+        KeyBinding::new("alt-right", GoForward, c),
+        KeyBinding::new("cmd-[", GoBack, c),
+        KeyBinding::new("cmd-]", GoForward, c),
+        KeyBinding::new("ctrl-w", CloseTab, c),
+        KeyBinding::new("cmd-w", CloseTab, c),
     ]);
 }
 

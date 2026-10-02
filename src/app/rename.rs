@@ -197,8 +197,9 @@ impl AbstractApp {
         if let Some(t) = &self.target_folder {
             self.target_folder = Some(remap(t));
         }
-        if let Some(p) = &self.pending_new {
-            self.pending_new = Some(remap(p));
+        for tab in &self.tabs {
+            let mut f = guard(&tab.file);
+            f.path = remap(&f.path);
         }
         for n in &mut self.session_notes {
             if n.space == self.dir
@@ -219,12 +220,13 @@ impl AbstractApp {
 
     pub(crate) fn rename_folder(&mut self, old: PathBuf, new: PathBuf, cx: &mut Context<Self>) {
         let lock = self.write_lock.clone();
-        // If the open note lives inside, its path moves with the folder.
-        let inside = self
-            .current
-            .as_ref()
-            .filter(|c| c.path().starts_with(&old))
-            .map(|c| c.file.clone());
+        // Open notes inside move their paths with the folder.
+        let inside: Vec<Arc<Mutex<NoteFile>>> = self
+            .tabs
+            .iter()
+            .filter(|t| t.path().starts_with(&old))
+            .map(|t| t.file.clone())
+            .collect();
         cx.spawn(async move |this, cx| {
             let ok = cx
                 .background_executor()
@@ -235,8 +237,8 @@ impl AbstractApp {
                         let _w = guard(&lock);
                         match std::fs::rename(&old, &new) {
                             Ok(()) => {
-                                if let Some(f) = inside {
-                                    let mut f = guard(&f);
+                                for f in &inside {
+                                    let mut f = guard(f);
                                     if let Ok(rest) = f.path.strip_prefix(&old) {
                                         f.path = new.join(rest);
                                     }
@@ -267,13 +269,12 @@ impl AbstractApp {
     pub(crate) fn rename_note_file(&mut self, old: PathBuf, new: PathBuf, cx: &mut Context<Self>) {
         let lock = self.write_lock.clone();
         let space = self.dir.clone();
-        let open = self.current.as_ref().map(|c| c.path());
-        let open_file = self.current.as_ref().map(|c| c.file.clone());
+        let open = self.tab_paths();
         let current = self
-            .current
-            .as_ref()
-            .filter(|c| c.path() == old)
-            .map(|c| c.file.clone());
+            .tabs
+            .iter()
+            .find(|t| t.path() == old)
+            .map(|t| t.file.clone());
         cx.spawn(async move |this, cx| {
             let (ok, linked) = cx
                 .background_executor()
@@ -301,13 +302,7 @@ impl AbstractApp {
                             false
                         };
                         let linked = if moved {
-                            crate::links::relink(
-                                &space,
-                                &new,
-                                &stem_of(&old),
-                                open.as_deref(),
-                                false,
-                            )
+                            crate::links::relink(&space, &new, &stem_of(&old), &open, false)
                         } else {
                             None
                         };
@@ -318,15 +313,16 @@ impl AbstractApp {
             this.update(cx, |this, cx| {
                 if let Some(failed) = linked {
                     let (from, to) = (stem_of(&old), stem_of(&new));
-                    let still_open = match (&this.current, &open_file) {
-                        (Some(c), Some(f)) => Arc::ptr_eq(&c.file, f),
-                        _ => false,
-                    };
-                    if still_open {
-                        this.editor
+                    // Every still-open buffer retargets its own links; a tab
+                    // closed mid-rename gets its file rewritten instead.
+                    for tab in &this.tabs {
+                        tab.editor
                             .update(cx, |ed, cx| ed.retarget_links(&from, &to, cx));
-                    } else if let Some(prev) = open.filter(|p| *p != old) {
-                        this.relink_closed(prev, from, to, cx);
+                    }
+                    for prev in &open {
+                        if *prev != old && !this.tabs.iter().any(|t| t.path() == *prev) {
+                            this.relink_closed(prev.clone(), from.clone(), to.clone(), cx);
+                        }
                     }
                     if failed > 0 {
                         this.notice = Some(t(Key::RelinkFailed).into());
@@ -334,13 +330,20 @@ impl AbstractApp {
                 }
                 if ok {
                     // Manual rename recomputes synced against the buffer.
-                    if let (Some(cur), Some(f)) = (this.current.as_mut(), current)
-                        && Arc::ptr_eq(&cur.file, &f)
+                    if let Some(f) = current
+                        && let Some(tix) = this.tabs.iter().position(|t| Arc::ptr_eq(&t.file, &f))
                     {
-                        let title = title_of(this.editor.read(cx).text());
-                        cur.synced = vault::synced_stem(&stem_of(&new), &title);
+                        let title = title_of(this.tabs[tix].editor.read(cx).text());
+                        let synced = vault::synced_stem(&stem_of(&new), &title);
+                        this.tabs[tix].synced = synced;
+                        if this.active == Some(tix)
+                            && let Some(cur) = &mut this.current
+                        {
+                            cur.synced = synced;
+                        }
                         if let (Some(from), Some(to)) = (old.parent(), new.parent()) {
-                            this.editor
+                            this.tabs[tix]
+                                .editor
                                 .update(cx, |ed, cx| ed.rebase_images(from, to, cx));
                         }
                     }

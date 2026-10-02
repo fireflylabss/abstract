@@ -154,13 +154,15 @@ impl AbstractApp {
                         .h_full()
                         .flex()
                         .flex_col()
-                        .child(div().flex_1().min_h_0().w_full().child(rise(
-                            div().size_full().child(self.editor.clone()),
-                            ("editor-in", self.open_gen),
-                            420,
-                            0.,
-                            10.,
-                        )))
+                        .child(div().flex_1().min_h_0().w_full().when(has_note, |el| {
+                            el.child(rise(
+                                div().size_full().child(self.editor.clone()),
+                                ("editor-in", self.open_gen),
+                                420,
+                                0.,
+                                10.,
+                            ))
+                        }))
                         .when_some(self.render_backlinks(cx), |s, m| s.child(m))
                         .when_some(
                             self.mark(2, Anchor::TopLeft, point(px(70.), px(70.)), cx),
@@ -182,6 +184,7 @@ impl AbstractApp {
             .flex()
             .flex_col()
             .child(toolbar)
+            .when_some(self.render_tabs(cx), |el, tabs| el.child(tabs))
             .child(body)
             .when_some(self.search.as_ref(), |el, _| {
                 el.child(self.render_search(cx))

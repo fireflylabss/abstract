@@ -271,6 +271,9 @@ pub enum Key {
     Exported,
     ExportFailed,
     CopyFailed,
+    Back,
+    Forward,
+    CloseTab,
 }
 
 impl Key {
@@ -461,6 +464,9 @@ impl Key {
         Key::Exported,
         Key::ExportFailed,
         Key::CopyFailed,
+        Key::Back,
+        Key::Forward,
+        Key::CloseTab,
     ];
 }
 
@@ -667,6 +673,9 @@ fn en(k: Key) -> &'static str {
         Key::Exported => "Exported {name}",
         Key::ExportFailed => "Couldn't export",
         Key::CopyFailed => "Couldn't copy",
+        Key::Back => "Back",
+        Key::Forward => "Forward",
+        Key::CloseTab => "Close tab",
     }
 }
 
@@ -875,6 +884,9 @@ fn pt(k: Key) -> &'static str {
         Key::Exported => "{name} exportado",
         Key::ExportFailed => "Não foi possível exportar",
         Key::CopyFailed => "Não foi possível copiar",
+        Key::Back => "Voltar",
+        Key::Forward => "Avançar",
+        Key::CloseTab => "Fechar guia",
     }
 }
 
