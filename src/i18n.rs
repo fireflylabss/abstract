@@ -257,6 +257,13 @@ pub enum Key {
     TintGreen,
     TintBlue,
     TintPurple,
+    // Table structure
+    TableInsertRowAbove,
+    TableInsertRowBelow,
+    TableInsertColumnLeft,
+    TableInsertColumnRight,
+    TableDeleteRow,
+    TableDeleteColumn,
 }
 
 impl Key {
@@ -433,6 +440,12 @@ impl Key {
         Key::TintGreen,
         Key::TintBlue,
         Key::TintPurple,
+        Key::TableInsertRowAbove,
+        Key::TableInsertRowBelow,
+        Key::TableInsertColumnLeft,
+        Key::TableInsertColumnRight,
+        Key::TableDeleteRow,
+        Key::TableDeleteColumn,
     ];
 }
 
@@ -625,6 +638,12 @@ fn en(k: Key) -> &'static str {
         Key::TintGreen => "Green",
         Key::TintBlue => "Blue",
         Key::TintPurple => "Purple",
+        Key::TableInsertRowAbove => "Insert row above",
+        Key::TableInsertRowBelow => "Insert row below",
+        Key::TableInsertColumnLeft => "Insert column to the left",
+        Key::TableInsertColumnRight => "Insert column to the right",
+        Key::TableDeleteRow => "Delete row",
+        Key::TableDeleteColumn => "Delete column",
     }
 }
 
@@ -821,6 +840,12 @@ fn pt(k: Key) -> &'static str {
         Key::TintGreen => "Verde",
         Key::TintBlue => "Azul",
         Key::TintPurple => "Roxo",
+        Key::TableInsertRowAbove => "Inserir linha acima",
+        Key::TableInsertRowBelow => "Inserir linha abaixo",
+        Key::TableInsertColumnLeft => "Inserir coluna à esquerda",
+        Key::TableInsertColumnRight => "Inserir coluna à direita",
+        Key::TableDeleteRow => "Apagar linha",
+        Key::TableDeleteColumn => "Apagar coluna",
     }
 }
 

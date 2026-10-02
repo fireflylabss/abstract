@@ -84,6 +84,12 @@ actions!(
         InsertTable,
         Backtab,
         InsertFootnote,
+        InsertRowAbove,
+        InsertRowBelow,
+        InsertColumnLeft,
+        InsertColumnRight,
+        DeleteTableRow,
+        DeleteTableColumn,
     ]
 );
 
@@ -547,6 +553,50 @@ impl LiveEditor {
         true
     }
 
+    /// Table-structure ops: `op` at the caret's cell rebuilds the markdown
+    /// block through `crate::table::edit` (one undo step); `Removed` drops
+    /// the block and one line break.
+    fn table_op(&mut self, op: pipe::Op, cx: &mut Context<Self>) {
+        let a = &self.analysis;
+        let cursor = self.buf.cursor();
+        let ix = a.line_of(cursor);
+        let Some(t) = a.tables.iter().find(|t| t.contains(&ix)).cloned() else {
+            return;
+        };
+        let text = self.buf.text();
+        let block = a.lines[t.start].0.start..a.lines[t.end - 1].0.end;
+        let line = a.lines[ix].0.clone();
+        let (row, col) = (
+            ix - t.start,
+            pipe::column_at(&text[line.clone()], cursor - line.start),
+        );
+        match pipe::edit(&text[block.clone()], row, col, op) {
+            Some(pipe::Edit::Keep(new, l, c)) => {
+                let mut at = block.start;
+                let mut caret = block.start;
+                for (i, l_) in new.split('\n').enumerate() {
+                    if i == l {
+                        caret = at + pipe::caret_in(l_, c);
+                        break;
+                    }
+                    at += l_.len() + 1;
+                }
+                self.edit(block, &new, Some(caret..caret), cx);
+            }
+            Some(pipe::Edit::Removed) => {
+                let mut r = block.clone();
+                if text[r.end..].starts_with('\n') {
+                    r.end += 1;
+                } else if r.start > 0 {
+                    r.start -= 1;
+                }
+                let caret = r.start;
+                self.edit(r, "", Some(caret..caret), cx);
+            }
+            None => {}
+        }
+    }
+
     fn code_block(&mut self, cx: &mut Context<Self>) {
         let inner = self.selected_text().to_string();
         let text = format!("```\n{inner}\n```\n");
@@ -574,8 +624,14 @@ impl LiveEditor {
         };
         let focus = editor.read(cx).focus.clone();
         let has_sel = !editor.read(cx).buf.sel().is_empty();
-        let (f1, f2, f3) = (focus.clone(), focus.clone(), focus.clone());
-        menu.action_context(focus)
+        let in_table = {
+            let e = editor.read(cx);
+            let ix = e.analysis.line_of(e.buf.cursor());
+            e.analysis.tables.iter().any(|t| t.contains(&ix))
+        };
+        let (f1, f2, f3, f4) = (focus.clone(), focus.clone(), focus.clone(), focus.clone());
+        let menu = menu
+            .action_context(focus)
             .menu_with_disabled(t(Key::Cut), Box::new(Cut), !has_sel)
             .menu_with_disabled(t(Key::Copy), Box::new(Copy), !has_sel)
             .menu(t(Key::Paste), Box::new(Paste))
@@ -641,8 +697,23 @@ impl LiveEditor {
                     .menu(t(Key::Divider), Box::new(Divider))
                     .menu(t(Key::Table), Box::new(InsertTable))
                     .menu(t(Key::Footnote), Box::new(InsertFootnote))
+            });
+        let menu = if in_table {
+            menu.submenu(t(Key::Table), window, cx, move |m, _, _| {
+                m.action_context(f4.clone())
+                    .menu(t(Key::TableInsertRowAbove), Box::new(InsertRowAbove))
+                    .menu(t(Key::TableInsertRowBelow), Box::new(InsertRowBelow))
+                    .separator()
+                    .menu(t(Key::TableInsertColumnLeft), Box::new(InsertColumnLeft))
+                    .menu(t(Key::TableInsertColumnRight), Box::new(InsertColumnRight))
+                    .separator()
+                    .menu(t(Key::TableDeleteRow), Box::new(DeleteTableRow))
+                    .menu(t(Key::TableDeleteColumn), Box::new(DeleteTableColumn))
             })
-            .separator()
+        } else {
+            menu
+        };
+        menu.separator()
             .menu(t(Key::ExportAsHtml), Box::new(crate::keymap::ExportHtml))
             .menu(t(Key::CopyAsHtml), Box::new(crate::keymap::CopyAsHtml))
     }
@@ -1241,6 +1312,32 @@ impl Render for LiveEditor {
                     this.buf.sel().end,
                 );
                 this.edit(r, &new, Some(caret..caret), cx);
+            }))
+            .on_action(
+                cx.listener(|this, _: &InsertRowAbove, _, cx| {
+                    this.table_op(pipe::Op::RowAbove, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &InsertRowBelow, _, cx| {
+                    this.table_op(pipe::Op::RowBelow, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &InsertColumnLeft, _, cx| {
+                    this.table_op(pipe::Op::ColLeft, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &InsertColumnRight, _, cx| {
+                this.table_op(pipe::Op::ColRight, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &DeleteTableRow, _, cx| {
+                    this.table_op(pipe::Op::DeleteRow, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &DeleteTableColumn, _, cx| {
+                this.table_op(pipe::Op::DeleteCol, cx)
             }))
             .on_mouse_down(MouseButton::Right, cx.listener(Self::right_click))
             .on_drop(cx.listener(Self::drop_paths))
