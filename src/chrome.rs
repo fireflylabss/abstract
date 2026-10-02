@@ -4,6 +4,7 @@ use gpui_kit::*;
 use crate::assets::icon;
 use crate::store::SessionWindow;
 use crate::theme::Palette;
+use crate::zoom::z;
 
 pub(crate) fn session_window(window: &Window) -> SessionWindow {
     let wb = window.window_bounds();
@@ -41,9 +42,9 @@ pub(crate) fn window_controls(window: &Window, pal: &Palette) -> impl IntoElemen
     div().map(|row| {
         row.flex()
             .items_center()
-            .gap(px(2.))
-            .ml(px(6.))
-            .pl(px(8.))
+            .gap(z(2.))
+            .ml(z(6.))
+            .pl(z(8.))
             .border_l_1()
             .border_color(rgb(line))
             .when(caps.minimize, |r| {
@@ -110,12 +111,12 @@ pub(crate) fn win_btn(
         .when(cfg!(windows), |b| b.window_control_area(area))
         .role(Role::Button)
         .aria_label(label)
-        .size(px(28.))
+        .size(z(28.))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(6.))
+        .rounded(z(6.))
         .cursor_pointer()
         .occlude()
         .hover(move |s| {
@@ -132,7 +133,7 @@ pub(crate) fn win_btn(
                 s.bg(rgb(active))
             }
         })
-        .child(icon(path, pal.dim).size(px(14.)))
+        .child(icon(path, pal.dim).size(z(14.)))
 }
 
 /// Marks `el` as a window-drag region: primary-button drags move the window.

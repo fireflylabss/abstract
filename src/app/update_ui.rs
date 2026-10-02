@@ -105,13 +105,13 @@ impl AbstractApp {
                 .id(id)
                 .role(Role::Button)
                 .aria_label(label)
-                .h(px(26.))
-                .px(px(8.))
+                .h(z(26.))
+                .px(z(8.))
                 .flex()
                 .items_center()
-                .rounded(px(6.))
+                .rounded(z(6.))
                 .cursor_pointer()
-                .text_size(px(12.))
+                .text_size(z(12.))
                 .text_color(rgb(pal.body))
                 .hover(|s| s.bg(rgb(pal.hover)))
                 .active(|s| s.bg(rgb(pal.active)))
@@ -135,22 +135,22 @@ impl AbstractApp {
                 .role(Role::Dialog)
                 .aria_label(SharedString::from(title.clone()))
                 .absolute()
-                .bottom(px(12.))
-                .right(px(12.))
-                .w(px(300.))
-                .p(px(14.))
+                .bottom(z(12.))
+                .right(z(12.))
+                .w(z(300.))
+                .p(z(14.))
                 .flex()
                 .flex_col()
-                .gap(px(6.))
+                .gap(z(6.))
                 .bg(rgb(pal.menu_bg))
                 .border_1()
                 .border_color(rgb(pal.menu_border))
-                .rounded(px(8.))
+                .rounded(z(8.))
                 .shadow_lg()
                 .occlude()
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(z(13.))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(rgb(pal.fg))
                         .child(title),
@@ -158,8 +158,8 @@ impl AbstractApp {
                 .when_some(body, |el, body| {
                     el.child(
                         div()
-                            .text_size(px(12.))
-                            .line_height(px(18.))
+                            .text_size(z(12.))
+                            .line_height(z(18.))
                             .text_color(rgb(pal.dim))
                             .child(body),
                     )
@@ -167,10 +167,10 @@ impl AbstractApp {
                 .when(idle, |el| {
                     el.child(
                         div()
-                            .mt(px(4.))
+                            .mt(z(4.))
                             .flex()
                             .flex_wrap()
-                            .gap(px(4.))
+                            .gap(z(4.))
                             .when(offer, |el| {
                                 el.child(button("update-install", t(Key::UpdateRestart)).on_click(
                                     cx.listener(|this, _, _, cx| this.install_update(cx)),

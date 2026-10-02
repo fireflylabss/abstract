@@ -130,8 +130,21 @@ fn escape_attr(out: &mut String, s: &str) {
     }
 }
 
+/// The `<mark>` open tag for a tint: `Yellow` keeps the plain `<mark>`
+/// (stylesheet default); the rest carry an inline `background`.
+fn mark_open(tint: Option<md::Tint>) -> &'static str {
+    match tint.unwrap_or_default() {
+        md::Tint::Red => "<mark style=\"background:#ffd7d5\">",
+        md::Tint::Orange => "<mark style=\"background:#ffe0b3\">",
+        md::Tint::Green => "<mark style=\"background:#d2f0d8\">",
+        md::Tint::Blue => "<mark style=\"background:#d3e3fd\">",
+        md::Tint::Purple => "<mark style=\"background:#e8d8fa\">",
+        md::Tint::Yellow => "<mark>",
+    }
+}
+
 /// Text with the app's inline style flags mapped to tags.
-fn styled(out: &mut String, s: &str, f: u16) {
+fn styled(out: &mut String, s: &str, f: u16, tint: Option<md::Tint>) {
     if s.is_empty() {
         return;
     }
@@ -145,7 +158,11 @@ fn styled(out: &mut String, s: &str, f: u16) {
     ];
     for (flag, open, _) in TAGS {
         if f & flag != 0 {
-            out.push_str(open);
+            out.push_str(if flag == md::HIGHLIGHT {
+                mark_open(tint)
+            } else {
+                open
+            });
         }
     }
     escape(out, s);
@@ -594,7 +611,7 @@ impl<'a> Emitter<'a> {
             {
                 j += 1;
             }
-            styled(out, &self.text[i..j], sf);
+            styled(out, &self.text[i..j], sf, self.a.tint_at(i));
             i = j;
         }
     }
@@ -732,7 +749,7 @@ impl<'a> Emitter<'a> {
             {
                 j += 1;
             }
-            styled(out, &self.text[i..j], sf);
+            styled(out, &self.text[i..j], sf, self.a.tint_at(i));
             i = j;
         }
     }
@@ -913,6 +930,16 @@ mod tests {
         assert!(out.contains("<del>del</del>"));
         assert!(out.contains("<code>co</code>"));
         assert!(out.contains("<mark>mk</mark>"));
+    }
+
+    #[test]
+    fn tinted_marks_export_their_colour() {
+        let out = html("=={red}hot== =={blue}cold== ==plain== =={bogus}x==\n");
+        assert!(out.contains("<mark style=\"background:#ffd7d5\">hot</mark>"));
+        assert!(out.contains("<mark style=\"background:#d3e3fd\">cold</mark>"));
+        // Bare and unknown-colour marks export a plain `<mark>`.
+        assert!(out.contains("<mark>plain</mark>"));
+        assert!(out.contains("<mark>{bogus}x</mark>"));
     }
 
     #[test]

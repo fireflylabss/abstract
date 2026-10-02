@@ -7,6 +7,7 @@ use gpui_kit::*;
 use crate::assets::rise;
 use crate::i18n::{Key, t, tf};
 use crate::theme::PaletteAccess;
+use crate::zoom::z;
 
 actions!(abstract_tour, [TourNext, TourBack, TourSkip]);
 
@@ -65,14 +66,14 @@ fn btn(id: &'static str, label: &'static str) -> Stateful<Div> {
         .debug_selector(|| id.into())
         .role(Role::Button)
         .aria_label(label)
-        .h(px(26.))
-        .px(px(8.))
+        .h(z(26.))
+        .px(z(8.))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(6.))
+        .rounded(z(6.))
         .cursor_pointer()
-        .text_size(px(12.))
+        .text_size(z(12.))
         .child(label)
 }
 
@@ -101,31 +102,31 @@ pub fn bubble<V: TourHost>(
                 ("title", t(s.title)),
             ],
         ))
-        .w(px(280.))
+        .w(z(280.))
         .bg(rgb(p.menu_bg))
         .border_1()
         .border_color(rgb(p.menu_border))
-        .rounded(px(8.))
+        .rounded(z(8.))
         .shadow_lg()
         .occlude()
         .on_action(cx.listener(|this, _: &TourNext, window, cx| this.tour_next(window, cx)))
         .on_action(cx.listener(|this, _: &TourBack, window, cx| this.tour_back(window, cx)))
         .on_action(cx.listener(|this, _: &TourSkip, window, cx| this.tour_skip(window, cx)))
-        .p(px(14.))
+        .p(z(14.))
         .flex()
         .flex_col()
-        .gap(px(8.))
+        .gap(z(8.))
         .child(
             div()
-                .text_size(px(13.))
+                .text_size(z(13.))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(rgb(p.fg))
                 .child(tf(s.title, &[])),
         )
         .child(
             div()
-                .text_size(px(12.5))
-                .line_height(px(18.))
+                .text_size(z(12.5))
+                .line_height(z(18.))
                 .text_color(rgb(p.dim))
                 .child(tf(s.body, &[])),
         )
@@ -133,9 +134,9 @@ pub fn bubble<V: TourHost>(
             div()
                 .flex()
                 .items_center()
-                .gap(px(4.))
-                .pt(px(4.))
-                .child(div().text_size(px(11.)).text_color(rgb(p.faint)).child(tf(
+                .gap(z(4.))
+                .pt(z(4.))
+                .child(div().text_size(z(11.)).text_color(rgb(p.faint)).child(tf(
                     Key::TourStepOf,
                     &[("step", &(step + 1).to_string()), ("n", &n.to_string())],
                 )))
@@ -194,7 +195,7 @@ pub fn mark<V: TourHost>(
             anchored()
                 .anchor(anchor)
                 .offset(offset)
-                .snap_to_window_with_margin(px(8.))
+                .snap_to_window_with_margin(z(8.))
                 .child(rise(
                     div().child(bubble(step, focus, cx)),
                     ("tour-step", step),

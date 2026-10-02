@@ -25,6 +25,39 @@ pub const HIGHLIGHT: u16 = 16384;
 /// A callout's title (or its type word when it has no title).
 pub const CALLOUT: u16 = 32768;
 
+/// `=={tint}…==` marker colour; a bare `==…==` reads as `Yellow`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tint {
+    Red,
+    Orange,
+    #[default]
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+}
+
+impl Tint {
+    /// Lowercase `{name}` source form, the inverse of `tint_prefix`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Red => "red",
+            Self::Orange => "orange",
+            Self::Yellow => "yellow",
+            Self::Green => "green",
+            Self::Blue => "blue",
+            Self::Purple => "purple",
+        }
+    }
+}
+
+/// A `==…==` highlight span, delimiters included.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MarkSpan {
+    pub range: Range<usize>,
+    pub tint: Tint,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Body,
@@ -156,6 +189,9 @@ pub struct Analysis {
     pub callouts: Vec<Callout>,
     /// Pipe tables as line indices (end exclusive), in line order.
     pub tables: Vec<Range<usize>>,
+    /// `==…==` marks, in buffer order; `tint` comes from an optional `{color}`
+    /// prefix right after the opener.
+    pub marks: Vec<MarkSpan>,
 }
 
 pub struct Analyzer {
@@ -199,6 +235,7 @@ impl Analyzer {
             images: Vec::new(),
             callouts: Vec::new(),
             tables: Vec::new(),
+            marks: Vec::new(),
         };
         if len == 0 {
             return out;
@@ -614,17 +651,25 @@ impl Analyzer {
         let skip = |o: usize| out.flags[o] & CODE != 0 || out.lines[out.line_of(o)].1 == Kind::Code;
         let comments = delimited(text, b'%', true, &skip);
         let marks = delimited(text, b'=', false, &skip);
-        for (r, flag) in comments
-            .into_iter()
-            .map(|r| (r, MUTED | ITALIC))
-            .chain(marks.into_iter().map(|r| (r, HIGHLIGHT)))
-        {
+        for r in comments {
             let (open, close) = (r.start..r.start + 2, r.end - 2..r.end);
-            out.mark(open.end..close.start, flag);
+            out.mark(open.end..close.start, MUTED | ITALIC);
             out.mark(open.clone(), MARK);
             out.mark(close.clone(), MARK);
             out.conceal(r.clone(), open);
             out.conceal(r, close);
+        }
+        for r in marks {
+            let (mut open, close) = (r.start..r.start + 2, r.end - 2..r.end);
+            // `=={red}x==`: the `{color}` conceals with the opener.
+            let (tint, prefix) = tint_prefix(&text[open.end..close.start]);
+            open.end += prefix;
+            out.mark(open.end..close.start, HIGHLIGHT);
+            out.mark(open.clone(), MARK);
+            out.mark(close.clone(), MARK);
+            out.conceal(r.clone(), open);
+            out.conceal(r.clone(), close);
+            out.marks.push(MarkSpan { range: r, tint });
         }
 
         // tree-sitter-markdown cuts a table short when its last row has
@@ -808,6 +853,31 @@ pub(crate) fn comment_spans(text: &str, skip: &impl Fn(usize) -> bool) -> Vec<Ra
     delimited(text, b'%', true, skip)
 }
 
+/// The `{color}` prefix of a mark's content: `(tint, byte len)`. `(Yellow, 0)`
+/// when absent — unknown names are literal text, not a colour spec.
+pub(crate) fn tint_prefix(content: &str) -> (Tint, usize) {
+    let Some(rest) = content.strip_prefix('{') else {
+        return (Tint::Yellow, 0);
+    };
+    let Some(close) = rest.find('}') else {
+        return (Tint::Yellow, 0);
+    };
+    let tint = match rest[..close].to_ascii_lowercase().as_str() {
+        "red" => Tint::Red,
+        "orange" => Tint::Orange,
+        "yellow" => Tint::Yellow,
+        "green" => Tint::Green,
+        "blue" => Tint::Blue,
+        "purple" => Tint::Purple,
+        _ => return (Tint::Yellow, 0),
+    };
+    // A bare `=={color}==` leaves `{color}` as literal content.
+    if rest.len() == close + 1 {
+        return (Tint::Yellow, 0);
+    }
+    (tint, close + 2)
+}
+
 /// Turn the lines of `block` into a `> [!note]` callout, or back into plain
 /// lines when the first one already is a callout head.
 pub fn toggle_callout(block: &str) -> String {
@@ -869,6 +939,15 @@ impl Analysis {
         let last = self.line_of(range.end.saturating_sub(1).max(range.start));
         for line in &mut self.lines[first..=last] {
             line.1 = kind;
+        }
+    }
+
+    /// The `=={tint}…==` colour covering `offset`, if any.
+    pub fn tint_at(&self, offset: usize) -> Option<Tint> {
+        let i = self.marks.partition_point(|m| m.range.end <= offset);
+        match self.marks.get(i) {
+            Some(m) if m.range.start <= offset => Some(m.tint),
+            _ => None,
         }
     }
 
@@ -1144,6 +1223,65 @@ mod tests {
         let a = Analyzer::new().analyze(m);
         assert!(a.flags[m.find("secret").unwrap()] & MUTED != 0);
         assert!(a.flags[m.find("after").unwrap()] & MUTED == 0);
+    }
+
+    #[test]
+    fn highlight_tints() {
+        let t = "a =={red}hot== =={blue}cold== ==plain== =={bogus}weird==\n";
+        let a = Analyzer::new().analyze(t);
+        let at = |s: &str| t.find(s).unwrap();
+        let spans: Vec<_> = a
+            .marks
+            .iter()
+            .map(|m| (&t[m.range.clone()], m.tint))
+            .collect();
+        assert_eq!(
+            spans,
+            [
+                ("=={red}hot==", Tint::Red),
+                ("=={blue}cold==", Tint::Blue),
+                ("==plain==", Tint::Yellow),
+                ("=={bogus}weird==", Tint::Yellow),
+            ]
+        );
+        // The content is highlighted; the {colour} prefix conceals with the `==`.
+        assert!(a.flags[at("hot")] & HIGHLIGHT != 0);
+        assert!(a.flags[at("{red}")] & MARK != 0);
+        assert!(a.flags[at("{red}")] & HIGHLIGHT == 0);
+        // Unknown names stay literal inside a plain highlight.
+        assert!(a.flags[at("{bogus}")] & HIGHLIGHT != 0);
+        assert_eq!(a.tint_at(at("hot")), Some(Tint::Red));
+        assert_eq!(a.tint_at(at("cold")), Some(Tint::Blue));
+        assert_eq!(a.tint_at(at("plain")), Some(Tint::Yellow));
+        assert_eq!(a.tint_at(at("a")), None);
+        // Caret outside: only content (and a literal unknown prefix) shows.
+        assert_eq!(shown(t, t.len()), "a hot cold plain {bogus}weird\n");
+        // Caret inside the mark reveals `=={red}…==` whole.
+        assert_eq!(
+            shown(t, at("hot")),
+            "a =={red}hot== cold plain {bogus}weird\n"
+        );
+    }
+
+    #[test]
+    fn highlight_tint_edge_cases() {
+        let t = "=={RED}x== =={green}== =={red}{blue}z== =={cyan}w==\n=={purple}a\nb==";
+        let a = Analyzer::new().analyze(t);
+        let at = |s: &str| t.find(s).unwrap();
+        // Case-insensitive names; `{red}{blue}z` is red with a literal `{blue}`.
+        let tints: Vec<_> = a.marks.iter().map(|m| m.tint).collect();
+        assert_eq!(tints, [Tint::Red, Tint::Yellow, Tint::Red, Tint::Yellow]);
+        // A bare `=={green}==` keeps the prefix literal; so does unknown `{cyan}`.
+        assert!(a.flags[at("{green}")] & HIGHLIGHT != 0);
+        assert!(a.flags[at("{cyan}")] & HIGHLIGHT != 0);
+        assert!(a.flags[at("{blue}z")] & HIGHLIGHT != 0);
+        // Marks do not span lines.
+        assert_eq!(a.marks.len(), 4);
+        // Unclosed and code-span `==…==` stay literal.
+        let t = "=={red}open `=={blue}in code==`\n";
+        let a = Analyzer::new().analyze(t);
+        assert!(a.marks.is_empty());
+        assert_eq!(shown(t, t.len()), "=={red}open =={blue}in code==\n");
     }
 
     #[test]

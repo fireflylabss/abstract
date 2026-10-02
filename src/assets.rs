@@ -5,6 +5,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 use crate::theme::Palette;
+use crate::zoom::z;
 // ── Palette: pure monochrome, driven by `Palette` global ──────────────────
 pub(crate) const SANS: &str = "Noto Sans";
 pub(crate) const MONO: &str = "Noto Sans Mono";
@@ -115,7 +116,7 @@ impl AssetSource for AppAssets {
 pub(crate) fn icon(name: &'static str, color: u32) -> Svg {
     svg()
         .path(name)
-        .size(px(16.))
+        .size(z(16.))
         .flex_none()
         .text_color(rgb(color))
 }
@@ -135,7 +136,7 @@ pub(crate) fn rise<E: Styled + IntoElement + 'static>(
             let t = ((t - delay) / (1.0 - delay)).clamp(0.0, 1.0);
             1.0 - (1.0 - t).powi(4)
         }),
-        move |el, d| el.opacity(d).mt(px(travel * (1.0 - d))),
+        move |el, d| el.opacity(d).mt(z(travel * (1.0 - d))),
     )
 }
 pub(crate) fn ease_out_quint(t: f32) -> f32 {
@@ -157,12 +158,12 @@ pub(crate) fn icon_btn(
         .tooltip(move |window, cx| {
             gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
         })
-        .size(px(30.))
+        .size(z(30.))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(6.))
+        .rounded(z(6.))
         .cursor_pointer()
         .occlude()
         .hover(move |s| s.bg(rgb(pal.hover)))
