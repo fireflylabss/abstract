@@ -28,6 +28,7 @@ mod tour;
 mod update;
 mod vault;
 mod watch;
+mod zoom;
 
 use std::borrow::Cow;
 
@@ -104,6 +105,7 @@ fn main() {
                     },
                     |window, cx| {
                         theme::apply(&settings, window.appearance(), cx);
+                        zoom::apply(Some(window), settings.zoom(), cx);
                         let view = cx.new(|cx| {
                             let mut app =
                                 AbstractApp::new(window, cx, settings.clone(), session.clone());

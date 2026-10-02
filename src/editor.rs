@@ -17,6 +17,7 @@ use crate::i18n::{Key, t};
 use crate::md::{self, Analysis, Analyzer, Kind};
 use crate::table::{self as pipe, Align};
 use crate::theme::Palette;
+use crate::zoom::{factor, z};
 
 const MAX_COL: f32 = 700.;
 const PAD_X: f32 = 48.;
@@ -910,7 +911,7 @@ impl LiveEditor {
     }
 
     fn scroll(&mut self, ev: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
-        self.scroll_y -= f32::from(ev.delta.pixel_delta(px(28.)).y);
+        self.scroll_y -= f32::from(ev.delta.pixel_delta(z(28.)).y);
         self.autoscroll = false;
         cx.notify();
     }
@@ -1013,7 +1014,7 @@ impl EntityInputHandler for LiveEditor {
                 l.bounds.left() + px(p.x),
                 l.bounds.top() + px(p.y - l.scroll),
             ),
-            size(px(2.), px(lh)),
+            size(z(2.), px(lh)),
         ))
     }
 
@@ -1300,7 +1301,7 @@ fn shape_cell(
         .text_system()
         .shape_text(
             SharedString::from(display.to_string()),
-            px(GRID_FS),
+            z(GRID_FS),
             runs,
             wrap.map(px),
             None,
@@ -1383,16 +1384,17 @@ fn plan_grid(
             .collect();
         rows.push((ix, cells));
     }
-    let mut widths = vec![GRID_MIN_COL; ncols];
+    let zf = factor();
+    let mut widths = vec![GRID_MIN_COL * zf; ncols];
     for (_, cells) in &rows {
         for (w, cell) in widths.iter_mut().zip(cells) {
-            *w = w.max(f32::from(cell.4.width()).ceil() + GRID_PAD_X * 2.);
+            *w = w.max(f32::from(cell.4.width()).ceil() + GRID_PAD_X * zf * 2.);
         }
     }
     let total: f32 = widths.iter().sum();
     if total > avail {
         for w in &mut widths {
-            *w = (*w * avail / total).max(GRID_MIN_COL);
+            *w = (*w * avail / total).max(GRID_MIN_COL * zf);
         }
     }
     let mut cols = Vec::with_capacity(ncols);
@@ -1411,7 +1413,7 @@ fn plan_grid(
             .enumerate()
             .map(
                 |(c, ((range, segs, display, runs, mut wrapped), &(_, w)))| {
-                    let inner = w - GRID_PAD_X * 2.;
+                    let inner = w - GRID_PAD_X * zf * 2.;
                     if f32::from(wrapped.width()) > inner + 0.5 {
                         wrapped = shape_cell(window, &display, &runs, Some(inner));
                     }
@@ -1441,7 +1443,7 @@ fn plan_grid(
             Planned::Row {
                 cols: cols.clone(),
                 cells,
-                h: lines as f32 * GRID_LH + GRID_PAD_Y * 2.,
+                h: lines as f32 * GRID_LH * zf + GRID_PAD_Y * zf * 2.,
                 header: k == 0,
                 stripe: k > 0 && k % 2 == 0,
                 last: k + 1 == n,
@@ -1671,7 +1673,7 @@ fn cut(segs: Vec<Range<usize>>, hole: &Range<usize>) -> Vec<Range<usize>> {
 
 fn metrics(kind: Kind) -> (f32, f32, f32, f32) {
     // (font size, line height, space above, space below)
-    match kind {
+    let (fs, lh, above, below) = match kind {
         Kind::Heading(1) => (32., 42., 22., 6.),
         Kind::Heading(2) => (25., 34., 18., 4.),
         Kind::Heading(3) => (20.5, 29., 12., 2.),
@@ -1679,7 +1681,9 @@ fn metrics(kind: Kind) -> (f32, f32, f32, f32) {
         Kind::Code => (14., 23., 0., 0.),
         Kind::Table => (14., 24., 0., 0.),
         _ => (16., 28., 0., 0.),
-    }
+    };
+    let zf = factor();
+    (fs * zf, lh * zf, above * zf, below * zf)
 }
 
 fn hsla(c: u32) -> Hsla {
@@ -1743,7 +1747,7 @@ fn run(style: &RunStyle, kind: Kind, flags: u16, accent: Option<u32>, len: usize
     };
     let underline = (flags & (md::UNDERLINE | md::LINK) != 0 && flags & md::MARK == 0).then(|| {
         UnderlineStyle {
-            thickness: px(1.),
+            thickness: z(1.),
             color: (flags & md::LINK != 0).then(|| hsla(pal.muted)),
             wavy: false,
         }
@@ -1751,7 +1755,7 @@ fn run(style: &RunStyle, kind: Kind, flags: u16, accent: Option<u32>, len: usize
     let strikethrough =
         (flags & (md::STRIKE | md::DONE) != 0 && flags & md::MARK == 0).then(|| {
             StrikethroughStyle {
-                thickness: px(1.),
+                thickness: z(1.),
                 color: None,
             }
         });
@@ -1827,6 +1831,7 @@ impl Element for EditorElement {
             wanted.iter().map(|c| load_image(c, window, cx)).collect();
         let ed = self.0.read(cx);
         let pal = *cx.global::<Palette>();
+        let zf = factor();
         let fonts = cx.global::<Fonts>().clone();
         let style = RunStyle {
             pal: &pal,
@@ -1834,7 +1839,7 @@ impl Element for EditorElement {
         };
         let width = f32::from(bounds.size.width);
         let view_h = f32::from(bounds.size.height);
-        let col_w = (width - PAD_X * 2.).clamp(120., MAX_COL);
+        let col_w = (width - PAD_X * zf * 2.).clamp(120. * zf, MAX_COL * zf);
         let col_x = ((width - col_w) / 2.).max(0.);
         // Unfocused: everything renders; focused: the selection reveals syntax.
         let reveal = if ed.focus.is_focused(window) {
@@ -1846,7 +1851,7 @@ impl Element for EditorElement {
         let a = &ed.analysis;
 
         let mut lines = Vec::with_capacity(a.lines.len());
-        let mut y = PAD_TOP;
+        let mut y = PAD_TOP * zf;
         let mut display = String::new();
         let mut runs = Vec::new();
         let mut items = a.items.iter().peekable();
@@ -1886,9 +1891,9 @@ impl Element for EditorElement {
             while matches!(items.peek(), Some(i) if i.line == ix) {
                 item = items.next();
             }
-            let mut indent = if *kind == Kind::Quote { 18. } else { 0. };
+            let mut indent = if *kind == Kind::Quote { 18. * zf } else { 0. };
             if let Some(i) = item {
-                indent += 22. * (i.depth as f32 + 1.);
+                indent += 22. * (i.depth as f32 + 1.) * zf;
             }
             if let Some(plan) = grid_plan.remove(&ix) {
                 let x = col_x + indent;
@@ -1910,8 +1915,8 @@ impl Element for EditorElement {
                                 range: c.range,
                                 segs: c.segs,
                                 wrapped: c.wrapped,
-                                x: x + cx + GRID_PAD_X + c.dx,
-                                top: top + GRID_PAD_Y,
+                                x: x + cx + GRID_PAD_X * zf + c.dx,
+                                top: top + GRID_PAD_Y * zf,
                                 w: c.w,
                             })
                             .collect();
@@ -1923,7 +1928,7 @@ impl Element for EditorElement {
                             stripe,
                             last,
                         };
-                        (h, GRID_LH, Some(row))
+                        (h, GRID_LH * zf, Some(row))
                     }
                 };
                 y = top + rows_h;
@@ -2014,7 +2019,7 @@ impl Element for EditorElement {
                 (wrapped.wrap_boundaries.len() + 1) as f32 * lh
             };
             let mut images = Vec::new();
-            let mut iy = top + text_h + if text_h > 0. { 6. } else { 0. };
+            let mut iy = top + text_h + if text_h > 0. { 6. * zf } else { 0. };
             let max_w = col_w - indent;
             for (_, img) in &line_images {
                 let s = img.size(0);
@@ -2022,12 +2027,12 @@ impl Element for EditorElement {
                 if w <= 0. || h <= 0. {
                     continue;
                 }
-                let k = (max_w / w).min(IMAGE_MAX_H / h).min(1.);
+                let k = (max_w / w).min(IMAGE_MAX_H * zf / h).min(1.);
                 let b = Bounds {
                     origin: point(col_x + indent, iy),
                     size: size(w * k, h * k),
                 };
-                iy += b.size.height + 8.;
+                iy += b.size.height + 8. * zf;
                 images.push(((*img).clone(), b));
             }
             let rows_h = if images.is_empty() { text_h } else { iy - top };
@@ -2050,7 +2055,7 @@ impl Element for EditorElement {
                 grid: None,
             });
         }
-        let content_h = y + PAD_TOP;
+        let content_h = y + PAD_TOP * zf;
         let mut layout = Layout {
             bounds,
             scroll: ed.scroll_y,
@@ -2089,6 +2094,7 @@ impl Element for EditorElement {
         let Some(mut layout) = layout.take() else {
             return;
         };
+        let zf = factor();
         let pal = *cx.global::<Palette>();
         let (focus, sel, cursor, caret, finds, find_current) = {
             let ed = self.0.read(cx);
@@ -2145,20 +2151,20 @@ impl Element for EditorElement {
                         window.paint_quad(
                             fill(
                                 Bounds::new(
-                                    at(layout.col_x - 6., top),
-                                    size(px(layout.col_w + 12.), px(h)),
+                                    at(layout.col_x - 6. * zf, top),
+                                    size(px(layout.col_w + 12. * zf), px(h)),
                                 ),
                                 tint,
                             )
                             .corner_radii(Corners {
-                                top_left: px(if first { 6. } else { 0. }),
-                                top_right: px(if first { 6. } else { 0. }),
-                                bottom_left: px(if last { 6. } else { 0. }),
-                                bottom_right: px(if last { 6. } else { 0. }),
+                                top_left: z(if first { 6. } else { 0. }),
+                                top_right: z(if first { 6. } else { 0. }),
+                                bottom_left: z(if last { 6. } else { 0. }),
+                                bottom_right: z(if last { 6. } else { 0. }),
                             }),
                         );
                         window.paint_quad(fill(
-                            Bounds::new(at(layout.col_x - 6., top), size(px(3.), px(h))),
+                            Bounds::new(at(layout.col_x - 6., top), size(z(3.), px(h))),
                             hsla(c),
                         ));
                     }
@@ -2175,16 +2181,16 @@ impl Element for EditorElement {
                             } else {
                                 transparent_black()
                             };
-                            let edge = |on: bool| px(if on { 1. } else { 0. });
+                            let edge = |on: bool| z(if on { 1. } else { 0. });
                             window.paint_quad(quad(
                                 Bounds::new(at(x, line.top), size(px(w), px(line.rows_h))),
-                                px(0.),
+                                z(0.),
                                 bg,
                                 Edges {
-                                    top: px(1.),
+                                    top: z(1.),
                                     right: edge(c + 1 == g.cols.len()),
                                     bottom: edge(g.last),
-                                    left: px(1.),
+                                    left: z(1.),
                                 },
                                 hsla(pal.rule),
                                 BorderStyle::Solid,
@@ -2192,12 +2198,12 @@ impl Element for EditorElement {
                         }
                     }
                     Kind::Table if let Some((first, last)) = line.table => {
-                        let r = |edge: bool| px(if edge { 6. } else { 0. });
+                        let r = |edge: bool| z(if edge { 6. } else { 0. });
                         window.paint_quad(
                             fill(
                                 Bounds::new(
-                                    at(layout.col_x - 10., line.top),
-                                    size(px(layout.col_w + 20.), px(line.rows_h)),
+                                    at(layout.col_x - 10. * zf, line.top),
+                                    size(px(layout.col_w + 20. * zf), px(line.rows_h)),
                                 ),
                                 hsla(pal.code_bg),
                             )
@@ -2211,15 +2217,15 @@ impl Element for EditorElement {
                     }
                     Kind::Quote => window.paint_quad(fill(
                         Bounds::new(
-                            at(layout.col_x + 2., line.top),
-                            size(px(2.), px(line.rows_h)),
+                            at(layout.col_x + 2. * zf, line.top),
+                            size(z(2.), px(line.rows_h)),
                         ),
                         hsla(pal.rule),
                     )),
                     Kind::Rule if line.wrapped.len() == 0 => window.paint_quad(fill(
                         Bounds::new(
                             at(layout.col_x, line.top + line.lh / 2.),
-                            size(px(layout.col_w), px(1.)),
+                            size(px(layout.col_w), z(1.)),
                         ),
                         hsla(pal.rule),
                     )),
@@ -2246,7 +2252,7 @@ impl Element for EditorElement {
                     for (x, y, w, h) in span_rects(line, s, e, false, full) {
                         window.paint_quad(
                             fill(Bounds::new(at(x, y), size(px(w), px(h))), rgba(color))
-                                .corner_radii(px(2.)),
+                                .corner_radii(z(2.)),
                         );
                     }
                 }
@@ -2268,44 +2274,47 @@ impl Element for EditorElement {
                 if let Some((bullet, depth)) = line.bullet {
                     match bullet {
                         md::Bullet::Dot => {
-                            let cxp = line.x - 13.;
+                            let cxp = line.x - 13. * zf;
                             let cyp = line.top + line.lh / 2.;
                             let filled = depth == 0;
                             window.paint_quad(quad(
-                                Bounds::new(at(cxp - 2.5, cyp - 2.5), size(px(5.), px(5.))),
-                                px(2.5),
+                                Bounds::new(at(cxp - 2.5 * zf, cyp - 2.5 * zf), size(z(5.), z(5.))),
+                                z(2.5),
                                 if filled {
                                     hsla(pal.dim)
                                 } else {
                                     transparent_black()
                                 },
-                                if filled { px(0.) } else { px(1.5) },
+                                if filled { z(0.) } else { z(1.5) },
                                 hsla(pal.dim),
                                 BorderStyle::Solid,
                             ));
                         }
                         md::Bullet::Task { checked } => {
                             let sq = Bounds {
-                                origin: point(line.x - 21., line.top + line.lh / 2. - 7.5),
+                                origin: point(
+                                    line.x - 21. * zf,
+                                    line.top + line.lh / 2. - 7.5 * zf,
+                                ),
                                 size: size(15., 15.),
                             };
                             line.check = Some(sq);
                             let px_sq =
-                                Bounds::new(at(sq.origin.x, sq.origin.y), size(px(15.), px(15.)));
+                                Bounds::new(at(sq.origin.x, sq.origin.y), size(z(15.), z(15.)));
                             if checked {
                                 window.paint_quad(quad(
                                     px_sq,
-                                    px(4.),
+                                    z(4.),
                                     hsla(pal.head),
-                                    px(0.),
+                                    z(0.),
                                     transparent_black(),
                                     BorderStyle::Solid,
                                 ));
                                 window
                                     .paint_svg(
                                         Bounds::new(
-                                            at(sq.origin.x + 2., sq.origin.y + 2.),
-                                            size(px(11.), px(11.)),
+                                            at(sq.origin.x + 2. * zf, sq.origin.y + 2. * zf),
+                                            size(z(11.), z(11.)),
                                         ),
                                         "icons/check.svg".into(),
                                         None,
@@ -2317,9 +2326,9 @@ impl Element for EditorElement {
                             } else {
                                 window.paint_quad(quad(
                                     px_sq,
-                                    px(4.),
+                                    z(4.),
                                     transparent_black(),
-                                    px(1.5),
+                                    z(1.5),
                                     hsla(pal.muted),
                                     BorderStyle::Solid,
                                 ));
@@ -2353,7 +2362,7 @@ impl Element for EditorElement {
                         size(px(b.size.width), px(b.size.height)),
                     );
                     window
-                        .paint_image(r, r, Corners::all(px(6.)), img.clone(), 0, false)
+                        .paint_image(r, r, Corners::all(z(6.)), img.clone(), 0, false)
                         .ok();
                 }
             }
@@ -2361,7 +2370,7 @@ impl Element for EditorElement {
             if focused && let (Some(p), Some((_, lh))) = (next_caret, target) {
                 let h = (lh * 0.72).max(16.);
                 window.paint_quad(fill(
-                    Bounds::new(at(p.x, p.y + (lh - h) / 2.), size(px(2.), px(h))),
+                    Bounds::new(at(p.x, p.y + (lh - h) / 2.), size(z(2.), px(h))),
                     hsla(pal.caret),
                 ));
             }

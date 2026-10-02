@@ -185,23 +185,23 @@ impl AbstractApp {
             t(Key::FindNone).into()
         };
         let small = |id: &'static str, path: &'static str, key: Key, on: bool| {
-            icon_btn(id, path, tf(key, &[]).into(), on, &pal).size(px(24.))
+            icon_btn(id, path, tf(key, &[]).into(), on, &pal).size(z(24.))
         };
         let field = |state: &Entity<InputState>| {
             div().flex_1().min_w_0().child(
                 Input::new(state)
                     .appearance(false)
                     .bordered(false)
-                    .h(px(26.))
+                    .h(z(26.))
                     .w_full()
-                    .text_size(px(13.))
+                    .text_size(z(13.))
                     .text_color(rgb(pal.fg)),
             )
         };
         let top = div()
             .flex()
             .items_center()
-            .gap(px(2.))
+            .gap(z(2.))
             .child(
                 small(
                     "find-toggle-replace",
@@ -220,8 +220,8 @@ impl AbstractApp {
             .child(
                 div()
                     .flex_none()
-                    .px(px(6.))
-                    .text_size(px(11.))
+                    .px(z(6.))
+                    .text_size(z(11.))
                     .text_color(rgb(pal.faint))
                     .child(count),
             )
@@ -249,8 +249,8 @@ impl AbstractApp {
         let bottom = div()
             .flex()
             .items_center()
-            .gap(px(2.))
-            .pl(px(26.))
+            .gap(z(2.))
+            .pl(z(26.))
             .child(field(&bar.with))
             .child(
                 small("replace-one", "icons/replace.svg", Key::ReplaceOne, false)
@@ -272,17 +272,17 @@ impl AbstractApp {
                 .role(Role::Search)
                 .aria_label(t(Key::FindInNote))
                 .absolute()
-                .top(px(8.))
-                .right(px(16.))
-                .w(px(400.))
-                .p(px(4.))
+                .top(z(8.))
+                .right(z(16.))
+                .w(z(400.))
+                .p(z(4.))
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(z(2.))
                 .bg(rgb(pal.menu_bg))
                 .border_1()
                 .border_color(rgb(pal.menu_border))
-                .rounded(px(8.))
+                .rounded(z(8.))
                 .shadow_lg()
                 .occlude()
                 .on_action(

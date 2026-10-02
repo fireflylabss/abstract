@@ -14,14 +14,14 @@ impl Render for DraggedRow {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pal = cx.palette();
         div()
-            .px(px(10.))
-            .py(px(5.))
-            .rounded(px(6.))
+            .px(z(10.))
+            .py(z(5.))
+            .rounded(z(6.))
             .bg(rgb(pal.menu_bg))
             .border_1()
             .border_color(rgb(pal.menu_border))
             .shadow_md()
-            .text_size(px(13.))
+            .text_size(z(13.))
             .text_color(rgb(pal.fg))
             .font_family(cx.global::<Fonts>().sans.clone())
             .child(self.name.clone())

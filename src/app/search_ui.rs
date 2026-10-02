@@ -127,20 +127,20 @@ impl AbstractApp {
         let Some(p) = &self.search else {
             return div().into_any_element();
         };
-        let mut rows = div().flex().flex_col().max_h(px(320.)).overflow_hidden();
+        let mut rows = div().flex().flex_col().max_h(z(320.)).overflow_hidden();
         for (ix, hit) in p.hits.iter().enumerate() {
             let selected = ix == p.selected;
             let title = div()
                 .truncate()
-                .text_size(px(13.))
-                .line_height(px(17.))
+                .text_size(z(13.))
+                .line_height(z(17.))
                 .text_color(rgb(if selected { pal.fg } else { pal.body }))
                 .child(hit.title.clone());
             let mut snippet = div()
                 .flex()
                 .overflow_hidden()
-                .text_size(px(11.))
-                .line_height(px(15.))
+                .text_size(z(11.))
+                .line_height(z(15.))
                 .text_color(rgb(pal.faint));
             if hit.snippet.is_empty() {
                 snippet = snippet.child(div());
@@ -173,12 +173,12 @@ impl AbstractApp {
                     .id(("hit", ix))
                     .role(Role::ListBoxOption)
                     .aria_label(hit.title.clone())
-                    .px(px(10.))
-                    .py(px(6.))
+                    .px(z(10.))
+                    .py(z(6.))
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
-                    .rounded(px(6.))
+                    .gap(z(2.))
+                    .rounded(z(6.))
                     .cursor_pointer()
                     .when(selected, |s| s.bg(rgb(pal.active)))
                     .when(!selected, |s| s.hover(|s| s.bg(rgb(pal.hover))))
@@ -196,9 +196,9 @@ impl AbstractApp {
         if p.hits.is_empty() {
             rows = rows.child(
                 div()
-                    .px(px(10.))
-                    .py(px(8.))
-                    .text_size(px(12.))
+                    .px(z(10.))
+                    .py(z(8.))
+                    .text_size(z(12.))
                     .text_color(rgb(pal.faint))
                     .child(t(Key::NoNotesFound)),
             );
@@ -207,14 +207,14 @@ impl AbstractApp {
             .id("search-palette")
             .key_context("SearchPalette")
             .absolute()
-            .top(px(80.))
+            .top(z(80.))
             .left_1_2()
-            .ml(px(-280.))
-            .w(px(560.))
+            .ml(z(-280.))
+            .w(z(560.))
             .bg(rgb(pal.menu_bg))
             .border_1()
             .border_color(rgb(pal.menu_border))
-            .rounded(px(8.))
+            .rounded(z(8.))
             .shadow_lg()
             .occlude()
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
@@ -233,22 +233,22 @@ impl AbstractApp {
             .on_action(cx.listener(|this, _: &input::Escape, _, cx| this.close_search(cx)))
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_search(cx)))
             .child(
-                div().p(px(4.)).child(
+                div().p(z(4.)).child(
                     Input::new(&p.state)
                         .appearance(false)
                         .bordered(false)
-                        .h(px(30.))
+                        .h(z(30.))
                         .w_full()
-                        .text_size(px(14.))
+                        .text_size(z(14.))
                         .text_color(rgb(pal.fg)),
                 ),
             )
-            .child(div().h(px(1.)).bg(rgb(pal.line)))
-            .child(div().p(px(4.)).child(rows))
+            .child(div().h(z(1.)).bg(rgb(pal.line)))
+            .child(div().p(z(4.)).child(rows))
             .with_animation(
                 "search-palette-in",
                 Animation::new(Duration::from_millis(160)).with_easing(ease_out_quint),
-                |el, d| el.opacity(d).top(px(74. + 6. * d)),
+                |el, d| el.opacity(d).top(z(74. + 6. * d)),
             )
             .into_any_element()
     }
