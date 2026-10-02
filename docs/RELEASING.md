@@ -40,3 +40,42 @@ Each AUR package is its own repo (`packaging/aur/README.md` has the full flow):
 3. `makepkg --printsrcinfo > .SRCINFO`, `makepkg -si` to verify.
 4. Commit `PKGBUILD` + `.SRCINFO` and push to
    `ssh://aur@aur.archlinux.org/<pkgname>.git`.
+
+## Distribution channels
+
+Manifests for non-GitHub distribution channels live under `packaging/`,
+each with a README covering the publish/refresh flow. All of them consume
+the GitHub Release assets and `SHA256SUMS`, so cut the release first, then
+update the channel manifests.
+
+### AUR
+
+`packaging/aur/` — covered in "AUR bump after a release" above.
+
+### Homebrew
+
+`packaging/homebrew/abstract-editor.rb` is a cask installing
+`abstract.app` from the release dmg on both arm and Intel. Copy it into
+the `fireflylabss/homebrew-tap` repo under `Casks/` and refresh `version`
+plus the two `sha256` values from `SHA256SUMS`
+(`abstract-*-macos-*.dmg` lines).
+
+### Flatpak
+
+`packaging/flatpak/` holds the `io.github.fireflylabss.abstract` manifest
+plus the AppStream metainfo. It installs the released Linux tarballs and
+fetches `.desktop`/icon from the tag. Refresh `sha256` for both arches,
+the git source `commit`, and the metainfo `<release>` entry, then open a
+PR against `flathub/flathub` per `packaging/flatpak/README.md`.
+
+### winget
+
+`packaging/winget/` is the three-manifest set (`version`, `installer`,
+`defaultLocale`) for the portable Windows `.exe`. Fill `InstallerSha256`
+from `SHA256SUMS` and submit/refresh via `wingetcreate` against
+`microsoft/winget-pkgs`; see `packaging/winget/README.md`.
+
+The Homebrew, Flatpak and winget submissions need no secrets of their own,
+but the macOS dmg they point at is only Gatekeeper-clean when the Apple
+secrets in "macOS signing and notarization" above are configured — without
+them users get the unsigned-app warning.

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
+PackageIdentifier: Fireflylabss.abstract-editor
+PackageVersion: 0.2.0
+InstallerLocale: en-US
+# The release ships a standalone .exe (scripts/package.sh), not an
+# installer — portable type drops it on PATH via `winget install`.
+InstallerType: portable
+Installers:
+  - Architecture: x64
+    # InstallerSha256: fill from SHA256SUMS
+    # (abstract-<version>-windows-x86_64.exe). See README.md.
+    InstallerUrl: https://github.com/fireflylabss/abstract/releases/download/v0.2.0/abstract-0.2.0-windows-x86_64.exe
+    InstallerSha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    Commands:
+      - abstract
+ManifestType: installer
+ManifestVersion: 1.9.0
