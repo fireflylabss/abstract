@@ -219,11 +219,34 @@ impl AbstractApp {
                         let row = &rows[ix.min(rows.len().saturating_sub(1))];
                         let pill = this.render_row(ix, row, current.as_deref(), cx);
                         let (path, kind) = (row.path.clone(), row.kind);
-                        let weak = cx.entity().downgrade();
-                        let pill =
-                            div().size_full().child(pill.context_menu(move |m, _, _| {
-                                Self::row_menu(&weak, &path, kind, m)
-                            }));
+                        // No menu on rows that are not a real file: the
+                        // new-folder input, an unsaved pending note and the
+                        // row being renamed.
+                        let menuable = !path.ends_with(NEW_FOLDER_ROW)
+                            && this.pending_new.as_ref() != Some(&path)
+                            && !this
+                                .editing
+                                .as_ref()
+                                .is_some_and(|e| !e.create && e.target == path);
+                        let pill = div().size_full().child(if menuable {
+                            let weak = cx.entity().downgrade();
+                            let select = path.clone();
+                            pill
+                                // Right-click selects the row it landed on, so
+                                // the menu acts on what was clicked.
+                                .on_mouse_down(
+                                    MouseButton::Right,
+                                    cx.listener(move |this, _, w, cx| {
+                                        if kind == NodeKind::Note {
+                                            this.open_path(select.clone(), None, w, cx);
+                                        }
+                                    }),
+                                )
+                                .ctx_menu(move |m, _, cx| Self::row_menu(&weak, &path, kind, m, cx))
+                                .into_any_element()
+                        } else {
+                            pill.into_any_element()
+                        });
                         div().h(z(32.)).px(z(8.)).pb(z(2.)).child(rise(
                             pill,
                             ("note-in", ix),

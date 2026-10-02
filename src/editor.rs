@@ -7,8 +7,10 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
+use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::*;
+
+use crate::app::CtxMenuExt;
 
 use crate::attach::Incoming;
 use crate::buffer::Buffer;
@@ -629,17 +631,31 @@ impl LiveEditor {
             let ix = e.analysis.line_of(e.buf.cursor());
             e.analysis.tables.iter().any(|t| t.contains(&ix))
         };
+        let clip = cx.read_from_clipboard();
+        // Paste does something with any payload (paths attach, images attach,
+        // text inserts); Paste plain only makes sense with text.
+        let paste_ok = clip.as_ref().is_some_and(|item| {
+            item.entries().iter().any(|e| match e {
+                ClipboardEntry::ExternalPaths(p) => !p.paths().is_empty(),
+                ClipboardEntry::Image(_) => true,
+                ClipboardEntry::String(s) => !s.text.trim().is_empty(),
+            })
+        });
+        let paste_plain_ok = clip
+            .as_ref()
+            .and_then(|item| item.text())
+            .is_some_and(|t| !t.trim().is_empty());
         let (f1, f2, f3, f4) = (focus.clone(), focus.clone(), focus.clone(), focus.clone());
         let menu = menu
             .action_context(focus)
             .menu_with_disabled(t(Key::Cut), Box::new(Cut), !has_sel)
             .menu_with_disabled(t(Key::Copy), Box::new(Copy), !has_sel)
-            .menu(t(Key::Paste), Box::new(Paste))
-            .menu(t(Key::PastePlain), Box::new(PastePlain))
+            .menu_with_disabled(t(Key::Paste), Box::new(Paste), !paste_ok)
+            .menu_with_disabled(t(Key::PastePlain), Box::new(PastePlain), !paste_plain_ok)
             .menu(t(Key::SelectAll), Box::new(SelectAll))
             .separator()
             .menu(t(Key::AddWikiLink), Box::new(WikiLink))
-            .menu(t(Key::AddLink), Box::new(ExternalLink))
+            .menu_with_disabled(t(Key::AddLink), Box::new(ExternalLink), !has_sel)
             .menu_with_disabled(
                 t(Key::SearchSelection),
                 Box::new(crate::keymap::SearchSelection),
@@ -1354,7 +1370,7 @@ impl Render for LiveEditor {
             )
             .on_scroll_wheel(cx.listener(Self::scroll))
             .child(EditorElement(cx.entity()))
-            .context_menu({
+            .ctx_menu({
                 let editor = cx.entity().downgrade();
                 move |menu, window, cx| Self::context_menu(menu, &editor, window, cx)
             })
