@@ -25,11 +25,12 @@ use gpui_kit::component::menu::ContextMenuExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::assets::{SANS, ease_out_quint, icon, icon_btn, rise};
+use crate::assets::{ease_out_quint, icon, icon_btn, rise};
 use crate::chrome::{
     chrome_left_pad, drag_fallback, session_window, titlebar_drag, window_controls,
 };
 use crate::editor::{Attach, Changed, CompletionKey, LiveEditor, OpenLink};
+use crate::fonts::{self, Fonts};
 use crate::i18n::{self, Key, t, tf};
 use crate::keymap::*;
 use crate::spaces::{self, Spaces};
@@ -345,12 +346,13 @@ impl AbstractApp {
 impl Render for AbstractApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pal = cx.palette();
+        let fonts = cx.global::<Fonts>().clone();
         div()
             .id("abstract-root")
             .key_context("AbstractApp")
             .size_full()
             .flex()
-            .font_family(SANS)
+            .font_family(fonts.sans)
             .bg(rgb(pal.bg))
             .text_color(rgb(pal.body))
             .border_1()

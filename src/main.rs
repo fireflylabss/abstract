@@ -9,6 +9,7 @@ mod code;
 mod crash;
 mod editor;
 mod find;
+mod fonts;
 mod footnote;
 mod html;
 mod i18n;
@@ -66,6 +67,7 @@ fn main() {
                 i18n::LangPref::En => i18n::Lang::En,
                 i18n::LangPref::PtBr => i18n::Lang::PtBr,
             });
+            fonts::apply(&settings, cx);
             let session = Session::load();
             let window_bounds = session.window().map(|w| {
                 let b = Bounds {
