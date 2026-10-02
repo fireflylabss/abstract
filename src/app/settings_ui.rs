@@ -28,6 +28,21 @@ impl AbstractApp {
         self.save_settings(window, cx);
     }
 
+    fn set_discord(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.settings.set_discord(on);
+        self.presence.set_enabled(on);
+        if on {
+            let title = self
+                .current
+                .as_ref()
+                .map(|_| title_of(self.editor.read(cx).text()).to_string());
+            self.presence.set(title, spaces::name_of(&self.dir));
+        }
+        let settings = self.settings.clone();
+        cx.background_spawn(async move { settings.save() }).detach();
+        cx.notify();
+    }
+
     fn pick_palette(
         &mut self,
         dark: bool,
@@ -288,6 +303,7 @@ impl AbstractApp {
 
         let raw = self.settings.raw_tables();
         let updates = self.settings.updates();
+        let discord = self.settings.discord();
         let body = div()
             .id("settings-body")
             .flex_1()
@@ -346,6 +362,15 @@ impl AbstractApp {
             .child(
                 toggle("updates-toggle", t(Key::CheckUpdates), None, updates)
                     .on_click(cx.listener(move |this, _, _, cx| this.set_updates(!updates, cx))),
+            )
+            .child(
+                toggle(
+                    "discord-presence",
+                    t(Key::DiscordPresence),
+                    Some(t(Key::DiscordPresenceHint)),
+                    discord,
+                )
+                .on_click(cx.listener(move |this, _, _, cx| this.set_discord(!discord, cx))),
             )
             .child(section(t(Key::About)))
             .child(

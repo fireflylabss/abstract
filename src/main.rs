@@ -7,6 +7,7 @@ mod buffer;
 mod chrome;
 mod code;
 mod crash;
+mod discord;
 mod editor;
 mod find;
 mod footnote;

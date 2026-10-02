@@ -63,6 +63,10 @@ impl AbstractApp {
         self.open_gen += 1;
         self.save = SaveState::Saved;
         self.words = text.split_whitespace().count();
+        self.presence.set(
+            Some(title_of(&text).to_string()),
+            spaces::name_of(&self.dir),
+        );
         self.sync_editor_dirs(cx);
         // `set_text` emits no `Changed`, so nothing is re-saved.
         self.editor.update(cx, |ed, cx| {

@@ -221,6 +221,7 @@ pub(crate) struct AbstractApp {
     _watcher: Option<SpaceWatcher>,
     _watch_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
+    presence: crate::discord::Presence,
 }
 impl AbstractApp {
     pub(crate) fn new(
@@ -266,6 +267,7 @@ impl AbstractApp {
         let on_appearance = cx.observe_window_appearance(window, |this, window, cx| {
             this.appearance_changed(window, cx);
         });
+        let presence = crate::discord::Presence::new(settings.discord());
 
         let mut app = Self {
             spaces: Spaces {
@@ -327,6 +329,7 @@ impl AbstractApp {
                 on_activation,
                 on_appearance,
             ],
+            presence,
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
         app._io_task = Some(cx.spawn_in(window, async move |this, cx| {
