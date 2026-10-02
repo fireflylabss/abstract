@@ -248,6 +248,13 @@ pub enum Key {
     DiscordPresence,
     DiscordPresenceHint,
     BrowsingNotes,
+    // Table structure
+    TableInsertRowAbove,
+    TableInsertRowBelow,
+    TableInsertColumnLeft,
+    TableInsertColumnRight,
+    TableDeleteRow,
+    TableDeleteColumn,
 }
 
 impl Key {
@@ -416,6 +423,12 @@ impl Key {
         Key::DiscordPresence,
         Key::DiscordPresenceHint,
         Key::BrowsingNotes,
+        Key::TableInsertRowAbove,
+        Key::TableInsertRowBelow,
+        Key::TableInsertColumnLeft,
+        Key::TableInsertColumnRight,
+        Key::TableDeleteRow,
+        Key::TableDeleteColumn,
     ];
 }
 
@@ -600,6 +613,12 @@ fn en(k: Key) -> &'static str {
         Key::DiscordPresence => "Discord presence",
         Key::DiscordPresenceHint => "Show the note you're editing on your Discord profile.",
         Key::BrowsingNotes => "Browsing notes",
+        Key::TableInsertRowAbove => "Insert row above",
+        Key::TableInsertRowBelow => "Insert row below",
+        Key::TableInsertColumnLeft => "Insert column to the left",
+        Key::TableInsertColumnRight => "Insert column to the right",
+        Key::TableDeleteRow => "Delete row",
+        Key::TableDeleteColumn => "Delete column",
     }
 }
 
@@ -788,6 +807,12 @@ fn pt(k: Key) -> &'static str {
             "Mostra no seu perfil do Discord a nota que você está editando."
         }
         Key::BrowsingNotes => "Navegando nas notas",
+        Key::TableInsertRowAbove => "Inserir linha acima",
+        Key::TableInsertRowBelow => "Inserir linha abaixo",
+        Key::TableInsertColumnLeft => "Inserir coluna à esquerda",
+        Key::TableInsertColumnRight => "Inserir coluna à direita",
+        Key::TableDeleteRow => "Apagar linha",
+        Key::TableDeleteColumn => "Apagar coluna",
     }
 }
 
