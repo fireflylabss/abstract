@@ -94,6 +94,15 @@ pub struct Callout {
     pub tone: Tone,
 }
 
+/// A `Kind::Heading` line distilled for the outline panel.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Heading {
+    pub level: u8,
+    pub title: String,
+    /// Byte offset of the line's first char — the jump target.
+    pub offset: usize,
+}
+
 /// The `[!type]` head of a callout line, offsets relative to the line.
 struct CalloutHead {
     tone: Tone,
@@ -892,6 +901,35 @@ impl Analysis {
         }
         out
     }
+
+    /// One entry per `Kind::Heading` line, in buffer order, for the outline.
+    pub fn headings(&self, text: &str) -> Vec<Heading> {
+        self.lines
+            .iter()
+            .filter_map(|(r, k)| {
+                let Kind::Heading(level) = k else {
+                    return None;
+                };
+                Some(Heading {
+                    level: *level,
+                    title: heading_title(text.get(r.clone()).unwrap_or_default()),
+                    offset: r.start,
+                })
+            })
+            .collect()
+    }
+}
+
+/// Display text of a heading line: ATX `#` markers and a `## … ##` closing
+/// run stripped; a setext title passes through untouched.
+fn heading_title(raw: &str) -> String {
+    let t = raw.trim().trim_start_matches('#').trim();
+    let cut = t.len() - t.trim_end_matches('#').len();
+    // A trailing `#` run only closes the heading when a space precedes it.
+    if cut < t.len() && t[..cut].ends_with(' ') {
+        return t[..cut].trim_end().to_string();
+    }
+    t.to_string()
 }
 
 fn walk(cursor: &mut TreeCursor<'_>, mut f: impl FnMut(Node<'_>) -> bool) {

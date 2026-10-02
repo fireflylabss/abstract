@@ -4,6 +4,7 @@ mod find_ui;
 mod links_ui;
 mod main_view;
 mod notes;
+mod outline;
 mod rename;
 mod save;
 mod search_ui;
@@ -220,6 +221,9 @@ pub(crate) struct AbstractApp {
     _watcher: Option<SpaceWatcher>,
     _watch_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
+    /// Right-side outline panel; `outline_gen` keys its slide animation.
+    outline_open: bool,
+    outline_gen: usize,
 }
 impl AbstractApp {
     pub(crate) fn new(
@@ -326,8 +330,11 @@ impl AbstractApp {
                 on_activation,
                 on_appearance,
             ],
+            outline_open: false,
+            outline_gen: 0,
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
+        app.outline_open = app.settings.outline();
         app._io_task = Some(cx.spawn_in(window, async move |this, cx| {
             let spaces = cx
                 .background_executor()
@@ -387,6 +394,7 @@ impl Render for AbstractApp {
                 cx.listener(|this, _: &OpenSettings, window, cx| this.toggle_settings(window, cx)),
             )
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
+            .on_action(cx.listener(|this, _: &ToggleOutline, _, cx| this.toggle_outline(cx)))
             .child(self.render_sidebar(cx))
             .child(self.render_main(window, cx))
             .when(self.settings_open, |el| el.child(self.render_settings(cx)))

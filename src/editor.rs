@@ -651,6 +651,11 @@ impl LiveEditor {
         window.focus(&self.focus, cx);
     }
 
+    /// Heading lines for the outline panel, in buffer order.
+    pub fn headings(&self) -> Vec<md::Heading> {
+        self.analysis.headings(self.buf.text())
+    }
+
     pub fn set_completing(&mut self, on: bool) {
         self.completing = on;
     }
