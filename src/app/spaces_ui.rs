@@ -186,13 +186,17 @@ impl AbstractApp {
         self.target_folder = Some(path);
         cx.notify();
     }
-    pub(crate) fn render_spaces_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_spaces_menu(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let pal = cx.palette();
         let removable = self.spaces.paths.len() > 1;
         let mut rows = div().flex().flex_col().gap(z(2.)).p(z(4.));
         for (ix, path) in self.spaces.paths.iter().enumerate() {
             let active = ix == self.spaces.active;
-            rows = rows.child(
+            rows = rows.child(hover_bg(
                 div()
                     .id(("space", ix))
                     .group("space-row")
@@ -205,7 +209,6 @@ impl AbstractApp {
                     .gap(z(8.))
                     .rounded(z(6.))
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgb(pal.hover)))
                     .active(|s| s.bg(rgb(pal.active)))
                     .on_click(
                         cx.listener(move |this, _, window, cx| this.switch_space(ix, window, cx)),
@@ -237,7 +240,7 @@ impl AbstractApp {
                         row.child(icon("icons/check.svg", pal.fg).size(z(14.)))
                     })
                     .when(!active && removable, |row| {
-                        row.child(
+                        row.child(hover_bg(
                             div()
                                 .id(("space-remove", ix))
                                 .role(Role::Button)
@@ -249,21 +252,35 @@ impl AbstractApp {
                                 .rounded(z(6.))
                                 .invisible()
                                 .group_hover("space-row", |s| s.visible())
-                                .hover(|s| s.bg(rgb(pal.active)))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
                                     this.remove_space(ix, window, cx);
                                 }))
                                 .child(icon("icons/close.svg", pal.dim).size(z(12.))),
-                        )
+                            ("space-remove", ix),
+                            None,
+                            pal.active,
+                            window,
+                            cx,
+                        ))
                     }),
-            );
+                ("space", ix),
+                None,
+                pal.hover,
+                window,
+                cx,
+            ));
+        }
+        let ps = presence("spaces-menu", self.spaces_open, window, cx);
+        if !ps.should_render() {
+            return div().into_any_element();
         }
         let menu = div()
             .id("spaces-menu")
             .role(Role::Menu)
             .absolute()
-            .top(z(44.))
+            .top(z(38. + 6. * ps.progress))
+            .opacity(ps.progress)
             .left(z(8.))
             .w(z(SIDEBAR_W - 16.))
             .bg(rgb(pal.menu_bg))
@@ -289,7 +306,7 @@ impl AbstractApp {
             .child(rows)
             .child(div().h(z(1.)).bg(rgb(pal.line)))
             .child(
-                div().p(z(4.)).child(
+                div().p(z(4.)).child(hover_bg(
                     div()
                         .id("open-space")
                         .role(Role::MenuItem)
@@ -302,17 +319,17 @@ impl AbstractApp {
                         .cursor_pointer()
                         .text_size(z(13.))
                         .text_color(rgb(pal.body))
-                        .hover(|s| s.bg(rgb(pal.hover)))
                         .active(|s| s.bg(rgb(pal.active)))
                         .on_click(cx.listener(|this, _, window, cx| this.open_space(window, cx)))
                         .child(icon("icons/folder-add.svg", pal.dim).size(z(15.)))
                         .child(t(Key::OpenFolderAsSpace)),
-                ),
+                    "open-space",
+                    None,
+                    pal.hover,
+                    window,
+                    cx,
+                )),
             );
-        menu.with_animation(
-            "spaces-menu-in",
-            Animation::new(Duration::from_millis(180)).with_easing(ease_out_quint),
-            |el, d| el.opacity(d).top(z(38. + 6. * d)),
-        )
+        menu.into_any_element()
     }
 }

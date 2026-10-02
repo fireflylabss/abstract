@@ -26,7 +26,10 @@ use gpui_kit::component::menu::ContextMenuExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::assets::{ease_out_quint, icon, icon_btn, rise};
+use crate::assets::{
+    MOTION_HOVER_MS, MOTION_IN_MS, MOTION_OUT_MS, ease_out_quint, hover_bg, icon, icon_btn,
+    presence, rise,
+};
 use crate::chrome::{
     chrome_left_pad, drag_fallback, session_window, titlebar_drag, window_controls,
 };
@@ -402,9 +405,9 @@ impl Render for AbstractApp {
             .on_action(cx.listener(|this, _: &ZoomIn, window, cx| this.zoom_in(window, cx)))
             .on_action(cx.listener(|this, _: &ZoomOut, window, cx| this.zoom_out(window, cx)))
             .on_action(cx.listener(|this, _: &ZoomReset, window, cx| this.zoom_reset(window, cx)))
-            .child(self.render_sidebar(cx))
+            .child(self.render_sidebar(window, cx))
             .child(self.render_main(window, cx))
-            .when(self.settings_open, |el| el.child(self.render_settings(cx)))
+            .child(self.render_settings(window, cx))
     }
 }
 
