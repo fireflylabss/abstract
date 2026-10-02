@@ -1,4 +1,5 @@
 mod attach_ui;
+mod ctx_menu;
 mod export_ui;
 mod files_menu;
 mod find_ui;
@@ -22,7 +23,6 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
 use gpui_kit::component::input::{self, Input, InputEvent, InputState};
-use gpui_kit::component::menu::ContextMenuExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
@@ -41,6 +41,7 @@ use crate::tour;
 use crate::vault::{self, NodeKind};
 use crate::watch::SpaceWatcher;
 pub(crate) use crate::zoom::z;
+pub(crate) use ctx_menu::CtxMenuExt;
 
 /// Locks `m`, recovering the guard if a previous holder panicked.
 pub(crate) fn guard<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {

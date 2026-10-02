@@ -116,13 +116,28 @@ impl AbstractApp {
         self.new_folder(window, cx);
     }
 
-    /// Right-click menu for a sidebar row.
+    /// Right-click menu for a sidebar row. The caller already guarantees the
+    /// row is a real file/folder (never the pending-new or new-folder input
+    /// rows), so every item here acts on something on disk.
     pub(crate) fn row_menu(
         this: &WeakEntity<Self>,
         path: &Path,
         kind: NodeKind,
         mut menu: PopupMenu,
+        cx: &mut Context<PopupMenu>,
     ) -> PopupMenu {
+        // Focus returns to the editor when the menu closes (items dispatch
+        // through `on_click`, not the action context).
+        let (is_current, focus) = this.upgrade().map_or((false, None), |app| {
+            let app = app.read(cx);
+            (
+                app.current.as_ref().is_some_and(|c| c.path() == path),
+                Some(app.editor.focus_handle(cx)),
+            )
+        });
+        if let Some(focus) = focus {
+            menu = menu.action_context(focus);
+        }
         let item =
             |label: &'static str,
              f: fn(&mut Self, PathBuf, NodeKind, &mut Window, &mut Context<Self>)| {
@@ -137,9 +152,12 @@ impl AbstractApp {
         match kind {
             NodeKind::Note => {
                 menu = menu
-                    .item(item(t(Key::Open), |this, p, _, w, cx| {
-                        this.open_path(p, None, w, cx)
-                    }))
+                    .item(
+                        item(t(Key::Open), |this, p, _, w, cx| {
+                            this.open_path(p, None, w, cx)
+                        })
+                        .disabled(is_current),
+                    )
                     .item(item(t(Key::Rename), |this, p, k, w, cx| {
                         this.start_rename(p, k, w, cx)
                     }))
