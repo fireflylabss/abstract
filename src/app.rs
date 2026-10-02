@@ -1,4 +1,5 @@
 mod attach_ui;
+mod export_ui;
 mod files_menu;
 mod find_ui;
 mod links_ui;
@@ -30,7 +31,7 @@ use crate::assets::{SANS, ease_out_quint, icon, icon_btn, rise};
 use crate::chrome::{
     chrome_left_pad, drag_fallback, session_window, titlebar_drag, window_controls,
 };
-use crate::editor::{Attach, Changed, CompletionKey, LiveEditor, OpenLink};
+use crate::editor::{Attach, Changed, CompletionKey, LinkHover, LiveEditor, OpenLink};
 use crate::i18n::{self, Key, t, tf};
 use crate::keymap::*;
 use crate::spaces::{self, Spaces};
@@ -54,7 +55,8 @@ const NEW_FOLDER_ROW: &str = ".abstract-new-folder";
 // ── Notes on disk ─────────────────────────────────────────────────────────
 
 fn title_of(text: &str) -> SharedString {
-    text.lines()
+    let body = crate::md::front_matter(text).map_or(text, |fm| &text[fm.end..]);
+    body.lines()
         .map(|l| l.trim().trim_start_matches('#').trim())
         .find(|l| !l.is_empty())
         .map(|l| SharedString::from(l.chars().take(80).collect::<String>()))
@@ -244,6 +246,8 @@ pub(crate) struct AbstractApp {
     _watcher: Option<SpaceWatcher>,
     _watch_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
+    /// Ctrl/`Cmd`-hover `[[link]]` preview, cached by `set_link_preview`.
+    preview: Option<links_ui::LinkPreview>,
     /// Right-side outline panel; `outline_gen` keys its slide animation.
     outline_open: bool,
     outline_gen: usize,
@@ -266,6 +270,7 @@ impl AbstractApp {
     ) -> Self {
         let editor = cx.new(LiveEditor::new);
         editor.update(cx, |ed, cx| ed.set_raw_tables(settings.raw_tables(), cx));
+
         let on_quit = cx.on_app_quit(|this, cx| {
             this.flush_blocking(cx);
             async {}
@@ -329,6 +334,7 @@ impl AbstractApp {
             _watcher: None,
             _watch_task: None,
             _subs: vec![on_quit, on_bounds, on_activation, on_appearance],
+            preview: None,
             outline_open: false,
             outline_gen: 0,
             tabs: Vec::new(),
@@ -386,7 +392,12 @@ impl AbstractApp {
                 this.attach(ev.0.clone(), cx);
             }
         });
-        vec![on_change, on_completion, on_link, on_attach]
+        let on_link_hover = cx.subscribe(editor, |this: &mut Self, editor, ev: &LinkHover, cx| {
+            if this.tab_ix(&editor) == this.active {
+                this.set_link_preview(ev.0.as_deref(), cx);
+            }
+        });
+        vec![on_change, on_completion, on_link, on_attach, on_link_hover]
     }
 
     fn tab_ix(&self, editor: &Entity<LiveEditor>) -> Option<usize> {
@@ -462,6 +473,10 @@ impl Render for AbstractApp {
             )
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
             .on_action(cx.listener(|this, _: &ToggleOutline, _, cx| this.toggle_outline(cx)))
+            .on_action(
+                cx.listener(|this, _: &ExportHtml, window, cx| this.export_current(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &CopyAsHtml, _, cx| this.copy_as_html(cx)))
             .on_action(
                 cx.listener(|this, _: &NextTab, window, cx| this.cycle_tab(true, window, cx)),
             )

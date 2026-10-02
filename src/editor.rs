@@ -182,6 +182,10 @@ pub struct CompletionKey(pub CompletionMove);
 /// `insert_text` with the markdown that references them.
 pub struct Attach(pub Vec<Incoming>);
 
+/// Ctrl/`Cmd`-hover over a `[[link]]` began or ended; payload is the target
+/// text (`None` on dismiss).
+pub struct LinkHover(pub Option<String>);
+
 pub struct LiveEditor {
     focus: FocusHandle,
     buf: Buffer,
@@ -206,12 +210,16 @@ pub struct LiveEditor {
     find_current: Option<usize>,
     /// Tables stay Markdown source instead of rendering as a grid.
     raw_tables: bool,
+    /// `[[…]]` under the pointer while the link-follow modifier is held:
+    /// (whole span, target span).
+    link_hover: Option<(Range<usize>, Range<usize>)>,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
 impl EventEmitter<OpenLink> for LiveEditor {}
 impl EventEmitter<CompletionKey> for LiveEditor {}
 impl EventEmitter<Attach> for LiveEditor {}
+impl EventEmitter<LinkHover> for LiveEditor {}
 
 impl Focusable for LiveEditor {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -240,6 +248,7 @@ impl LiveEditor {
             finds: Vec::new(),
             find_current: None,
             raw_tables: false,
+            link_hover: None,
         }
     }
 
@@ -597,6 +606,8 @@ impl LiveEditor {
                     .menu(t(Key::InlineCode), Box::new(InlineCode))
                     .menu(t(Key::Highlight), Box::new(Highlight))
                     .menu(t(Key::Comment), Box::new(Comment))
+                    .separator()
+                    .menu(t(Key::CopyAsHtml), Box::new(crate::keymap::CopyAsHtml))
             })
             .submenu(t(Key::Paragraph), window, cx, move |m, _, _| {
                 m.action_context(f2.clone())
@@ -619,10 +630,17 @@ impl LiveEditor {
                     .menu(t(Key::Table), Box::new(InsertTable))
                     .menu(t(Key::Footnote), Box::new(InsertFootnote))
             })
+            .separator()
+            .menu(t(Key::ExportAsHtml), Box::new(crate::keymap::ExportHtml))
+            .menu(t(Key::CopyAsHtml), Box::new(crate::keymap::CopyAsHtml))
     }
 
     pub fn text(&self) -> &str {
         self.buf.text()
+    }
+
+    pub(crate) fn analysis(&self) -> &Analysis {
+        &self.analysis
     }
 
     /// Replace the whole buffer without emitting `Changed` (loading a note).
@@ -633,6 +651,7 @@ impl LiveEditor {
         self.scroll_y = 0.;
         self.caret = None;
         self.analysis = self.analyzer.analyze(self.buf.text());
+        self.set_link_hover(None, cx);
         cx.notify();
     }
 
@@ -693,6 +712,15 @@ impl LiveEditor {
         Some(point(p.x, p.y - l.scroll + lh))
     }
 
+    /// Bottom-left of the hovered `[[link]]` in editor-element coordinates
+    /// (hover-preview card anchor).
+    pub fn preview_anchor(&self) -> Option<Point<f32>> {
+        let l = self.layout.as_ref()?;
+        let (range, _) = self.link_hover.as_ref()?;
+        let (p, lh) = l.position(range.start)?;
+        Some(point(p.x, p.y - l.scroll + lh))
+    }
+
     // ── Editing ──────────────────────────────────────────────────────────
 
     fn edit(
@@ -710,6 +738,7 @@ impl LiveEditor {
         self.analysis = self.analyzer.analyze(self.buf.text());
         self.autoscroll = true;
         self.goal_x = None;
+        self.set_link_hover(None, cx);
         cx.emit(Changed);
         cx.notify();
     }
@@ -796,6 +825,33 @@ impl LiveEditor {
         } else {
             l.hit(x, y)
         })
+    }
+
+    /// `[[…]]` covering `off` whose syntax the selection is not revealing:
+    /// (whole span, target span).
+    fn link_at(&self, off: usize) -> Option<(Range<usize>, Range<usize>)> {
+        let sel = self.buf.sel();
+        self.analysis.wiki_links.iter().find_map(|l| {
+            (l.range.contains(&off) && !(sel.start <= l.range.end && l.range.start <= sel.end))
+                .then(|| (l.range.clone(), l.target.clone()))
+        })
+    }
+
+    fn set_link_hover(
+        &mut self,
+        hover: Option<(Range<usize>, Range<usize>)>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.link_hover == hover {
+            return;
+        }
+        self.link_hover = hover;
+        cx.emit(LinkHover(
+            self.link_hover
+                .as_ref()
+                .map(|(_, t)| self.buf.text()[t.clone()].to_string()),
+        ));
+        cx.notify();
     }
 
     fn mouse_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -901,12 +957,35 @@ impl LiveEditor {
     }
 
     fn mouse_move(&mut self, ev: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.selecting
-            && ev.pressed_button == Some(MouseButton::Left)
-            && let Some(off) = self.offset_at(ev.position)
-        {
-            self.select_to(off, cx);
+        if self.selecting && ev.pressed_button == Some(MouseButton::Left) {
+            if let Some(off) = self.offset_at(ev.position) {
+                self.select_to(off, cx);
+            }
+            return;
         }
+        // Ctrl/`Cmd`-hover over a concealed `[[link]]` previews the target.
+        let hover = if ev.modifiers.secondary() {
+            self.offset_at(ev.position)
+                .and_then(|off| self.link_at(off))
+        } else {
+            None
+        };
+        self.set_link_hover(hover, cx);
+    }
+
+    fn modifiers_changed(
+        &mut self,
+        ev: &ModifiersChangedEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let hover = if ev.modifiers.secondary() {
+            self.offset_at(window.mouse_position())
+                .and_then(|off| self.link_at(off))
+        } else {
+            None
+        };
+        self.set_link_hover(hover, cx);
     }
 
     fn scroll(&mut self, ev: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -1202,6 +1281,13 @@ impl Render for LiveEditor {
                 cx.listener(|this, _, _, _| this.selecting = false),
             )
             .on_scroll_wheel(cx.listener(Self::scroll))
+            .on_modifiers_changed(cx.listener(Self::modifiers_changed))
+            .on_hover(cx.listener(|this, hovered, _, cx| {
+                if !hovered {
+                    this.set_link_hover(None, cx);
+                }
+            }))
+            .on_mouse_exit(cx.listener(|this, _, _, cx| this.set_link_hover(None, cx)))
             .child(EditorElement(cx.entity()))
             .context_menu({
                 let editor = cx.entity().downgrade();
@@ -1844,7 +1930,51 @@ impl Element for EditorElement {
                 }
             }
         }
+        // Front matter with at least one key collapses to a single dimmed
+        // row until the selection enters the block (conceal-style reveal).
+        let fm = a
+            .frontmatter
+            .as_ref()
+            .filter(|fm| fm.keys > 0 && reveal.start > fm.end);
         for (ix, (buf, kind)) in a.lines.iter().enumerate() {
+            if let Some(fm) = fm.filter(|fm| fm.lines.contains(&ix)) {
+                if ix == 0 {
+                    let label = crate::i18n::tf(Key::Properties, &[("n", &fm.keys.to_string())]);
+                    let (fs, lh, above, below) = metrics(Kind::Meta);
+                    let wrapped = window
+                        .text_system()
+                        .shape_text(
+                            SharedString::from(label.clone()),
+                            px(fs),
+                            &[run(&pal, Kind::Body, md::MUTED, None, label.len())],
+                            Some(px(col_w)),
+                            None,
+                        )
+                        .ok()
+                        .and_then(|mut v| v.pop())
+                        .unwrap_or_default();
+                    let top = y + above;
+                    y = top + lh + below;
+                    lines.push(LineBox {
+                        buf: 0..fm.end,
+                        segs: std::iter::once(0..0).collect(),
+                        kind: Kind::Meta,
+                        x: col_x,
+                        top,
+                        lh,
+                        rows_h: lh,
+                        pad_bottom: below,
+                        wrapped,
+                        bullet: None,
+                        check: None,
+                        images: Vec::new(),
+                        callout: None,
+                        table: None,
+                        grid: None,
+                    });
+                }
+                continue;
+            }
             while matches!(tables.peek(), Some(t) if t.end <= ix) {
                 tables.next();
             }
