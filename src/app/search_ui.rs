@@ -5,13 +5,22 @@ pub(super) struct SearchPalette {
     hits: Vec<crate::search::Hit>,
     selected: usize,
     generation: u64,
+    closing: bool,
+    close_gen: u64,
     _sub: Subscription,
     _task: Option<Task<()>>,
 }
 
 impl AbstractApp {
     pub(crate) fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.search.is_some() {
+        if let Some(p) = &mut self.search {
+            // Reopening mid-exit cancels the close: the entrance replays.
+            if !p.closing {
+                return;
+            }
+            p.closing = false;
+            p.state.update(cx, |s, cx| s.focus(window, cx));
+            cx.notify();
             return;
         }
         let state = cx.new(|cx| InputState::new(window, cx).placeholder(t(Key::SearchPlaceholder)));
@@ -32,6 +41,8 @@ impl AbstractApp {
             hits: Vec::new(),
             selected: 0,
             generation: 0,
+            closing: false,
+            close_gen: 0,
             _sub: sub,
             _task: None,
         });
@@ -40,10 +51,33 @@ impl AbstractApp {
     }
 
     fn close_search(&mut self, cx: &mut Context<Self>) {
-        if self.search.take().is_some() {
-            self.focus_editor(cx);
-            cx.notify();
+        // Defer the unmount by the exit duration so the fade-out can play;
+        // `close_gen` cancels the sweep when reopened mid-exit.
+        let Some(p) = &mut self.search else { return };
+        if p.closing {
+            return;
         }
+        p.closing = true;
+        p.close_gen += 1;
+        let cgen = p.close_gen;
+        self.focus_editor(cx);
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(MOTION_OUT_MS))
+                .await;
+            this.update(cx, |this, cx| {
+                if let Some(p) = &mut this.search
+                    && p.closing
+                    && p.close_gen == cgen
+                {
+                    this.search = None;
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
     }
 
     /// (Re)run the query off-thread; a bumped `gen` discards stale results.
@@ -122,11 +156,12 @@ impl AbstractApp {
         self.open_path(hit.0, restore, window, cx);
     }
 
-    pub(crate) fn render_search(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_search(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let pal = cx.palette();
         let Some(p) = &self.search else {
             return div().into_any_element();
         };
+        let closing = p.closing;
         let mut rows = div().flex().flex_col().max_h(z(320.)).overflow_hidden();
         for (ix, hit) in p.hits.iter().enumerate() {
             let selected = ix == p.selected;
@@ -168,30 +203,32 @@ impl AbstractApp {
                     }
                 }
             }
-            rows = rows.child(
-                div()
-                    .id(("hit", ix))
-                    .role(Role::ListBoxOption)
-                    .aria_label(hit.title.clone())
-                    .px(z(10.))
-                    .py(z(6.))
-                    .flex()
-                    .flex_col()
-                    .gap(z(2.))
-                    .rounded(z(6.))
-                    .cursor_pointer()
-                    .when(selected, |s| s.bg(rgb(pal.active)))
-                    .when(!selected, |s| s.hover(|s| s.bg(rgb(pal.hover))))
-                    .active(|s| s.bg(rgb(pal.active)))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        if let Some(p) = &mut this.search {
-                            p.selected = ix;
-                        }
-                        this.open_selected(window, cx);
-                    }))
-                    .child(title)
-                    .when(!hit.snippet.is_empty(), |r| r.child(snippet)),
-            );
+            let row = div()
+                .id(("hit", ix))
+                .role(Role::ListBoxOption)
+                .aria_label(hit.title.clone())
+                .px(z(10.))
+                .py(z(6.))
+                .flex()
+                .flex_col()
+                .gap(z(2.))
+                .rounded(z(6.))
+                .cursor_pointer()
+                .active(|s| s.bg(rgb(pal.active)))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    if let Some(p) = &mut this.search {
+                        p.selected = ix;
+                    }
+                    this.open_selected(window, cx);
+                }))
+                .child(title)
+                .when(!hit.snippet.is_empty(), |r| r.child(snippet));
+            let row = if selected {
+                row.bg(rgb(pal.active))
+            } else {
+                hover_bg(row, ("hit", ix), None, pal.hover, window, cx)
+            };
+            rows = rows.child(row);
         }
         if p.hits.is_empty() {
             rows = rows.child(
@@ -246,9 +283,20 @@ impl AbstractApp {
             .child(div().h(z(1.)).bg(rgb(pal.line)))
             .child(div().p(z(4.)).child(rows))
             .with_animation(
-                "search-palette-in",
-                Animation::new(Duration::from_millis(160)).with_easing(ease_out_quint),
-                |el, d| el.opacity(d).top(z(74. + 6. * d)),
+                ("search-palette", closing as usize),
+                Animation::new(Duration::from_millis(if closing {
+                    MOTION_OUT_MS
+                } else {
+                    MOTION_IN_MS
+                }))
+                .with_easing(ease_out_quint),
+                move |el, d| {
+                    if closing {
+                        el.opacity(1. - d).top(z(80. + 6. * d))
+                    } else {
+                        el.opacity(d).top(z(74. + 6. * d))
+                    }
+                },
             )
             .into_any_element()
     }

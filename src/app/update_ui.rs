@@ -96,26 +96,36 @@ impl AbstractApp {
         }));
     }
 
-    pub(crate) fn render_update(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn render_update(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let state = self.update.as_ref()?;
         let pal = cx.palette();
         let release = state.release();
-        let button = |id: &'static str, label: &'static str| {
-            div()
-                .id(id)
-                .role(Role::Button)
-                .aria_label(label)
-                .h(z(26.))
-                .px(z(8.))
-                .flex()
-                .items_center()
-                .rounded(z(6.))
-                .cursor_pointer()
-                .text_size(z(12.))
-                .text_color(rgb(pal.body))
-                .hover(|s| s.bg(rgb(pal.hover)))
-                .active(|s| s.bg(rgb(pal.active)))
-                .child(label)
+        let button = |id: &'static str, label: &'static str, window: &mut Window, cx: &mut App| {
+            hover_bg(
+                div()
+                    .id(id)
+                    .role(Role::Button)
+                    .aria_label(label)
+                    .h(z(26.))
+                    .px(z(8.))
+                    .flex()
+                    .items_center()
+                    .rounded(z(6.))
+                    .cursor_pointer()
+                    .text_size(z(12.))
+                    .text_color(rgb(pal.body))
+                    .active(|s| s.bg(rgb(pal.active)))
+                    .child(label),
+                id,
+                None,
+                pal.hover,
+                window,
+                cx,
+            )
         };
         let body: Option<SharedString> = match state {
             UpdateState::Available(_) if !self.install.automatic() => {
@@ -129,6 +139,11 @@ impl AbstractApp {
         let idle = !matches!(state, UpdateState::Installing(_));
         let offer = matches!(state, UpdateState::Available(_)) && self.install.automatic();
         let title = tf(Key::UpdateAvailable, &[("v", &release.version)]);
+        let stage: usize = match state {
+            UpdateState::Available(_) => 0,
+            UpdateState::Installing(_) => 1,
+            UpdateState::Failed(..) => 2,
+        };
         Some(
             div()
                 .id("update-card")
@@ -172,25 +187,35 @@ impl AbstractApp {
                             .flex_wrap()
                             .gap(z(4.))
                             .when(offer, |el| {
-                                el.child(button("update-install", t(Key::UpdateRestart)).on_click(
-                                    cx.listener(|this, _, _, cx| this.install_update(cx)),
-                                ))
+                                el.child(
+                                    button("update-install", t(Key::UpdateRestart), window, cx)
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| this.install_update(cx)),
+                                        ),
+                                )
                             })
                             .child(
-                                button("update-notes", t(Key::ReleaseNotes))
+                                button("update-notes", t(Key::ReleaseNotes), window, cx)
                                     .on_click(move |_, _, cx| cx.open_url(&page)),
                             )
-                            .child(button("update-later", t(Key::Later)).on_click(cx.listener(
-                                |this, _, _, cx| {
+                            .child(button("update-later", t(Key::Later), window, cx).on_click(
+                                cx.listener(|this, _, _, cx| {
                                     this.update = None;
                                     cx.notify();
-                                },
-                            )))
-                            .child(button("update-off", t(Key::UpdatesOff)).on_click(
-                                cx.listener(|this, _, _, cx| this.set_updates(false, cx)),
-                            )),
+                                }),
+                            ))
+                            .child(
+                                button("update-off", t(Key::UpdatesOff), window, cx).on_click(
+                                    cx.listener(|this, _, _, cx| this.set_updates(false, cx)),
+                                ),
+                            ),
                     )
                 })
+                .with_animation(
+                    ("update-card", stage),
+                    Animation::new(Duration::from_millis(MOTION_IN_MS)).with_easing(ease_out_quint),
+                    |el, d| el.opacity(d).bottom(z(12. - 6. * (1. - d))),
+                )
                 .into_any_element(),
         )
     }

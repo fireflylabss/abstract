@@ -57,6 +57,7 @@ impl AbstractApp {
         ix: usize,
         row: &vault::Row,
         current: Option<&Path>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let pal = cx.palette();
@@ -84,10 +85,7 @@ impl AbstractApp {
             .text_size(z(13.))
             .line_height(z(18.))
             .text_color(rgb(if active { pal.fg } else { pal.dim }))
-            .when(active, |s| s.bg(rgb(pal.active)))
-            .when(!active, |s| {
-                s.hover(|s| s.bg(rgb(pal.hover)).text_color(rgb(pal.body)))
-            })
+            .when(!active, |s| s.hover(|s| s.text_color(rgb(pal.body))))
             .active(|s| s.bg(rgb(pal.active)));
         if !editing {
             let dragged = files_menu::DraggedRow {
@@ -158,7 +156,7 @@ impl AbstractApp {
             pill = pill.child(div().flex_1().min_w_0().truncate().child(row.name.clone()));
             // Hover actions: rename, delete.
             pill = pill
-                .child(
+                .child(hover_bg(
                     div()
                         .id(("row-rename", ix))
                         .role(Role::Button)
@@ -171,7 +169,6 @@ impl AbstractApp {
                         .rounded(z(6.))
                         .invisible()
                         .group_hover("note-row", |s| s.visible())
-                        .hover(|s| s.bg(rgb(pal.active)))
                         .on_click(cx.listener({
                             let path = path.clone();
                             move |this, _, window, cx| {
@@ -180,8 +177,13 @@ impl AbstractApp {
                             }
                         }))
                         .child(icon("icons/pencil.svg", pal.dim).size(z(12.))),
-                )
-                .child(
+                    ("row-rename", ix),
+                    None,
+                    pal.active,
+                    window,
+                    cx,
+                ))
+                .child(hover_bg(
                     div()
                         .id(("row-delete", ix))
                         .role(Role::Button)
@@ -194,30 +196,43 @@ impl AbstractApp {
                         .rounded(z(6.))
                         .invisible()
                         .group_hover("note-row", |s| s.visible())
-                        .hover(|s| s.bg(rgb(pal.active)))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.delete_row(path.clone(), kind, window, cx);
                         }))
                         .child(icon("icons/delete.svg", pal.dim).size(z(12.))),
-                );
+                    ("row-delete", ix),
+                    None,
+                    pal.active,
+                    window,
+                    cx,
+                ));
+        }
+        if active {
+            pill = pill.bg(rgb(pal.active));
+        } else {
+            pill = hover_bg(pill, ("row", ix), None, pal.hover, window, cx);
         }
         pill
     }
 
-    pub(crate) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_sidebar(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let rows = self.flat_rows();
         let count = rows.len();
         let list = uniform_list(
             "notes",
             count,
-            cx.processor(move |this, range: Range<usize>, _window, cx| {
+            cx.processor(move |this, range: Range<usize>, window, cx| {
                 let rows = this.flat_rows();
                 let current = this.current.as_ref().map(|c| c.path());
                 range
                     .map(|ix| {
                         let row = &rows[ix.min(rows.len().saturating_sub(1))];
-                        let pill = this.render_row(ix, row, current.as_deref(), cx);
+                        let pill = this.render_row(ix, row, current.as_deref(), window, cx);
                         let (path, kind) = (row.path.clone(), row.kind);
                         // No menu on rows that are not a real file: the
                         // new-folder input, an unsaved pending note and the
@@ -297,45 +312,59 @@ impl AbstractApp {
                             .child(
                                 self.ring(
                                     0,
-                                    div()
-                                        .id("space-switcher")
-                                        .role(Role::Button)
-                                        .aria_label(tf(Key::SwitchSpace, &[]).as_str())
-                                        .flex_1()
-                                        .min_w_0()
-                                        .h(z(30.))
-                                        .px(z(8.))
-                                        .flex()
-                                        .items_center()
-                                        .gap(z(8.))
-                                        .rounded(z(6.))
-                                        .cursor_pointer()
-                                        .occlude()
-                                        .when(self.spaces_open, |s| s.bg(rgb(pal.active)))
-                                        .hover(|s| s.bg(rgb(pal.hover)))
-                                        .active(|s| s.bg(rgb(pal.active)))
-                                        .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                                            cx.stop_propagation()
-                                        })
-                                        .on_click(
-                                            cx.listener(|this, _, _, cx| this.toggle_spaces(cx)),
-                                        )
-                                        .child(icon("icons/folder.svg", pal.fg).size(z(15.)))
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .min_w_0()
-                                                .truncate()
-                                                .text_size(z(13.))
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .text_color(rgb(pal.fg))
-                                                .child(space_name),
-                                        )
-                                        .child(icon("icons/chevrons.svg", pal.faint).size(z(14.)))
-                                        .when_some(
-                                            self.mark(0, Anchor::TopLeft, point(z(0.), z(38.)), cx),
-                                            |s, m| s.child(m),
-                                        ),
+                                    hover_bg(
+                                        div()
+                                            .id("space-switcher")
+                                            .role(Role::Button)
+                                            .aria_label(tf(Key::SwitchSpace, &[]).as_str())
+                                            .flex_1()
+                                            .min_w_0()
+                                            .h(z(30.))
+                                            .px(z(8.))
+                                            .flex()
+                                            .items_center()
+                                            .gap(z(8.))
+                                            .rounded(z(6.))
+                                            .cursor_pointer()
+                                            .occlude()
+                                            .active(|s| s.bg(rgb(pal.active)))
+                                            .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                                cx.stop_propagation()
+                                            })
+                                            .on_click(
+                                                cx.listener(|this, _, _, cx| {
+                                                    this.toggle_spaces(cx)
+                                                }),
+                                            )
+                                            .child(icon("icons/folder.svg", pal.fg).size(z(15.)))
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .truncate()
+                                                    .text_size(z(13.))
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .text_color(rgb(pal.fg))
+                                                    .child(space_name),
+                                            )
+                                            .child(
+                                                icon("icons/chevrons.svg", pal.faint).size(z(14.)),
+                                            )
+                                            .when_some(
+                                                self.mark(
+                                                    0,
+                                                    Anchor::TopLeft,
+                                                    point(z(0.), z(38.)),
+                                                    cx,
+                                                ),
+                                                |s, m| s.child(m),
+                                            ),
+                                        "space-switcher",
+                                        self.spaces_open.then_some(pal.active),
+                                        pal.hover,
+                                        window,
+                                        cx,
+                                    ),
                                     &pal,
                                 ),
                             )
@@ -348,6 +377,8 @@ impl AbstractApp {
                                         t(Key::NewFolder).into(),
                                         false,
                                         &pal,
+                                        window,
+                                        cx,
                                     )
                                     .on_click(cx.listener(
                                         |this, _, window, cx| this.new_folder(window, cx),
@@ -366,6 +397,8 @@ impl AbstractApp {
                                     tf(Key::NewNote, &[]).into(),
                                     false,
                                     &pal,
+                                    window,
+                                    cx,
                                 )
                                 .on_click(
                                     cx.listener(|this, _, window, cx| this.new_note(window, cx)),
@@ -394,10 +427,8 @@ impl AbstractApp {
                             .child(notes_n.to_string()),
                     )
                     .child(list)
-                    .child(self.render_settings_button(cx))
-                    .when(self.spaces_open, |col| {
-                        col.child(self.render_spaces_menu(cx))
-                    }),
+                    .child(self.render_settings_button(window, cx))
+                    .child(self.render_spaces_menu(window, cx)),
             );
         if self.sidebar_gen == 0 {
             return panel.w(z(to)).into_any_element();
