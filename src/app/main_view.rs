@@ -76,6 +76,7 @@ impl AbstractApp {
                         .cursor_pointer()
                         .when(self.status_open, |s| s.bg(rgb(pal.active)))
                         .hover(|s| s.bg(rgb(pal.hover)))
+                        .active(|s| s.bg(rgb(pal.active)))
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.status_open = !this.status_open;
@@ -203,6 +204,7 @@ impl AbstractApp {
                 .text_size(px(12.))
                 .text_color(rgb(pal.body))
                 .hover(|s| s.bg(rgb(pal.hover)))
+                .active(|s| s.bg(rgb(pal.active)))
                 .child(label)
         };
         let report = crash.text.clone();
@@ -334,6 +336,7 @@ impl AbstractApp {
                 .text_size(px(12.))
                 .text_color(rgb(pal.body))
                 .hover(|s| s.bg(rgb(pal.hover)))
+                .active(|s| s.bg(rgb(pal.active)))
                 .child(label)
         };
         div()
@@ -344,7 +347,7 @@ impl AbstractApp {
             .top(px(44.))
             .right(px(if has_note { 72. } else { 40. }))
             .w(px(240.))
-            .p(px(12.))
+            .p(px(14.))
             .flex()
             .flex_col()
             .gap(px(2.))

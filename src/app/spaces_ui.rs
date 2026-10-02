@@ -246,7 +246,7 @@ impl AbstractApp {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded(px(4.))
+                                .rounded(px(6.))
                                 .invisible()
                                 .group_hover("space-row", |s| s.visible())
                                 .hover(|s| s.bg(rgb(pal.active)))
