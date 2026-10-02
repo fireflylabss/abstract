@@ -593,6 +593,8 @@ impl LiveEditor {
                     .menu(t(Key::InlineCode), Box::new(InlineCode))
                     .menu(t(Key::Highlight), Box::new(Highlight))
                     .menu(t(Key::Comment), Box::new(Comment))
+                    .separator()
+                    .menu(t(Key::CopyAsHtml), Box::new(crate::keymap::CopyAsHtml))
             })
             .submenu(t(Key::Paragraph), window, cx, move |m, _, _| {
                 m.action_context(f2.clone())
@@ -615,10 +617,17 @@ impl LiveEditor {
                     .menu(t(Key::Table), Box::new(InsertTable))
                     .menu(t(Key::Footnote), Box::new(InsertFootnote))
             })
+            .separator()
+            .menu(t(Key::ExportAsHtml), Box::new(crate::keymap::ExportHtml))
+            .menu(t(Key::CopyAsHtml), Box::new(crate::keymap::CopyAsHtml))
     }
 
     pub fn text(&self) -> &str {
         self.buf.text()
+    }
+
+    pub(crate) fn analysis(&self) -> &Analysis {
+        &self.analysis
     }
 
     /// Replace the whole buffer without emitting `Changed` (loading a note).

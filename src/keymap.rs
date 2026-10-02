@@ -28,6 +28,8 @@ actions!(
         FindPrevious,
         OpenSettings,
         Quit,
+        ExportHtml,
+        CopyAsHtml,
     ]
 );
 

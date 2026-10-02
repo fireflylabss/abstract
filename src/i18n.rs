@@ -237,6 +237,11 @@ pub enum Key {
     ReportIssue,
     License,
     Close,
+    ExportAsHtml,
+    CopyAsHtml,
+    Exported,
+    ExportFailed,
+    CopyFailed,
 }
 
 impl Key {
@@ -395,6 +400,11 @@ impl Key {
         Key::ReportIssue,
         Key::License,
         Key::Close,
+        Key::ExportAsHtml,
+        Key::CopyAsHtml,
+        Key::Exported,
+        Key::ExportFailed,
+        Key::CopyFailed,
     ];
 }
 
@@ -569,6 +579,11 @@ fn en(k: Key) -> &'static str {
         Key::ReportIssue => "Report an issue",
         Key::License => "License",
         Key::Close => "Close",
+        Key::ExportAsHtml => "Export as HTML…",
+        Key::CopyAsHtml => "Copy as HTML",
+        Key::Exported => "Exported {name}",
+        Key::ExportFailed => "Couldn't export",
+        Key::CopyFailed => "Couldn't copy",
     }
 }
 
@@ -745,6 +760,11 @@ fn pt(k: Key) -> &'static str {
         Key::ReportIssue => "Reportar um problema",
         Key::License => "Licença",
         Key::Close => "Fechar",
+        Key::ExportAsHtml => "Exportar como HTML…",
+        Key::CopyAsHtml => "Copiar como HTML",
+        Key::Exported => "{name} exportado",
+        Key::ExportFailed => "Não foi possível exportar",
+        Key::CopyFailed => "Não foi possível copiar",
     }
 }
 
