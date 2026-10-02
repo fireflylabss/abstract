@@ -1,7 +1,11 @@
 use super::*;
 
 impl AbstractApp {
-    pub(crate) fn render_main(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_main(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let pal = cx.palette();
         let has_note = self.current.is_some();
         let status: SharedString = self.notice.clone().unwrap_or_else(|| match self.save {
@@ -38,6 +42,8 @@ impl AbstractApp {
                         tf(Key::Sidebar, &[]).into(),
                         !self.sidebar_open,
                         &pal,
+                        window,
+                        cx,
                     )
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_sidebar(cx))),
                     &pal,
@@ -54,6 +60,8 @@ impl AbstractApp {
                     tf(Key::Search, &[]).into(),
                     false,
                     &pal,
+                    window,
+                    cx,
                 )
                 .on_click(cx.listener(|this, _, window, cx| this.open_search(window, cx))),
             )
@@ -61,41 +69,49 @@ impl AbstractApp {
             .child(rise(
                 self.ring(
                     3,
-                    div()
-                        .id("status")
-                        .role(Role::Button)
-                        .aria_label(t(Key::NoteStatus))
-                        .debug_selector(|| "status".into())
-                        .w(z(140.))
-                        .h(z(28.))
-                        .flex()
-                        .items_center()
-                        .justify_end()
-                        .px(z(8.))
-                        .rounded(z(6.))
-                        .cursor_pointer()
-                        .when(self.status_open, |s| s.bg(rgb(pal.active)))
-                        .hover(|s| s.bg(rgb(pal.hover)))
-                        .active(|s| s.bg(rgb(pal.active)))
-                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.status_open = !this.status_open;
-                            cx.notify();
-                        }))
-                        .text_size(z(12.))
-                        .text_color(rgb(if self.save == SaveState::Failed {
-                            pal.fg
-                        } else {
-                            pal.faint
-                        }))
-                        .child(status),
+                    hover_bg(
+                        div()
+                            .id("status")
+                            .role(Role::Button)
+                            .aria_label(t(Key::NoteStatus))
+                            .debug_selector(|| "status".into())
+                            .w(z(140.))
+                            .h(z(28.))
+                            .flex()
+                            .items_center()
+                            .justify_end()
+                            .px(z(8.))
+                            .rounded(z(6.))
+                            .cursor_pointer()
+                            .active(|s| s.bg(rgb(pal.active)))
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.status_open = !this.status_open;
+                                cx.notify();
+                            }))
+                            .text_size(z(12.))
+                            .text_color(rgb(if self.save == SaveState::Failed {
+                                pal.fg
+                            } else {
+                                pal.faint
+                            }))
+                            .child(status),
+                        "status",
+                        self.status_open.then_some(pal.active),
+                        pal.hover,
+                        window,
+                        cx,
+                    ),
                     &pal,
                 )
                 .when_some(
                     self.mark(3, Anchor::TopRight, point(z(140.), z(34.)), cx),
                     |s, m| s.child(m),
                 ),
-                ("status", self.save as usize),
+                (
+                    "status",
+                    self.save as usize * 2 + self.notice.is_some() as usize,
+                ),
                 220,
                 0.,
                 2.,
@@ -103,8 +119,16 @@ impl AbstractApp {
             .child(
                 self.ring(
                     4,
-                    icon_btn("theme", self.theme_pref.icon(), theme_tip, false, &pal)
-                        .on_click(cx.listener(|this, _, window, cx| this.cycle_theme(window, cx))),
+                    icon_btn(
+                        "theme",
+                        self.theme_pref.icon(),
+                        theme_tip,
+                        false,
+                        &pal,
+                        window,
+                        cx,
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| this.cycle_theme(window, cx))),
                     &pal,
                 )
                 .when_some(
@@ -120,12 +144,14 @@ impl AbstractApp {
                         tf(Key::DeleteNote, &[]).into(),
                         false,
                         &pal,
+                        window,
+                        cx,
                     )
                     .on_click(cx.listener(|this, _, window, cx| this.delete_note(window, cx))),
                 )
             })
             .when(cfg!(not(target_os = "macos")), |t| {
-                t.child(window_controls(window, &pal))
+                t.child(window_controls(window, &pal, cx))
             });
 
         let body = if self.loading {
@@ -152,13 +178,13 @@ impl AbstractApp {
                             0.,
                             10.,
                         )))
-                        .when_some(self.render_backlinks(cx), |s, m| s.child(m))
+                        .when_some(self.render_backlinks(window, cx), |s, m| s.child(m))
                         .when_some(
                             self.mark(2, Anchor::TopLeft, point(z(70.), z(70.)), cx),
                             |s, m| s.child(m),
                         )
-                        .when_some(self.render_completion(cx), |s, m| s.child(m))
-                        .when_some(self.render_find(cx), |s, m| s.child(m)),
+                        .when_some(self.render_completion(window, cx), |s, m| s.child(m))
+                        .when_some(self.render_find(window, cx), |s, m| s.child(m)),
                 )
                 .into_any_element()
         };
@@ -173,115 +199,133 @@ impl AbstractApp {
             .child(toolbar)
             .child(body)
             .when_some(self.search.as_ref(), |el, _| {
-                el.child(self.render_search(cx))
+                el.child(self.render_search(window, cx))
             })
-            .when(self.status_open, |el| {
-                el.child(self.render_status(has_note, cx))
-            })
-            .when_some(self.render_update(cx), |el, card| el.child(card))
+            .child(self.render_status(has_note, window, cx))
+            .when_some(self.render_update(window, cx), |el, card| el.child(card))
             .when_some(self.crash.clone(), |el, c| {
-                el.child(self.render_crash(c, cx))
+                el.child(self.render_crash(c, window, cx))
             })
     }
 
     fn render_crash(
         &self,
         crash: crate::crash::Pending,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let pal = cx.palette();
-        let button = |id: &'static str, label: &'static str| {
-            div()
-                .id(id)
-                .role(Role::Button)
-                .aria_label(label)
-                .h(z(26.))
-                .px(z(8.))
-                .flex()
-                .items_center()
-                .rounded(z(6.))
-                .cursor_pointer()
-                .text_size(z(12.))
-                .text_color(rgb(pal.body))
-                .hover(|s| s.bg(rgb(pal.hover)))
-                .active(|s| s.bg(rgb(pal.active)))
-                .child(label)
+        let button = |id: &'static str, label: &'static str, window: &mut Window, cx: &mut App| {
+            hover_bg(
+                div()
+                    .id(id)
+                    .role(Role::Button)
+                    .aria_label(label)
+                    .h(z(26.))
+                    .px(z(8.))
+                    .flex()
+                    .items_center()
+                    .rounded(z(6.))
+                    .cursor_pointer()
+                    .text_size(z(12.))
+                    .text_color(rgb(pal.body))
+                    .active(|s| s.bg(rgb(pal.active)))
+                    .child(label),
+                id,
+                None,
+                pal.hover,
+                window,
+                cx,
+            )
         };
         let report = crash.text.clone();
         let issue = crate::crash::issue_url(&crash.text);
         let path = crash.path.clone();
-        div()
-            .id("crash-report")
-            .role(Role::Dialog)
-            .aria_label(t(Key::CrashTitle))
-            .absolute()
-            .top(z(52.))
-            .right(z(12.))
-            .w(z(320.))
-            .p(z(14.))
-            .flex()
-            .flex_col()
-            .gap(z(6.))
-            .bg(rgb(pal.menu_bg))
-            .border_1()
-            .border_color(rgb(pal.menu_border))
-            .rounded(z(8.))
-            .shadow_lg()
-            .occlude()
-            .child(
-                div()
-                    .text_size(z(13.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(pal.fg))
-                    .child(t(Key::CrashTitle)),
-            )
-            .child(
-                div()
-                    .text_size(z(12.))
-                    .line_height(z(18.))
-                    .text_color(rgb(pal.dim))
-                    .child(t(Key::CrashBody)),
-            )
-            .when(crash.recovered, |el| {
-                el.child(
+        rise(
+            div()
+                .id("crash-report")
+                .role(Role::Dialog)
+                .aria_label(t(Key::CrashTitle))
+                .absolute()
+                .top(z(52.))
+                .right(z(12.))
+                .w(z(320.))
+                .p(z(14.))
+                .flex()
+                .flex_col()
+                .gap(z(6.))
+                .bg(rgb(pal.menu_bg))
+                .border_1()
+                .border_color(rgb(pal.menu_border))
+                .rounded(z(8.))
+                .shadow_lg()
+                .occlude()
+                .child(
+                    div()
+                        .text_size(z(13.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(pal.fg))
+                        .child(t(Key::CrashTitle)),
+                )
+                .child(
                     div()
                         .text_size(z(12.))
                         .line_height(z(18.))
                         .text_color(rgb(pal.dim))
-                        .child(t(Key::CrashRecovered)),
+                        .child(t(Key::CrashBody)),
                 )
-            })
-            .child(
-                div()
-                    .mt(z(4.))
-                    .flex()
-                    .flex_wrap()
-                    .gap(z(4.))
-                    .child(
-                        button("crash-copy", t(Key::CopyReport)).on_click(move |_, _, cx| {
-                            cx.write_to_clipboard(ClipboardItem::new_string(report.clone()))
-                        }),
+                .when(crash.recovered, |el| {
+                    el.child(
+                        div()
+                            .text_size(z(12.))
+                            .line_height(z(18.))
+                            .text_color(rgb(pal.dim))
+                            .child(t(Key::CrashRecovered)),
                     )
-                    .child(
-                        button("crash-issue", t(Key::OpenIssue))
-                            .on_click(move |_, _, cx| cx.open_url(&issue)),
-                    )
-                    .child(
-                        button("crash-reveal", t(Key::Reveal))
-                            .on_click(move |_, _, cx| cx.reveal_path(&path)),
-                    )
-                    .child(
-                        button("crash-dismiss", t(Key::Dismiss)).on_click(cx.listener(
-                            |this, _, _, cx| {
-                                this.crash = None;
-                                cx.notify();
-                            },
-                        )),
-                    ),
-            )
+                })
+                .child(
+                    div()
+                        .mt(z(4.))
+                        .flex()
+                        .flex_wrap()
+                        .gap(z(4.))
+                        .child(
+                            button("crash-copy", t(Key::CopyReport), window, cx).on_click(
+                                move |_, _, cx| {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(report.clone()))
+                                },
+                            ),
+                        )
+                        .child(
+                            button("crash-issue", t(Key::OpenIssue), window, cx)
+                                .on_click(move |_, _, cx| cx.open_url(&issue)),
+                        )
+                        .child(
+                            button("crash-reveal", t(Key::Reveal), window, cx)
+                                .on_click(move |_, _, cx| cx.reveal_path(&path)),
+                        )
+                        .child(
+                            button("crash-dismiss", t(Key::Dismiss), window, cx).on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    this.crash = None;
+                                    cx.notify();
+                                }),
+                            ),
+                        ),
+                ),
+            "crash-report",
+            220,
+            0.,
+            6.,
+        )
     }
 
-    fn render_status(&self, has_note: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_status(
+        &self,
+        has_note: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let pal = cx.palette();
         let editor = self.editor.read(cx);
         let chars = editor.text().chars().count();
@@ -322,29 +366,40 @@ impl AbstractApp {
                 .text_color(rgb(pal.dim))
                 .child(label)
         };
-        let action = |id: &'static str, label: &'static str| {
-            div()
-                .id(id)
-                .role(Role::Button)
-                .aria_label(label)
-                .h(z(26.))
-                .px(z(8.))
-                .flex()
-                .items_center()
-                .rounded(z(6.))
-                .cursor_pointer()
-                .text_size(z(12.))
-                .text_color(rgb(pal.body))
-                .hover(|s| s.bg(rgb(pal.hover)))
-                .active(|s| s.bg(rgb(pal.active)))
-                .child(label)
+        let action = |id: &'static str, label: &'static str, window: &mut Window, cx: &mut App| {
+            hover_bg(
+                div()
+                    .id(id)
+                    .role(Role::Button)
+                    .aria_label(label)
+                    .h(z(26.))
+                    .px(z(8.))
+                    .flex()
+                    .items_center()
+                    .rounded(z(6.))
+                    .cursor_pointer()
+                    .text_size(z(12.))
+                    .text_color(rgb(pal.body))
+                    .active(|s| s.bg(rgb(pal.active)))
+                    .child(label),
+                id,
+                None,
+                pal.hover,
+                window,
+                cx,
+            )
         };
+        let ps = presence("status", self.status_open, window, cx);
+        if !ps.should_render() {
+            return div().into_any_element();
+        }
         div()
             .id("status-menu")
             .role(Role::Dialog)
             .aria_label(t(Key::NoteStatus))
             .absolute()
-            .top(z(44.))
+            .top(z(38. + 6. * ps.progress))
+            .opacity(ps.progress)
             .right(z(if has_note { 72. } else { 40. }))
             .w(z(240.))
             .p(z(14.))
@@ -408,18 +463,21 @@ impl AbstractApp {
                         .flex()
                         .gap(z(4.))
                         .child(
-                            action("status-reveal", t(Key::Reveal))
+                            action("status-reveal", t(Key::Reveal), window, cx)
                                 .on_click(move |_, _, cx| cx.reveal_path(&p)),
                         )
-                        .child(action("status-copy-path", t(Key::CopyPath)).on_click(
-                            move |_, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(
-                                    copy.display().to_string(),
-                                ))
-                            },
-                        )),
+                        .child(
+                            action("status-copy-path", t(Key::CopyPath), window, cx).on_click(
+                                move |_, _, cx| {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(
+                                        copy.display().to_string(),
+                                    ))
+                                },
+                            ),
+                        ),
                 )
             })
+            .into_any_element()
     }
 }
 

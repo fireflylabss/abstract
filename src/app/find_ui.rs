@@ -9,6 +9,8 @@ pub(crate) struct FindBar {
     case: bool,
     matches: Vec<Range<usize>>,
     current: Option<usize>,
+    closing: bool,
+    close_gen: u64,
     _subs: [Subscription; 2],
 }
 
@@ -54,10 +56,14 @@ impl AbstractApp {
                 case: false,
                 matches: Vec::new(),
                 current: None,
+                closing: false,
+                close_gen: 0,
                 _subs: [on_query, on_with],
             });
         }
         let Some(bar) = &mut self.find else { return };
+        // Reopening mid-exit cancels the close: the entrance replays.
+        bar.closing = false;
         bar.replacing |= replacing;
         let query = bar.query.clone();
         query.update(cx, |s, cx| {
@@ -72,13 +78,36 @@ impl AbstractApp {
     }
 
     pub(crate) fn close_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.find.take().is_some() {
-            self.editor.update(cx, |ed, cx| {
-                ed.set_finds(Vec::new(), None, cx);
-                ed.focus(window, cx);
-            });
-            cx.notify();
+        // Defer the unmount by the exit duration so the fade-out can play;
+        // `close_gen` cancels the sweep when reopened mid-exit.
+        let Some(bar) = &mut self.find else { return };
+        if bar.closing {
+            return;
         }
+        bar.closing = true;
+        bar.close_gen += 1;
+        let cgen = bar.close_gen;
+        self.editor.update(cx, |ed, cx| {
+            ed.set_finds(Vec::new(), None, cx);
+            ed.focus(window, cx);
+        });
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(MOTION_OUT_MS))
+                .await;
+            this.update(cx, |this, cx| {
+                if let Some(bar) = &mut this.find
+                    && bar.closing
+                    && bar.close_gen == cgen
+                {
+                    this.find = None;
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
     }
 
     /// Recomputes matches against the editor text; the active match is the
@@ -167,7 +196,11 @@ impl AbstractApp {
         cx.notify();
     }
 
-    pub(crate) fn render_find(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn render_find(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let bar = self.find.as_ref()?;
         let pal = cx.palette();
         let count: SharedString = if bar.query.read(cx).value().is_empty() {
@@ -184,8 +217,14 @@ impl AbstractApp {
         } else {
             t(Key::FindNone).into()
         };
-        let small = |id: &'static str, path: &'static str, key: Key, on: bool| {
-            icon_btn(id, path, tf(key, &[]).into(), on, &pal).size(z(24.))
+        let closing = bar.closing;
+        let small = |id: &'static str,
+                     path: &'static str,
+                     key: Key,
+                     on: bool,
+                     window: &mut Window,
+                     cx: &mut App| {
+            icon_btn(id, path, tf(key, &[]).into(), on, &pal, window, cx).size(z(24.))
         };
         let field = |state: &Entity<InputState>| {
             div().flex_1().min_w_0().child(
@@ -212,6 +251,8 @@ impl AbstractApp {
                     },
                     Key::ToggleReplace,
                     false,
+                    window,
+                    cx,
                 )
                 .aria_expanded(bar.replacing)
                 .on_click(cx.listener(|this, _, window, cx| this.toggle_replace(window, cx))),
@@ -231,20 +272,43 @@ impl AbstractApp {
                     "icons/case-sensitive.svg",
                     Key::MatchCase,
                     bar.case,
+                    window,
+                    cx,
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.toggle_case(cx))),
             )
             .child(
-                small("find-prev", "icons/arrow-up.svg", Key::FindPrev, false)
-                    .on_click(cx.listener(|this, _, _, cx| this.find_step(false, cx))),
+                small(
+                    "find-prev",
+                    "icons/arrow-up.svg",
+                    Key::FindPrev,
+                    false,
+                    window,
+                    cx,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.find_step(false, cx))),
             )
             .child(
-                small("find-next", "icons/arrow-down.svg", Key::FindNext, false)
-                    .on_click(cx.listener(|this, _, _, cx| this.find_step(true, cx))),
+                small(
+                    "find-next",
+                    "icons/arrow-down.svg",
+                    Key::FindNext,
+                    false,
+                    window,
+                    cx,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.find_step(true, cx))),
             )
             .child(
-                small("find-close", "icons/close.svg", Key::CloseFind, false)
-                    .on_click(cx.listener(|this, _, window, cx| this.close_find(window, cx))),
+                small(
+                    "find-close",
+                    "icons/close.svg",
+                    Key::CloseFind,
+                    false,
+                    window,
+                    cx,
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.close_find(window, cx))),
             );
         let bottom = div()
             .flex()
@@ -253,8 +317,15 @@ impl AbstractApp {
             .pl(z(26.))
             .child(field(&bar.with))
             .child(
-                small("replace-one", "icons/replace.svg", Key::ReplaceOne, false)
-                    .on_click(cx.listener(|this, _, _, cx| this.replace_one(cx))),
+                small(
+                    "replace-one",
+                    "icons/replace.svg",
+                    Key::ReplaceOne,
+                    false,
+                    window,
+                    cx,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.replace_one(cx))),
             )
             .child(
                 small(
@@ -262,6 +333,8 @@ impl AbstractApp {
                     "icons/replace-all.svg",
                     Key::ReplaceAll,
                     false,
+                    window,
+                    cx,
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.replace_all(cx))),
             );
@@ -290,6 +363,22 @@ impl AbstractApp {
                 )
                 .child(top)
                 .when(bar.replacing, |el| el.child(bottom))
+                .with_animation(
+                    ("find-bar", closing as usize),
+                    Animation::new(Duration::from_millis(if closing {
+                        MOTION_OUT_MS
+                    } else {
+                        MOTION_IN_MS
+                    }))
+                    .with_easing(ease_out_quint),
+                    move |el, d| {
+                        if closing {
+                            el.opacity(1. - d).top(z(8. + 6. * d))
+                        } else {
+                            el.opacity(d).top(z(2. + 6. * d))
+                        }
+                    },
+                )
                 .into_any_element(),
         )
     }

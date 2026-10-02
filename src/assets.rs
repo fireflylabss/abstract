@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::time::Duration;
 
-use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 use crate::theme::Palette;
@@ -149,9 +148,11 @@ pub(crate) fn icon_btn(
     label: SharedString,
     on: bool,
     pal: &Palette,
+    window: &mut Window,
+    cx: &mut App,
 ) -> Stateful<Div> {
     let tip = label.clone();
-    div()
+    let el = div()
         .id(id)
         .role(Role::Button)
         .aria_label(label)
@@ -166,8 +167,58 @@ pub(crate) fn icon_btn(
         .rounded(z(6.))
         .cursor_pointer()
         .occlude()
-        .hover(move |s| s.bg(rgb(pal.hover)))
         .active(move |s| s.bg(rgb(pal.active)))
-        .when(on, move |s| s.bg(rgb(pal.active)))
-        .child(icon(path, pal.fg))
+        .child(icon(path, pal.fg));
+    hover_bg(el, id, on.then_some(pal.active), pal.hover, window, cx)
+}
+
+// ── Motion: one easing feel, one duration scale ──────────────────────────
+// Enter ≈160ms, exit ≈130ms, hover ≈100ms; ease-out-quint every direction.
+// `Presence`/`transition` retarget mid-flight and snap to the end state when
+// the OS asks for reduced motion.
+
+pub(crate) const MOTION_IN_MS: u64 = 160;
+pub(crate) const MOTION_OUT_MS: u64 = 130;
+pub(crate) const MOTION_HOVER_MS: u64 = 100;
+
+/// Enter/exit driver for a surface toggled by `present`: the element mounts
+/// while `should_render()` and fades/drifts on `progress` in both directions.
+pub(crate) fn presence(
+    id: impl Into<base::motion::TransitionId>,
+    present: bool,
+    window: &mut Window,
+    cx: &mut App,
+) -> base::motion::PresenceSample {
+    base::motion::Presence::new(id, present)
+        .transition(
+            base::motion::Transition::new(Duration::from_millis(MOTION_IN_MS)).ease(ease_out_quint),
+        )
+        .sample(window, cx)
+}
+
+/// ~100ms background lerp while the pointer is over `el`: keyed hover state
+/// plus a value transition, so leaving mid-animation reverses smoothly.
+/// Replaces `.hover(|s| s.bg(..))`; keep `.active(..)` for instant press.
+pub(crate) fn hover_bg(
+    el: Stateful<Div>,
+    id: impl Into<ElementId>,
+    base: Option<u32>,
+    hover: u32,
+    window: &mut Window,
+    cx: &mut App,
+) -> Stateful<Div> {
+    let id = id.into();
+    let hovered = window.use_keyed_state((id.clone(), "hovered"), cx, |_, _| false);
+    let off: Hsla = base.map_or_else(transparent_black, |c| rgb(c).into());
+    let on: Hsla = rgb(hover).into();
+    let bg = base::motion::transition(
+        (id, "hover-bg"),
+        if *hovered.read(cx) { on } else { off },
+        base::motion::Transition::new(Duration::from_millis(MOTION_HOVER_MS)).ease(ease_out_quint),
+        window,
+        cx,
+    );
+    el.bg(bg).on_hover(move |h, _, cx| {
+        hovered.update(cx, |s, _| *s = *h);
+    })
 }

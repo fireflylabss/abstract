@@ -1,7 +1,7 @@
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::assets::icon;
+use crate::assets::{hover_bg, icon};
 use crate::store::SessionWindow;
 use crate::theme::Palette;
 use crate::zoom::z;
@@ -34,7 +34,11 @@ pub(crate) fn chrome_left_pad(native_controls_left: bool) -> f32 {
 /// Minimize / maximize-restore / close. Not shown on macOS, where the native
 /// traffic lights already provide them; on other platforms the app requests
 /// no compositor titlebar, so these are the only controls.
-pub(crate) fn window_controls(window: &Window, pal: &Palette) -> impl IntoElement {
+pub(crate) fn window_controls(
+    window: &mut Window,
+    pal: &Palette,
+    cx: &mut App,
+) -> impl IntoElement {
     let caps = window.window_controls();
     let maximized = window.is_maximized();
     let line = pal.line;
@@ -56,6 +60,8 @@ pub(crate) fn window_controls(window: &Window, pal: &Palette) -> impl IntoElemen
                         WindowControlArea::Min,
                         false,
                         pal,
+                        window,
+                        cx,
                     )
                     .when(!cfg!(windows), |b| {
                         b.on_click(|_, window, _| window.minimize_window())
@@ -69,10 +75,19 @@ pub(crate) fn window_controls(window: &Window, pal: &Palette) -> impl IntoElemen
                     ("icons/maximize.svg", "Maximizar")
                 };
                 r.child(
-                    win_btn("win-max", path, label, WindowControlArea::Max, false, pal)
-                        .when(!cfg!(windows), |b| {
-                            b.on_click(|_, window, _| window.zoom_window())
-                        }),
+                    win_btn(
+                        "win-max",
+                        path,
+                        label,
+                        WindowControlArea::Max,
+                        false,
+                        pal,
+                        window,
+                        cx,
+                    )
+                    .when(!cfg!(windows), |b| {
+                        b.on_click(|_, window, _| window.zoom_window())
+                    }),
                 )
             })
             .child(
@@ -83,6 +98,8 @@ pub(crate) fn window_controls(window: &Window, pal: &Palette) -> impl IntoElemen
                     WindowControlArea::Close,
                     true,
                     pal,
+                    window,
+                    cx,
                 )
                 .when(!cfg!(windows), |b| {
                     b.on_click(|_, window, _| window.remove_window())
@@ -96,6 +113,7 @@ pub(crate) fn window_controls(window: &Window, pal: &Palette) -> impl IntoElemen
 /// `danger` (the close button). On Windows the control area routes the click
 /// through the native non-client handler, which also handles restore and
 /// Win11 snap layouts; other platforms use the client `on_click`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn win_btn(
     id: &'static str,
     path: &'static str,
@@ -103,10 +121,11 @@ pub(crate) fn win_btn(
     area: WindowControlArea,
     danger: bool,
     pal: &Palette,
+    window: &mut Window,
+    cx: &mut App,
 ) -> Stateful<Div> {
-    let hover = pal.hover;
     let active = pal.active;
-    div()
+    let el = div()
         .id(id)
         .when(cfg!(windows), |b| b.window_control_area(area))
         .role(Role::Button)
@@ -119,13 +138,7 @@ pub(crate) fn win_btn(
         .rounded(z(6.))
         .cursor_pointer()
         .occlude()
-        .hover(move |s| {
-            if danger {
-                s.bg(rgb(0xd92d20)).text_color(rgb(0xffffff))
-            } else {
-                s.bg(rgb(hover))
-            }
-        })
+        .when(danger, |b| b.hover(|s| s.text_color(rgb(0xffffff))))
         .active(move |s| {
             if danger {
                 s.bg(rgb(0xd92d20)).text_color(rgb(0xffffff))
@@ -133,7 +146,15 @@ pub(crate) fn win_btn(
                 s.bg(rgb(active))
             }
         })
-        .child(icon(path, pal.dim).size(z(14.)))
+        .child(icon(path, pal.dim).size(z(14.)));
+    hover_bg(
+        el,
+        id,
+        None,
+        if danger { 0xd92d20 } else { pal.hover },
+        window,
+        cx,
+    )
 }
 
 /// Marks `el` as a window-drag region: primary-button drags move the window.

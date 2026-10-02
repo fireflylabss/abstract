@@ -6,6 +6,45 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-02
+
+### Added
+- Discord Rich Presence: while abstract is open, your Discord profile shows
+  an "abstract" activity with the current note title and space name. A
+  Discord presence toggle lives in Settings → General (on by default).
+- Export a note as a self-contained HTML file — styled, opens in the
+  browser ready to print or save as PDF — plus Copy as HTML on the context
+  menu.
+- User-selectable font in Settings → General: pick the interface and note
+  typeface from the bundled fonts or installed system families; code and
+  tables always stay in Noto Sans Mono. Applies instantly.
+- UI zoom: `Cmd/Ctrl`+`=`/`-`/`0` scales text, chrome, sidebar, palette and
+  dialogs together from 50% to 200%, persisted across launches and shown in
+  the status area.
+- Colored highlights: `=={red}…==`, `=={orange}…==`, `=={green}…==`,
+  `=={blue}…==` and `=={purple}…==` (yellow stays the bare `==…==`),
+  pickable under Format → Highlight color; unknown names render yellow and
+  exported HTML carries the color on the `<mark>`.
+- Table structure editing from the context menu: while the caret is inside
+  a table, a Table submenu offers insert row above/below, insert column
+  left/right and delete row/column — rebuilding the Markdown in a single
+  undo step and preserving column alignment.
+- Packaging manifests for Homebrew (cask), Flathub (Flatpak metainfo and
+  manifest) and winget.
+
+### Changed
+- Context menus are smarter: items only appear when usable (Paste is
+  disabled with an empty clipboard, Paste plain only with text), a
+  right-click selects the sidebar row, only one menu is open at a time,
+  menus open with a brief animation and clamp to the window edge.
+- UI consistency pass: unified radii, paddings and hover/pressed states
+  across panels, menus and dialogs.
+- Subtle motion throughout: one easing and a short duration scale
+  (100–160 ms) for entrances, exits and hovers on menus, palette, sidebar,
+  dialogs and notices — keeping the app's clear look.
+- The dependency tree no longer resolves through a yanked crate
+  (yoke-derive), unblocking builds and `cargo deny`.
+
 ## [0.1.3] - 2026-09-28
 
 ### Added
@@ -121,7 +160,8 @@ First public release.
   `SHA256SUMS`.
 - AUR packages `abstract-editor` (source) and `abstract-editor-bin`.
 
-[Unreleased]: https://github.com/fireflylabss/abstract/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/fireflylabss/abstract/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/fireflylabss/abstract/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/fireflylabss/abstract/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/fireflylabss/abstract/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/fireflylabss/abstract/compare/v0.1.0...v0.1.1

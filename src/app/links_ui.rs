@@ -144,7 +144,11 @@ impl AbstractApp {
     }
 
     /// Backlinks strip pinned to the bottom of the editor column.
-    pub(crate) fn render_backlinks(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+    pub(crate) fn render_backlinks(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<impl IntoElement> {
         if self.backlinks.is_empty() {
             return None;
         }
@@ -167,27 +171,37 @@ impl AbstractApp {
         );
         for (ix, (path, title)) in self.backlinks.iter().enumerate() {
             let p = path.clone();
-            rows = rows.child(
-                div()
-                    .id(("backlink", ix))
-                    .h(z(22.))
-                    .px(z(4.))
-                    .flex()
-                    .items_center()
-                    .gap(z(6.))
-                    .truncate()
-                    .text_size(z(12.))
-                    .text_color(rgb(pal.body))
-                    .rounded(z(6.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(rgb(pal.hover)))
-                    .active(|s| s.bg(rgb(pal.active)))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.open_path(p.clone(), None, window, cx)
-                    }))
-                    .child(icon("icons/link.svg", pal.faint).size(z(12.)))
-                    .child(title.clone()),
-            );
+            rows = rows.child(rise(
+                hover_bg(
+                    div()
+                        .id(("backlink", ix))
+                        .h(z(22.))
+                        .px(z(4.))
+                        .flex()
+                        .items_center()
+                        .gap(z(6.))
+                        .truncate()
+                        .text_size(z(12.))
+                        .text_color(rgb(pal.body))
+                        .rounded(z(6.))
+                        .cursor_pointer()
+                        .active(|s| s.bg(rgb(pal.active)))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.open_path(p.clone(), None, window, cx)
+                        }))
+                        .child(icon("icons/link.svg", pal.faint).size(z(12.)))
+                        .child(title.clone()),
+                    ("backlink", ix),
+                    None,
+                    pal.hover,
+                    window,
+                    cx,
+                ),
+                ("backlink-in", ix),
+                240,
+                ix.min(6) as f32 * 0.05,
+                3.,
+            ));
         }
         Some(
             div()
@@ -200,30 +214,36 @@ impl AbstractApp {
 
     /// Popup under the caret listing completion stems; mounted inside the
     /// (relative) editor column.
-    pub(crate) fn render_completion(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+    pub(crate) fn render_completion(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<impl IntoElement> {
         let c = self.completion.as_ref()?;
         let anchor = self.editor.read(cx).caret_anchor()?;
         let pal = cx.palette();
         let mut rows = div().flex().flex_col();
         for (ix, item) in c.items.iter().enumerate() {
-            rows = rows.child(
-                div()
-                    .id(("cmpl", ix))
-                    .px(z(8.))
-                    .h(z(22.))
-                    .flex()
-                    .items_center()
-                    .truncate()
-                    .text_size(z(12.))
-                    .text_color(rgb(if ix == c.selected { pal.fg } else { pal.body }))
-                    .rounded(z(6.))
-                    .cursor_pointer()
-                    .when(ix == c.selected, |s| s.bg(rgb(pal.active)))
-                    .when(ix != c.selected, |s| s.hover(|s| s.bg(rgb(pal.hover))))
-                    .active(|s| s.bg(rgb(pal.active)))
-                    .on_click(cx.listener(move |this, _, _, cx| this.accept_completion(ix, cx)))
-                    .child(item.clone()),
-            );
+            let row = div()
+                .id(("cmpl", ix))
+                .px(z(8.))
+                .h(z(22.))
+                .flex()
+                .items_center()
+                .truncate()
+                .text_size(z(12.))
+                .text_color(rgb(if ix == c.selected { pal.fg } else { pal.body }))
+                .rounded(z(6.))
+                .cursor_pointer()
+                .active(|s| s.bg(rgb(pal.active)))
+                .on_click(cx.listener(move |this, _, _, cx| this.accept_completion(ix, cx)))
+                .child(item.clone());
+            let row = if ix == c.selected {
+                row.bg(rgb(pal.active))
+            } else {
+                hover_bg(row, ("cmpl", ix), None, pal.hover, window, cx)
+            };
+            rows = rows.child(row);
         }
         Some(
             div()
@@ -241,7 +261,13 @@ impl AbstractApp {
                 .shadow_lg()
                 .occlude()
                 .p(z(4.))
-                .child(rows),
+                .child(rows)
+                .with_animation(
+                    ("cmpl-in", c.range.start),
+                    Animation::new(Duration::from_millis(MOTION_HOVER_MS))
+                        .with_easing(ease_out_quint),
+                    |el, d| el.opacity(d).mt(z(2. * (1. - d))),
+                ),
         )
     }
 }
