@@ -360,14 +360,12 @@ impl AbstractApp {
             this.schedule_tab_save(ix, cx);
             cx.notify();
         });
-        let on_completion = cx.subscribe(
-            editor,
-            |this: &mut Self, editor, ev: &CompletionKey, cx| {
+        let on_completion =
+            cx.subscribe(editor, |this: &mut Self, editor, ev: &CompletionKey, cx| {
                 if this.tab_ix(&editor) == this.active {
                     this.completion_key(ev, cx);
                 }
-            },
-        );
+            });
         let on_link = cx.subscribe(editor, |_this: &mut Self, _, ev: &OpenLink, cx| {
             let target = ev.0.clone();
             cx.spawn(async move |this, cx| {
