@@ -113,6 +113,7 @@ pub(crate) fn window_controls(
 /// `danger` (the close button). On Windows the control area routes the click
 /// through the native non-client handler, which also handles restore and
 /// Win11 snap layouts; other platforms use the client `on_click`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn win_btn(
     id: &'static str,
     path: &'static str,
