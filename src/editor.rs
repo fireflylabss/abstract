@@ -104,11 +104,15 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-down", SelectDown, c),
         KeyBinding::new("ctrl-left", WordLeft, c),
         KeyBinding::new("ctrl-right", WordRight, c),
+        #[cfg(target_os = "macos")]
         KeyBinding::new("alt-left", WordLeft, c),
+        #[cfg(target_os = "macos")]
         KeyBinding::new("alt-right", WordRight, c),
         KeyBinding::new("ctrl-shift-left", SelectWordLeft, c),
         KeyBinding::new("ctrl-shift-right", SelectWordRight, c),
+        #[cfg(target_os = "macos")]
         KeyBinding::new("alt-shift-left", SelectWordLeft, c),
+        #[cfg(target_os = "macos")]
         KeyBinding::new("alt-shift-right", SelectWordRight, c),
         KeyBinding::new("home", Home, c),
         KeyBinding::new("end", End, c),

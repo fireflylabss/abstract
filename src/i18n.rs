@@ -237,6 +237,9 @@ pub enum Key {
     ReportIssue,
     License,
     Close,
+    Back,
+    Forward,
+    CloseTab,
 }
 
 impl Key {
@@ -395,6 +398,9 @@ impl Key {
         Key::ReportIssue,
         Key::License,
         Key::Close,
+        Key::Back,
+        Key::Forward,
+        Key::CloseTab,
     ];
 }
 
@@ -569,6 +575,9 @@ fn en(k: Key) -> &'static str {
         Key::ReportIssue => "Report an issue",
         Key::License => "License",
         Key::Close => "Close",
+        Key::Back => "Back",
+        Key::Forward => "Forward",
+        Key::CloseTab => "Close tab",
     }
 }
 
@@ -745,6 +754,9 @@ fn pt(k: Key) -> &'static str {
         Key::ReportIssue => "Reportar um problema",
         Key::License => "Licença",
         Key::Close => "Fechar",
+        Key::Back => "Voltar",
+        Key::Forward => "Avançar",
+        Key::CloseTab => "Fechar guia",
     }
 }
 

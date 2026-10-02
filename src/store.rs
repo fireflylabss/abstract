@@ -270,6 +270,7 @@ impl Session {
         }
     }
 
+    #[cfg(test)]
     pub fn notes(&self) -> Vec<SessionNote> {
         self.kv
             .lines
@@ -312,6 +313,78 @@ impl Session {
             self.kv
                 .lines
                 .push(format!("note = {space}\t{rel}\t{}\t{}", n.cursor, n.scroll));
+        }
+    }
+
+    /// `tab = <space>\t<rel>\t<cursor>\t<scroll>` — open tabs, in bar order.
+    /// Falls back to `note` lines so sessions written before tabs existed
+    /// restore as a single tab per space.
+    pub fn tabs(&self) -> Vec<SessionNote> {
+        let keyed = |key: &str| -> Vec<SessionNote> {
+            self.kv
+                .lines
+                .iter()
+                .filter_map(|l| {
+                    let (k, v) = l.split_once('=')?;
+                    if k.trim() != key {
+                        return None;
+                    }
+                    let mut parts = v.split('\t');
+                    let note = SessionNote {
+                        space: PathBuf::from(parts.next()?.trim()),
+                        rel: PathBuf::from(parts.next()?.trim()),
+                        cursor: parts.next()?.trim().parse().ok()?,
+                        scroll: parts.next()?.trim().parse().ok()?,
+                    };
+                    (parts.next().is_none() && !note.rel.as_os_str().is_empty()).then_some(note)
+                })
+                .collect()
+        };
+        let mut out = keyed("tab");
+        let spaces_with_tabs: std::collections::HashSet<PathBuf> =
+            out.iter().map(|n| n.space.clone()).collect();
+        out.extend(
+            keyed("note")
+                .into_iter()
+                .filter(|n| !spaces_with_tabs.contains(&n.space)),
+        );
+        out
+    }
+
+    /// `tab_active = <space>\t<rel>` marks the front-most tab.
+    pub fn active_tab(&self) -> Option<(PathBuf, PathBuf)> {
+        let v = self.kv.get("tab_active")?;
+        let mut parts = v.split('\t');
+        let space = PathBuf::from(parts.next()?.trim());
+        let rel = PathBuf::from(parts.next()?.trim());
+        (parts.next().is_none() && !rel.as_os_str().is_empty()).then_some((space, rel))
+    }
+
+    pub fn set_tabs(&mut self, tabs: &[SessionNote]) {
+        self.kv.remove("tab");
+        for n in tabs {
+            let (space, rel) = (n.space.to_string_lossy(), n.rel.to_string_lossy());
+            if space.contains(['\t', '\n']) || rel.contains(['\t', '\n']) {
+                continue;
+            }
+            self.kv
+                .lines
+                .push(format!("tab = {space}\t{rel}\t{}\t{}", n.cursor, n.scroll));
+        }
+    }
+
+    pub fn set_active_tab(&mut self, active: Option<(&Path, &Path)>) {
+        match active {
+            Some((space, rel))
+                if !space.to_string_lossy().contains(['\t', '\n'])
+                    && !rel.to_string_lossy().contains(['\t', '\n']) =>
+            {
+                self.kv.set(
+                    "tab_active",
+                    &format!("{}\t{}", space.to_string_lossy(), rel.to_string_lossy()),
+                );
+            }
+            _ => self.kv.remove("tab_active"),
         }
     }
 
@@ -428,6 +501,55 @@ mod tests {
         assert_eq!(s.window(), None);
         assert_eq!(s.sidebar_open(), None);
         assert!(s.notes().is_empty());
+    }
+
+    #[test]
+    fn session_tabs_roundtrip_and_note_fallback() {
+        let mut s = Session {
+            kv: KeyVals::parse(
+                "note = /old\tlegacy.md\t4\t1.5\ntab = /a\tb.md\t0\t0\ntab = /a\tc.md\t7\t2.0\ntab_active = /a\tc.md\n",
+            ),
+        };
+        let tabs = s.tabs();
+        assert_eq!(tabs.len(), 3);
+        // `note` lines only fill in spaces that have no `tab` lines.
+        assert_eq!(tabs[2].rel, PathBuf::from("legacy.md"));
+        assert_eq!(tabs[0].rel, PathBuf::from("b.md"));
+        assert_eq!(tabs[1].cursor, 7);
+        assert_eq!(
+            s.active_tab(),
+            Some((PathBuf::from("/a"), PathBuf::from("c.md")))
+        );
+
+        s.set_tabs(&[
+            SessionNote {
+                space: PathBuf::from("/a"),
+                rel: PathBuf::from("b.md"),
+                cursor: 1,
+                scroll: 0.5,
+            },
+            SessionNote {
+                space: PathBuf::from("/a"),
+                rel: PathBuf::from("d.md"),
+                cursor: 0,
+                scroll: 0.,
+            },
+        ]);
+        s.set_active_tab(Some((Path::new("/a"), Path::new("b.md"))));
+        let again = Session {
+            kv: KeyVals::parse(&s.kv.serialize()),
+        };
+        assert_eq!(again.tabs().len(), 3);
+        assert_eq!(again.tabs()[1].rel, PathBuf::from("d.md"));
+        assert_eq!(
+            again.active_tab(),
+            Some((PathBuf::from("/a"), PathBuf::from("b.md")))
+        );
+
+        s.set_tabs(&[]);
+        s.set_active_tab(None);
+        assert_eq!(s.tabs().len(), 1); // only the legacy `note` fallback remains
+        assert_eq!(s.active_tab(), None);
     }
 
     #[test]

@@ -21,10 +21,9 @@ impl AbstractApp {
                 // A pending note materializes on disk under either name: the
                 // planned `nota-*` one, or the title-synced one `write_note`
                 // picked. Both cases retire the ghost row.
-                if let Some(p) = &this.pending_new {
-                    let real = this.current.as_ref().map(|c| c.path());
-                    if p.exists() || real.is_some_and(|r| r != *p) {
-                        this.pending_new = None;
+                for tab in this.tabs.iter_mut().filter(|t| t.pending) {
+                    if tab.path().exists() {
+                        tab.pending = false;
                     }
                 }
                 cx.notify();
@@ -46,35 +45,186 @@ impl AbstractApp {
         }
     }
 
-    pub(crate) fn load_buffer(
+    /// Create a tab holding `file` + `text`; returns its index.
+    pub(crate) fn push_tab(
         &mut self,
         file: NoteFile,
         synced: bool,
         text: String,
         restore: Option<(usize, f32)>,
-        window: &mut Window,
+        pending: bool,
         cx: &mut Context<Self>,
-    ) {
-        self.current = Some(CurrentNote {
-            file: Arc::new(Mutex::new(file)),
-            synced,
-        });
-        self.clear_completion(cx);
-        self.open_gen += 1;
-        self.save = SaveState::Saved;
-        self.words = text.split_whitespace().count();
-        self.sync_editor_dirs(cx);
-        // `set_text` emits no `Changed`, so nothing is re-saved.
-        self.editor.update(cx, |ed, cx| {
+    ) -> usize {
+        let editor = cx.new(LiveEditor::new);
+        let subs = Self::watch_editor(&editor, cx);
+        let note_dir = file.path.parent().map(Path::to_path_buf);
+        let root = self.dir.clone();
+        let raw = self.settings.raw_tables();
+        editor.update(cx, |ed, cx| {
+            ed.set_raw_tables(raw, cx);
+            ed.set_dirs(note_dir, root, cx);
+            // `set_text` emits no `Changed`, so nothing is re-saved.
             ed.set_text(text, cx);
             if let Some((cursor, scroll)) = restore {
                 ed.restore_view(cursor, scroll, cx);
             }
-            ed.focus(window, cx);
         });
+        let id = self.next_tab_id;
+        self.next_tab_id += 1;
+        self.tabs.push(NoteTab {
+            id,
+            file: Arc::new(Mutex::new(file)),
+            synced,
+            pending,
+            save: SaveState::Saved,
+            editor,
+            _save_task: None,
+            _subs: subs,
+        });
+        self.tabs.len() - 1
+    }
+
+    /// Show tab `ix`: swap the mirrors, restore focus and record the visit.
+    pub(crate) fn activate(
+        &mut self,
+        ix: usize,
+        push_history: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tabs.get(ix) else {
+            return;
+        };
+        if self.active == Some(ix) {
+            tab.editor.update(cx, |ed, cx| ed.focus(window, cx));
+            return;
+        }
+        self.editor = tab.editor.clone();
+        self.save = tab.save;
+        self.words = tab.editor.read(cx).text().split_whitespace().count();
+        self.current = Some(CurrentNote {
+            file: tab.file.clone(),
+            synced: tab.synced,
+        });
+        self.active = Some(ix);
+        let id = tab.id;
+        let path = tab.path();
+        self.open_gen += 1;
+        self.editing = None;
+        self.target_folder = None;
+        self.clear_completion(cx);
+        self.expand_to(&path);
         self.refresh_find(false, None, cx);
         self.refresh_backlinks(cx);
         self.refresh_images(cx);
+        self.editor.update(cx, |ed, cx| ed.focus(window, cx));
+        if push_history {
+            self.history_push(id);
+        }
+        self.save_session(cx);
+        cx.notify();
+    }
+
+    /// Browser semantics: forward entries die on a fresh visit, revisiting
+    /// the current entry never duplicates it.
+    fn history_push(&mut self, id: u64) {
+        self.history.truncate(self.history_ix.saturating_add(1));
+        if self.history.last() != Some(&id) {
+            self.history.push(id);
+        }
+        self.history_ix = self.history.len() - 1;
+    }
+
+    /// Alt+Left/Right (Cmd+[/] on macOS): walk the visit log.
+    pub(crate) fn history_nav(
+        &mut self,
+        forward: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let ix = if forward {
+            self.history_ix.saturating_add(1)
+        } else if self.history_ix > 0 {
+            self.history_ix - 1
+        } else {
+            return;
+        };
+        let Some(&id) = self.history.get(ix) else {
+            return;
+        };
+        let Some(t) = self.tabs.iter().position(|t| t.id == id) else {
+            return;
+        };
+        self.history_ix = ix;
+        self.activate(t, false, window, cx);
+    }
+
+    /// Ctrl+Tab / Ctrl+Shift+Tab: cycle through the tab strip.
+    pub(crate) fn cycle_tab(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tabs.len() < 2 {
+            return;
+        }
+        let cur = self.active.unwrap_or(0);
+        let next = if forward {
+            (cur + 1) % self.tabs.len()
+        } else {
+            cur.checked_sub(1).unwrap_or(self.tabs.len() - 1)
+        };
+        self.activate(next, true, window, cx);
+    }
+
+    /// Cmd/Ctrl+W: close the front-most tab.
+    pub(crate) fn close_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(ix) = self.active {
+            self.close_tab(ix, window, cx);
+        }
+    }
+
+    /// Persist pending text, drop the tab and hand focus to a neighbor.
+    pub(crate) fn close_tab(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.flush_tab(ix, cx);
+        self.remove_tab(ix, window, cx);
+    }
+
+    /// Drop tab `ix` without touching its file; its history entries go too.
+    fn remove_tab(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if ix >= self.tabs.len() {
+            return;
+        }
+        let closed = self.tabs.remove(ix).id;
+        self.history.retain(|&id| id != closed);
+        let was_active = self.active == Some(ix);
+        self.active = self.active.and_then(|a| match a.cmp(&ix) {
+            std::cmp::Ordering::Greater => Some(a - 1),
+            std::cmp::Ordering::Equal => None,
+            std::cmp::Ordering::Less => Some(a),
+        });
+        if was_active {
+            if self.tabs.is_empty() {
+                self.current = None;
+                self.save = SaveState::Saved;
+                self.words = 0;
+                self.completion = None;
+                self.backlinks.clear();
+                self.backlinks_key = None;
+                self.history_ix = self.history.len().saturating_sub(1);
+            } else {
+                let next = ix.min(self.tabs.len() - 1);
+                self.history_ix = self
+                    .history
+                    .iter()
+                    .rposition(|&h| h == self.tabs[next].id)
+                    .unwrap_or_else(|| self.history.len().saturating_sub(1));
+                self.activate(next, true, window, cx);
+                return;
+            }
+        } else {
+            let active_id = self.active.map(|a| self.tabs[a].id);
+            self.history_ix = active_id
+                .and_then(|id| self.history.iter().rposition(|&h| h == id))
+                .unwrap_or_else(|| self.history.len().saturating_sub(1));
+        }
+        self.save_session(cx);
         cx.notify();
     }
 
@@ -85,13 +235,17 @@ impl AbstractApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.current.as_ref().is_some_and(|c| c.path() == path) {
+        if let Some(ix) = self.tabs.iter().position(|t| t.path() == path) {
+            if let Some((cursor, scroll)) = restore {
+                self.tabs[ix]
+                    .editor
+                    .update(cx, |ed, cx| ed.restore_view(cursor, scroll, cx));
+            }
+            self.activate(ix, true, window, cx);
             return;
         }
-        self.record_session_note(cx);
         self.save_session(cx);
         self.flush(cx);
-        self.pending_new = None;
         self.editing = None;
         self.target_folder = None;
         self.expand_to(&path);
@@ -108,7 +262,7 @@ impl AbstractApp {
                 .await;
             this.update_in(cx, |this, window, cx| {
                 let synced = vault::synced_stem(&stem_of(&path), &title_of(&read.0));
-                this.load_buffer(
+                let ix = this.push_tab(
                     NoteFile {
                         path,
                         mtime: read.1,
@@ -117,9 +271,10 @@ impl AbstractApp {
                     synced,
                     read.0,
                     restore,
-                    window,
+                    false,
                     cx,
                 );
+                this.activate(ix, true, window, cx);
             })
             .ok();
         }));
@@ -140,7 +295,6 @@ impl AbstractApp {
 
     /// The file is created on the first keystroke, so untouched notes leave no trace.
     pub(crate) fn new_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.record_session_note(cx);
         self.save_session(cx);
         self.flush(cx);
         self._io_task = None;
@@ -150,9 +304,8 @@ impl AbstractApp {
             .map_or(0, |d| d.as_millis());
         let path = vault::unique_path(&dir, &format!("nota-{stamp}"), None);
         self.expand_to(&path);
-        self.pending_new = Some(path.clone());
         self.target_folder = None;
-        self.load_buffer(
+        let ix = self.push_tab(
             NoteFile {
                 path,
                 mtime: None,
@@ -161,9 +314,10 @@ impl AbstractApp {
             true,
             String::new(),
             None,
-            window,
+            true,
             cx,
         );
+        self.activate(ix, true, window, cx);
     }
 
     /// Send a path to the trash off-thread; failure only shows a notice.
@@ -192,26 +346,32 @@ impl AbstractApp {
     }
 
     pub(crate) fn delete_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(cur) = self.current.take() else {
+        let Some(ix) = self.active else {
             return;
         };
-        let path = cur.path();
-        self._save_task = None;
-        self._io_task = None;
-        self.pending_new = None;
-        let pending = self.save == SaveState::Pending;
-        self.save = SaveState::Saved;
-        let file = cur.file.clone();
-        let synced = cur.synced;
+        self.delete_tab(ix, window, cx);
+    }
+
+    /// Trash the note open in tab `ix`, then close the tab.
+    fn delete_tab(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(tab) = self.tabs.get(ix) else {
+            return;
+        };
+        let path = tab.path();
+        let pending = tab.save == SaveState::Pending;
+        let file = tab.file.clone();
+        let synced = tab.synced;
+        let text = tab.editor.read(cx).text().to_string();
         let lock = self.write_lock.clone();
         let space = self.dir.clone();
-        let text = self.current_text(cx);
+        let open = self.tab_paths();
+        self._io_task = None;
         cx.spawn(async move |this, cx| {
             let gone = cx
                 .background_executor()
                 .spawn(async move {
                     if pending {
-                        let _ = write_note(&lock, &file, synced, &text, Some(&space));
+                        let _ = write_note(&lock, &file, synced, &text, Some(&space), &open);
                     }
                     let mut f = guard(&file);
                     f.deleted = true;
@@ -226,10 +386,13 @@ impl AbstractApp {
             .ok();
         })
         .detach();
-        // Open the next newest note, or a fresh one.
-        match vault::newest_note(&self.tree, Some(&path)) {
-            Some(next) => self.open_path(next, None, window, cx),
-            None => self.new_note(window, cx),
+        self.remove_tab(ix, window, cx);
+        // Nothing left open: land on the next newest note, or a fresh one.
+        if self.tabs.is_empty() {
+            match vault::newest_note(&self.tree, Some(&path)) {
+                Some(next) => self.open_path(next, None, window, cx),
+                None => self.new_note(window, cx),
+            }
         }
         cx.notify();
     }
@@ -244,9 +407,8 @@ impl AbstractApp {
     ) {
         match kind {
             NodeKind::Note => {
-                let is_current = self.current.as_ref().is_some_and(|c| c.path() == path);
-                if is_current {
-                    self.delete_note(window, cx);
+                if let Some(ix) = self.tabs.iter().position(|t| t.path() == path) {
+                    self.delete_tab(ix, window, cx);
                 } else {
                     self.trash_path(path, cx);
                 }
@@ -285,11 +447,15 @@ impl AbstractApp {
                 {
                     this.target_folder = None;
                 }
-                // The open note inside it keeps its buffer as "removed".
-                if let Some(cur) = &this.current
-                    && cur.path().starts_with(&path)
-                {
-                    guard(&cur.file).mtime = None;
+                // Open notes inside it keep their buffers as "removed".
+                let mut hit = false;
+                for tab in &this.tabs {
+                    if tab.path().starts_with(&path) {
+                        guard(&tab.file).mtime = None;
+                        hit = true;
+                    }
+                }
+                if hit {
                     this.notice = Some(t(Key::FileRemovedOutside).into());
                 }
                 this.trash_path(path.clone(), cx);

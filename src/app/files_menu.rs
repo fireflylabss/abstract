@@ -61,12 +61,12 @@ impl AbstractApp {
         cx: &mut Context<Self>,
     ) {
         self.flush(cx);
-        // The open note's buffer may be ahead of its file.
+        // An open note's buffer may be ahead of its file.
         let text = self
-            .current
-            .as_ref()
-            .filter(|c| c.path() == path)
-            .map(|_| self.editor.read(cx).text().to_string());
+            .tabs
+            .iter()
+            .find(|t| t.path() == path)
+            .map(|t| t.editor.read(cx).text().to_string());
         let lock = self.write_lock.clone();
         cx.spawn_in(window, async move |this, cx| {
             let copied = cx
