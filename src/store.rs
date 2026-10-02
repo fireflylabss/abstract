@@ -164,6 +164,17 @@ impl Settings {
         self.kv.set("dark_theme", id);
     }
 
+    /// `font = <family>` — UI/prose typeface; missing or empty keeps the
+    /// bundled default (`fonts::resolve` validates it against installed
+    /// families).
+    pub fn font(&self) -> &str {
+        self.kv.get("font").unwrap_or(crate::assets::SANS)
+    }
+
+    pub fn set_font(&mut self, name: &str) {
+        self.kv.set("font", name);
+    }
+
     /// `raw_tables = on` shows tables as their Markdown source instead of a
     /// grid.
     pub fn raw_tables(&self) -> bool {

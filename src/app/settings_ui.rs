@@ -307,6 +307,52 @@ impl AbstractApp {
 
         let raw = self.settings.raw_tables();
         let updates = self.settings.updates();
+        let font_names = cx.text_system().all_font_names();
+        let current_font = fonts::resolve(self.settings.font(), &font_names);
+        let font_rows =
+            div()
+                .flex()
+                .flex_col()
+                .children(fonts::choices(&font_names).into_iter().map(|family| {
+                    let on = current_font.eq_ignore_ascii_case(family);
+                    let label: SharedString = if family == fonts::SYSTEM {
+                        t(Key::ThemeSystem).into()
+                    } else {
+                        family.into()
+                    };
+                    div()
+                        .id(SharedString::from(format!("font-{family}")))
+                        .role(Role::RadioButton)
+                        .aria_label(label.clone())
+                        .aria_selected(on)
+                        .px(px(8.))
+                        .py(px(6.))
+                        .mx(px(-8.))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(rgb(pal.hover)))
+                        .on_click(
+                            cx.listener(move |this, _, window, cx| {
+                                this.set_font(family, window, cx)
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .font_family(family)
+                                .text_size(px(13.))
+                                .text_color(rgb(if on { pal.fg } else { pal.body }))
+                                .child(label),
+                        )
+                        .when(on, |s| {
+                            s.child(icon("icons/check.svg", pal.dim).size(px(14.)))
+                        })
+                }));
         let discord = self.settings.discord();
         let body = div()
             .id("settings-body")
@@ -368,6 +414,16 @@ impl AbstractApp {
                 toggle("updates-toggle", t(Key::CheckUpdates), None, updates)
                     .on_click(cx.listener(move |this, _, _, cx| this.set_updates(!updates, cx))),
             )
+            .child(sub(t(Key::Font)))
+            .child(
+                div()
+                    .pb(px(4.))
+                    .text_size(px(12.))
+                    .line_height(px(17.))
+                    .text_color(rgb(pal.dim))
+                    .child(t(Key::FontHint)),
+            )
+            .child(font_rows)
             .child(
                 toggle(
                     "discord-presence",
@@ -509,5 +565,11 @@ impl AbstractApp {
                 Animation::new(Duration::from_millis(160)).with_easing(ease_out_quint),
                 |el, d| el.opacity(d),
             )
+    }
+    /// `font` picker in General: applies the family live, then persists it.
+    fn set_font(&mut self, family: &'static str, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.set_font(family);
+        fonts::apply(&self.settings, cx);
+        self.save_settings(window, cx);
     }
 }
