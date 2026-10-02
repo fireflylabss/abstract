@@ -213,6 +213,15 @@ impl Settings {
         self.kv.set("daily_folder", name);
     }
 
+    /// `outline = on` keeps the headings panel open between launches.
+    pub fn outline(&self) -> bool {
+        self.kv.get("outline") == Some("on")
+    }
+
+    pub fn set_outline(&mut self, on: bool) {
+        self.kv.set("outline", if on { "on" } else { "off" });
+    }
+
     /// Blocking.
     pub fn save(&self) {
         let file = settings_file();
