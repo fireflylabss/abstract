@@ -28,6 +28,21 @@ impl AbstractApp {
         self.save_settings(window, cx);
     }
 
+    fn set_discord(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.settings.set_discord(on);
+        self.presence.set_enabled(on);
+        if on {
+            let title = self
+                .current
+                .as_ref()
+                .map(|_| title_of(self.editor.read(cx).text()).to_string());
+            self.presence.set(title, spaces::name_of(&self.dir));
+        }
+        let settings = self.settings.clone();
+        cx.background_spawn(async move { settings.save() }).detach();
+        cx.notify();
+    }
+
     fn pick_palette(
         &mut self,
         dark: bool,
@@ -120,6 +135,7 @@ impl AbstractApp {
                         .text_color(rgb(if on { pal.fg } else { pal.body }))
                         .when(on, |s| s.bg(rgb(pal.active)))
                         .hover(|s| s.bg(rgb(pal.hover)))
+                        .active(|s| s.bg(rgb(pal.active)))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.set_theme_pref(pref, window, cx)
                         }))
@@ -162,6 +178,7 @@ impl AbstractApp {
                     .border_color(rgb(if on { pal.fg } else { pal.line }))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgb(pal.hover)))
+                    .active(|s| s.bg(rgb(pal.active)))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.pick_palette(dark, id, window, cx)
                     }))
@@ -172,7 +189,7 @@ impl AbstractApp {
                             .flex()
                             .flex_col()
                             .gap(px(4.))
-                            .rounded(px(5.))
+                            .rounded(px(4.))
                             .bg(rgb(p.bg))
                             .border_1()
                             .border_color(rgb(p.line))
@@ -222,6 +239,7 @@ impl AbstractApp {
                     .rounded(px(6.))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgb(pal.hover)))
+                    .active(|s| s.bg(rgb(pal.active)))
                     .child(
                         div()
                             .flex_1()
@@ -281,6 +299,7 @@ impl AbstractApp {
                 .text_size(px(12.))
                 .text_color(rgb(pal.body))
                 .hover(|s| s.bg(rgb(pal.hover)))
+                .active(|s| s.bg(rgb(pal.active)))
                 .on_click(move |_, _, cx| cx.open_url(&url))
                 .child(icon(glyph, pal.dim).size(px(13.)))
                 .child(label)
@@ -334,6 +353,7 @@ impl AbstractApp {
                             s.child(icon("icons/check.svg", pal.dim).size(px(14.)))
                         })
                 }));
+        let discord = self.settings.discord();
         let body = div()
             .id("settings-body")
             .flex_1()
@@ -376,6 +396,7 @@ impl AbstractApp {
                     .text_size(px(13.))
                     .text_color(rgb(pal.body))
                     .hover(|s| s.bg(rgb(pal.hover)))
+                    .active(|s| s.bg(rgb(pal.active)))
                     .on_click(cx.listener(|this, _, _, cx| this.cycle_lang(cx)))
                     .child(div().flex_1().child(t(Key::Language)))
                     .child(
@@ -403,6 +424,15 @@ impl AbstractApp {
                     .child(t(Key::FontHint)),
             )
             .child(font_rows)
+            .child(
+                toggle(
+                    "discord-presence",
+                    t(Key::DiscordPresence),
+                    Some(t(Key::DiscordPresenceHint)),
+                    discord,
+                )
+                .on_click(cx.listener(move |this, _, _, cx| this.set_discord(!discord, cx))),
+            )
             .child(section(t(Key::About)))
             .child(
                 div()
@@ -475,7 +505,7 @@ impl AbstractApp {
             .bg(rgb(pal.menu_bg))
             .border_1()
             .border_color(rgb(pal.menu_border))
-            .rounded(px(10.))
+            .rounded(px(8.))
             .shadow_lg()
             .occlude()
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {

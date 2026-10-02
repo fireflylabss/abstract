@@ -198,6 +198,15 @@ impl Settings {
         self.kv.set("updates", if on { "on" } else { "off" });
     }
 
+    /// `discord = off` keeps the Discord presence socket untouched.
+    pub fn discord(&self) -> bool {
+        self.kv.get("discord") != Some("off")
+    }
+
+    pub fn set_discord(&mut self, on: bool) {
+        self.kv.set("discord", if on { "on" } else { "off" });
+    }
+
     /// Unix seconds of the last release check.
     pub fn update_checked(&self) -> u64 {
         self.kv

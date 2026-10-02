@@ -244,6 +244,10 @@ pub enum Key {
     CopyFailed,
     Font,
     FontHint,
+    // Discord presence
+    DiscordPresence,
+    DiscordPresenceHint,
+    BrowsingNotes,
 }
 
 impl Key {
@@ -409,6 +413,9 @@ impl Key {
         Key::CopyFailed,
         Key::Font,
         Key::FontHint,
+        Key::DiscordPresence,
+        Key::DiscordPresenceHint,
+        Key::BrowsingNotes,
     ];
 }
 
@@ -590,6 +597,9 @@ fn en(k: Key) -> &'static str {
         Key::CopyFailed => "Couldn't copy",
         Key::Font => "Font",
         Key::FontHint => "Interface and note typeface. Code stays in Noto Sans Mono.",
+        Key::DiscordPresence => "Discord presence",
+        Key::DiscordPresenceHint => "Show the note you're editing on your Discord profile.",
+        Key::BrowsingNotes => "Browsing notes",
     }
 }
 
@@ -773,6 +783,11 @@ fn pt(k: Key) -> &'static str {
         Key::CopyFailed => "Não foi possível copiar",
         Key::Font => "Fonte",
         Key::FontHint => "Tipo da interface e das notas. Código continua em Noto Sans Mono.",
+        Key::DiscordPresence => "Presença no Discord",
+        Key::DiscordPresenceHint => {
+            "Mostra no seu perfil do Discord a nota que você está editando."
+        }
+        Key::BrowsingNotes => "Navegando nas notas",
     }
 }
 
