@@ -152,6 +152,9 @@ impl AbstractApp {
                             "[[{}]]",
                             stem_of(&p)
                         )))
+                    }))
+                    .item(item(t(Key::ExportAsHtml), |this, p, _, w, cx| {
+                        this.export_note(p, w, cx)
                     }));
             }
             NodeKind::Folder => {

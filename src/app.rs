@@ -1,4 +1,5 @@
 mod attach_ui;
+mod export_ui;
 mod files_menu;
 mod find_ui;
 mod links_ui;
@@ -403,6 +404,10 @@ impl Render for AbstractApp {
             )
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
             .on_action(cx.listener(|this, _: &ToggleOutline, _, cx| this.toggle_outline(cx)))
+            .on_action(
+                cx.listener(|this, _: &ExportHtml, window, cx| this.export_current(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &CopyAsHtml, _, cx| this.copy_as_html(cx)))
             .child(self.render_sidebar(cx))
             .child(self.render_main(window, cx))
             .when(self.settings_open, |el| el.child(self.render_settings(cx)))

@@ -887,6 +887,12 @@ fn delimited(
     out
 }
 
+/// `%%…%%` hidden comments (delimiters included) — the HTML emitter drops
+/// them so private text never leaves the app.
+pub(crate) fn comment_spans(text: &str, skip: &impl Fn(usize) -> bool) -> Vec<Range<usize>> {
+    delimited(text, b'%', true, skip)
+}
+
 /// Turn the lines of `block` into a `> [!note]` callout, or back into plain
 /// lines when the first one already is a callout head.
 pub fn toggle_callout(block: &str) -> String {

@@ -29,6 +29,8 @@ actions!(
         OpenSettings,
         Quit,
         ToggleOutline,
+        ExportHtml,
+        CopyAsHtml,
     ]
 );
 
