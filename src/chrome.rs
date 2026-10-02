@@ -37,8 +37,6 @@ pub(crate) fn window_controls(window: &Window, pal: &Palette) -> impl IntoElemen
     let caps = window.window_controls();
     let maximized = window.is_maximized();
     let line = pal.line;
-    let hover = pal.hover;
-    let dim = pal.dim;
     let fg = pal.fg;
     div().map(|row| {
         row.flex()
@@ -56,8 +54,7 @@ pub(crate) fn window_controls(window: &Window, pal: &Palette) -> impl IntoElemen
                         "Minimizar",
                         WindowControlArea::Min,
                         false,
-                        dim,
-                        hover,
+                        pal,
                     )
                     .when(!cfg!(windows), |b| {
                         b.on_click(|_, window, _| window.minimize_window())
@@ -71,18 +68,10 @@ pub(crate) fn window_controls(window: &Window, pal: &Palette) -> impl IntoElemen
                     ("icons/maximize.svg", "Maximizar")
                 };
                 r.child(
-                    win_btn(
-                        "win-max",
-                        path,
-                        label,
-                        WindowControlArea::Max,
-                        false,
-                        dim,
-                        hover,
-                    )
-                    .when(!cfg!(windows), |b| {
-                        b.on_click(|_, window, _| window.zoom_window())
-                    }),
+                    win_btn("win-max", path, label, WindowControlArea::Max, false, pal)
+                        .when(!cfg!(windows), |b| {
+                            b.on_click(|_, window, _| window.zoom_window())
+                        }),
                 )
             })
             .child(
@@ -92,8 +81,7 @@ pub(crate) fn window_controls(window: &Window, pal: &Palette) -> impl IntoElemen
                     "Fechar",
                     WindowControlArea::Close,
                     true,
-                    dim,
-                    hover,
+                    pal,
                 )
                 .when(!cfg!(windows), |b| {
                     b.on_click(|_, window, _| window.remove_window())
@@ -113,9 +101,10 @@ pub(crate) fn win_btn(
     label: &'static str,
     area: WindowControlArea,
     danger: bool,
-    dim: u32,
-    hover: u32,
+    pal: &Palette,
 ) -> Stateful<Div> {
+    let hover = pal.hover;
+    let active = pal.active;
     div()
         .id(id)
         .when(cfg!(windows), |b| b.window_control_area(area))
@@ -136,7 +125,14 @@ pub(crate) fn win_btn(
                 s.bg(rgb(hover))
             }
         })
-        .child(icon(path, dim).size(px(14.)))
+        .active(move |s| {
+            if danger {
+                s.bg(rgb(0xd92d20)).text_color(rgb(0xffffff))
+            } else {
+                s.bg(rgb(active))
+            }
+        })
+        .child(icon(path, pal.dim).size(px(14.)))
 }
 
 /// Marks `el` as a window-drag region: primary-button drags move the window.

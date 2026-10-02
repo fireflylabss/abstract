@@ -182,6 +182,7 @@ impl AbstractApp {
                     .cursor_pointer()
                     .when(selected, |s| s.bg(rgb(pal.active)))
                     .when(!selected, |s| s.hover(|s| s.bg(rgb(pal.hover))))
+                    .active(|s| s.bg(rgb(pal.active)))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         if let Some(p) = &mut this.search {
                             p.selected = ix;
