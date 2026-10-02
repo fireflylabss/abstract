@@ -209,6 +209,10 @@ impl AbstractApp {
                 n.rel = new.strip_prefix(&self.dir).unwrap_or(new).join(rest);
             }
         }
+        self.pins = self.pins.iter().map(|p| remap(p)).collect();
+        for set in self.tag_paths.values_mut() {
+            *set = std::mem::take(set).into_iter().map(|p| remap(&p)).collect();
+        }
         self.save_session(cx);
         self.sync_editor_dirs(cx);
     }

@@ -49,6 +49,9 @@ const SAVE_DEBOUNCE: Duration = Duration::from_millis(400);
 /// Marks the synthetic sidebar row that hosts the new-folder input. Starts
 /// with a dot so a real file can never collide.
 const NEW_FOLDER_ROW: &str = ".abstract-new-folder";
+
+/// Marks the synthetic "PINNED" group header at the top of the note list.
+const PINNED_ROW: &str = ".abstract-pinned";
 // ── Notes on disk ─────────────────────────────────────────────────────────
 
 fn title_of(text: &str) -> SharedString {
@@ -220,6 +223,19 @@ pub(crate) struct AbstractApp {
     _watcher: Option<SpaceWatcher>,
     _watch_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
+    /// Pinned notes (absolute paths), most recently pinned first.
+    pins: Vec<PathBuf>,
+    /// TAGS section is expanded in the sidebar.
+    tags_open: bool,
+    /// (display name, note count) for the sidebar's TAGS section.
+    tags: Vec<(String, usize)>,
+    /// Lowercased tag → note paths carrying it; backs the sidebar filter.
+    tag_paths: HashMap<String, HashSet<PathBuf>>,
+    /// Lowercased tag the note list is currently filtered by.
+    tag_filter: Option<String>,
+    tag_index: Arc<Mutex<crate::tags::TagIndex>>,
+    daily_input: Entity<InputState>,
+    _tags_task: Option<Task<()>>,
 }
 impl AbstractApp {
     pub(crate) fn new(
@@ -264,6 +280,12 @@ impl AbstractApp {
         });
         let on_appearance = cx.observe_window_appearance(window, |this, window, cx| {
             this.appearance_changed(window, cx);
+        });
+        let daily_input = cx.new(|cx| InputState::new(window, cx));
+        let on_daily = cx.subscribe(&daily_input, |this: &mut Self, _, ev: &InputEvent, cx| {
+            if matches!(ev, InputEvent::Change) {
+                this.daily_folder_changed(cx);
+            }
         });
 
         let mut app = Self {
@@ -325,7 +347,16 @@ impl AbstractApp {
                 on_bounds,
                 on_activation,
                 on_appearance,
+                on_daily,
             ],
+            pins: Vec::new(),
+            tags_open: true,
+            tags: Vec::new(),
+            tag_paths: HashMap::new(),
+            tag_filter: None,
+            tag_index: Arc::default(),
+            daily_input,
+            _tags_task: None,
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
         app._io_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -387,6 +418,7 @@ impl Render for AbstractApp {
                 cx.listener(|this, _: &OpenSettings, window, cx| this.toggle_settings(window, cx)),
             )
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
+            .on_action(cx.listener(|this, _: &DailyNote, window, cx| this.open_daily(window, cx)))
             .child(self.render_sidebar(cx))
             .child(self.render_main(window, cx))
             .when(self.settings_open, |el| el.child(self.render_settings(cx)))

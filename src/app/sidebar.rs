@@ -1,9 +1,33 @@
 use super::*;
 
 impl AbstractApp {
-    /// Flattened visible rows plus the synthetic pending-note/new-folder rows.
+    /// Flattened visible rows plus the synthetic pending-note/new-folder
+    /// rows, the PINNED group on top, and the active tag filter.
     pub(crate) fn flat_rows(&self) -> Vec<vault::Row> {
         let mut rows = vault::flatten(&self.tree, &self.expanded);
+        // Tag filter: keep tagged notes plus the folders containing them.
+        if let Some(set) = self.tag_filter.as_ref().and_then(|t| self.tag_paths.get(t)) {
+            let mut keep: Vec<bool> = rows
+                .iter()
+                .map(|r| r.kind == NodeKind::Note && set.contains(&r.path))
+                .collect();
+            for i in (0..rows.len()).rev() {
+                if rows[i].kind != NodeKind::Folder || keep[i] {
+                    continue;
+                }
+                let d = rows[i].depth;
+                let mut j = i + 1;
+                while j < rows.len() && rows[j].depth > d {
+                    if keep[j] {
+                        keep[i] = true;
+                        break;
+                    }
+                    j += 1;
+                }
+            }
+            let mut it = keep.into_iter();
+            rows.retain(|_| it.next().unwrap_or(false));
+        }
         let insert = |rows: &mut Vec<vault::Row>, parent: &Path| -> usize {
             let (ix, depth) = match rows.iter().position(|r| r.path == parent) {
                 Some(i) => (i + 1, rows[i].depth + 1),
@@ -36,6 +60,32 @@ impl AbstractApp {
             rows[ix].path = p.clone();
             rows[ix].name = t(Key::Untitled).into();
         }
+        // Pinned aliases on top (skipped while a tag filter is active): the
+        // filtered view is already narrowed to what the user asked for.
+        if self.tag_filter.is_none() && !self.pins.is_empty() {
+            let mut top = vec![vault::Row {
+                path: PathBuf::from(PINNED_ROW),
+                name: t(Key::Pinned).into(),
+                kind: NodeKind::Note,
+                depth: 0,
+                expanded: false,
+            }];
+            top.extend(
+                self.pins
+                    .iter()
+                    .filter(|p| rows.iter().any(|r| r.path == **p))
+                    .map(|p| vault::Row {
+                        path: p.clone(),
+                        name: stem_of(p),
+                        kind: NodeKind::Note,
+                        depth: 0,
+                        expanded: false,
+                    }),
+            );
+            if top.len() > 1 {
+                rows.splice(0..0, top);
+            }
+        }
         rows
     }
 
@@ -60,8 +110,23 @@ impl AbstractApp {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let pal = cx.palette();
+        // The PINNED group header: a quiet label, not a note row.
+        if row.path.as_path() == Path::new(PINNED_ROW) {
+            return div()
+                .id(("row", ix))
+                .h(px(30.))
+                .pl(px(10.))
+                .flex()
+                .items_center()
+                .text_size(px(11.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(rgb(pal.faint))
+                .child(icon("icons/pin.svg", pal.faint).size(px(12.)).mr(px(6.)))
+                .child(row.name.clone());
+        }
         let active = current == Some(row.path.as_path());
         let folder = row.kind == NodeKind::Folder;
+        let pinned = !folder && self.pins.contains(&row.path);
         let editing = self.editing.as_ref().is_some_and(|e| {
             (!e.create && e.target == row.path) || (e.create && row.path.ends_with(NEW_FOLDER_ROW))
         });
@@ -132,9 +197,16 @@ impl AbstractApp {
                 .child(icon("icons/folder.svg", pal.faint).size(px(15.)));
         } else {
             pill = pill.child(
-                icon("icons/note.svg", if active { pal.fg } else { pal.faint })
-                    .size(px(15.))
-                    .ml(px(18.)),
+                icon(
+                    if pinned {
+                        "icons/pin.svg"
+                    } else {
+                        "icons/note.svg"
+                    },
+                    if active { pal.fg } else { pal.faint },
+                )
+                .size(px(15.))
+                .ml(px(18.)),
             );
         }
         if editing && let Some(ed) = &self.editing {
@@ -219,11 +291,15 @@ impl AbstractApp {
                         let row = &rows[ix.min(rows.len().saturating_sub(1))];
                         let pill = this.render_row(ix, row, current.as_deref(), cx);
                         let (path, kind) = (row.path.clone(), row.kind);
+                        let pinned = kind == NodeKind::Note && this.pins.contains(&path);
                         let weak = cx.entity().downgrade();
-                        let pill =
+                        let pill = if path.as_path() == Path::new(PINNED_ROW) {
+                            div().size_full().child(pill)
+                        } else {
                             div().size_full().child(pill.context_menu(move |m, _, _| {
-                                Self::row_menu(&weak, &path, kind, m)
-                            }));
+                                Self::row_menu(&weak, &path, kind, pinned, m)
+                            }))
+                        };
                         div().h(px(32.)).px(px(8.)).pb(px(2.)).child(rise(
                             pill,
                             ("note-in", ix),
@@ -372,10 +448,40 @@ impl AbstractApp {
                             .text_size(px(11.))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(rgb(pal.faint))
-                            .child(t(Key::Notes))
-                            .child(notes_n.to_string()),
+                            .child(div().min_w_0().truncate().child(match &self.tag_filter {
+                                Some(k) => SharedString::from(format!("#{}", self.tag_name(k))),
+                                None => t(Key::Notes).into(),
+                            }))
+                            .child(match &self.tag_filter {
+                                Some(k) => div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(4.))
+                                    .child(self.tag_paths.get(k).map_or(0, |s| s.len()).to_string())
+                                    .child(
+                                        div()
+                                            .id("clear-tag")
+                                            .role(Role::Button)
+                                            .aria_label(t(Key::ClearFilter))
+                                            .size(px(16.))
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .rounded(px(4.))
+                                            .cursor_pointer()
+                                            .hover(|s| s.bg(rgb(pal.active)))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.tag_filter = None;
+                                                cx.notify();
+                                            }))
+                                            .child(icon("icons/close.svg", pal.dim).size(px(10.))),
+                                    )
+                                    .into_any_element(),
+                                None => div().child(notes_n.to_string()).into_any_element(),
+                            }),
                     )
                     .child(list)
+                    .when_some(self.render_tags(cx), |s, el| s.child(el))
                     .child(self.render_settings_button(cx))
                     .when(self.spaces_open, |col| {
                         col.child(self.render_spaces_menu(cx))
@@ -391,5 +497,152 @@ impl AbstractApp {
                 move |el, d| el.w(px(from + (to - from) * d)),
             )
             .into_any_element()
+    }
+
+    /// Display casing for a lowercased tag key (falls back to the key).
+    fn tag_name<'a>(&'a self, key: &'a str) -> &'a str {
+        self.tags
+            .iter()
+            .find(|(d, _)| d.to_lowercase() == key)
+            .map(|(d, _)| d.as_str())
+            .unwrap_or(key)
+    }
+
+    /// Click a tag row: filter the note list to it (again to clear).
+    pub(crate) fn filter_tag(&mut self, tag: String, cx: &mut Context<Self>) {
+        self.tag_filter = if self.tag_filter.as_deref() == Some(tag.as_str()) {
+            None
+        } else {
+            Some(tag)
+        };
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_tags(&mut self, cx: &mut Context<Self>) {
+        self.tags_open = !self.tags_open;
+        self.save_session(cx);
+        cx.notify();
+    }
+
+    /// Recompute the tag index off-thread; applied only while the same space
+    /// is still open. Files are re-read only when their mtime moved.
+    pub(crate) fn refresh_tags(&mut self, cx: &mut Context<Self>) {
+        let dir = self.dir.clone();
+        if dir.as_os_str().is_empty() {
+            return;
+        }
+        let index = self.tag_index.clone();
+        let scanned = dir.clone();
+        self._tags_task = Some(cx.spawn(async move |this, cx| {
+            let (tags, paths) = cx
+                .background_executor()
+                .spawn(async move { guard(&index).refresh(&scanned) })
+                .await;
+            this.update(cx, |this, cx| {
+                if this.dir != dir {
+                    return;
+                }
+                this.tags = tags;
+                this.tag_paths = paths;
+                if let Some(f) = &this.tag_filter
+                    && !this.tag_paths.contains_key(f)
+                {
+                    this.tag_filter = None;
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
+    }
+
+    /// Collapsible TAGS strip under the note list; hidden while a space has
+    /// no tags at all.
+    pub(crate) fn render_tags(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if self.tags.is_empty() {
+            return None;
+        }
+        let pal = cx.palette();
+        let mut section = div()
+            .flex_none()
+            .border_t_1()
+            .border_color(rgb(pal.line))
+            .child(
+                div()
+                    .id("tags-head")
+                    .role(Role::Button)
+                    .aria_expanded(self.tags_open)
+                    .h(px(28.))
+                    .px(px(18.))
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    .cursor_pointer()
+                    .text_size(px(11.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(pal.faint))
+                    .hover(|s| s.text_color(rgb(pal.dim)))
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_tags(cx)))
+                    .child(
+                        icon(
+                            if self.tags_open {
+                                "icons/chevron-down.svg"
+                            } else {
+                                "icons/chevron-right.svg"
+                            },
+                            pal.faint,
+                        )
+                        .size(px(11.)),
+                    )
+                    .child(t(Key::Tags)),
+            );
+        if self.tags_open {
+            let mut rows = div().flex().flex_col().gap(px(1.)).px(px(8.)).pb(px(6.));
+            for (ix, (name, count)) in self.tags.iter().enumerate() {
+                let key = name.to_lowercase();
+                let on = self.tag_filter.as_deref() == Some(key.as_str());
+                rows = rows.child(
+                    div()
+                        .id(("tag", ix))
+                        .role(Role::Button)
+                        .aria_label(SharedString::from(format!("#{name}")))
+                        .h(px(26.))
+                        .px(px(8.))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .text_size(px(12.))
+                        .text_color(rgb(if on { pal.fg } else { pal.dim }))
+                        .when(on, |s| s.bg(rgb(pal.active)))
+                        .when(!on, |s| {
+                            s.hover(|s| s.bg(rgb(pal.hover)).text_color(rgb(pal.body)))
+                        })
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.filter_tag(key.clone(), cx)),
+                        )
+                        .child(
+                            icon("icons/hash.svg", if on { pal.fg } else { pal.faint })
+                                .size(px(13.)),
+                        )
+                        .child(div().flex_1().min_w_0().truncate().child(name.clone()))
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_size(px(11.))
+                                .text_color(rgb(pal.faint))
+                                .child(count.to_string()),
+                        ),
+                );
+            }
+            section = section.child(
+                div()
+                    .id("tags-list")
+                    .max_h(px(160.))
+                    .overflow_y_scroll()
+                    .child(rows),
+            );
+        }
+        Some(section.into_any_element())
     }
 }

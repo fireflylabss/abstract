@@ -614,6 +614,8 @@ impl LiveEditor {
                     .menu(t(Key::Divider), Box::new(Divider))
                     .menu(t(Key::Table), Box::new(InsertTable))
                     .menu(t(Key::Footnote), Box::new(InsertFootnote))
+                    .separator()
+                    .menu(t(Key::DailyNote), Box::new(crate::keymap::DailyNote))
             })
     }
 
@@ -675,6 +677,44 @@ impl LiveEditor {
     /// Replace the completion prefix with `target]]`.
     pub fn complete_wiki(&mut self, range: Range<usize>, target: &str, cx: &mut Context<Self>) {
         self.edit(range, &format!("{target}]]"), None, cx);
+    }
+
+    /// `#prefix` immediately left of the cursor → `(name range, prefix)`. The
+    /// `#` must sit at a word boundary (not inside a word or a heading marker)
+    /// and not inside code.
+    pub fn tag_prefix(&self) -> Option<(Range<usize>, String)> {
+        let c = self.buf.cursor();
+        if !self.buf.sel().is_empty() || c == 0 {
+            return None;
+        }
+        if self.analysis.flags[c - 1] & crate::md::CODE != 0
+            || matches!(
+                self.analysis.lines[self.analysis.line_of(c - 1)].1,
+                crate::md::Kind::Code
+            )
+        {
+            return None;
+        }
+        let line = self.line_range(c);
+        let seg = &self.buf.text()[line.start..c];
+        let i = seg.rfind('#')? + line.start;
+        // Boundary: the char before `#` can't be a tag char or `#` (heading).
+        if i > 0
+            && let Some(p) = self.buf.text()[..i].chars().next_back()
+            && (crate::tags::is_tag_char(p) || p == '#')
+        {
+            return None;
+        }
+        let inner = &self.buf.text()[i + 1..c];
+        if !inner.chars().all(crate::tags::is_tag_char) {
+            return None;
+        }
+        Some((i + 1..c, inner.to_string()))
+    }
+
+    /// Replace the `#` completion prefix with `tag` (the `#` itself stays).
+    pub fn complete_tag(&mut self, range: Range<usize>, tag: &str, cx: &mut Context<Self>) {
+        self.edit(range, tag, None, cx);
     }
 
     /// Caret bottom-left in editor-element coordinates (popup anchor).

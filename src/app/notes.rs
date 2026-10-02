@@ -27,6 +27,7 @@ impl AbstractApp {
                         this.pending_new = None;
                     }
                 }
+                this.refresh_tags(cx);
                 cx.notify();
             })
             .ok();
@@ -138,6 +139,35 @@ impl AbstractApp {
             .unwrap_or_else(|| self.dir.clone())
     }
 
+    /// Cmd/Ctrl+Shift+D: open today's `<daily folder>/YYYY-MM-DD.md`, created
+    /// with a localized `# <date>` heading when missing. The filename stays
+    /// ISO, so it never title-syncs away.
+    pub(crate) fn open_daily(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.dir.as_os_str().is_empty() {
+            return;
+        }
+        let today = chrono::Local::now().date_naive();
+        let path = self
+            .dir
+            .join(self.settings.daily_folder())
+            .join(format!("{today}.md"));
+        if self.current.as_ref().is_some_and(|c| c.path() == path) {
+            return;
+        }
+        if !path.exists() {
+            let heading = crate::i18n::long_date(today);
+            if let Err(err) = store::write_atomic(&path, format!("# {heading}\n\n").as_bytes()) {
+                eprintln!("abstract: cannot create daily note: {err}");
+                self.notice = Some(t(Key::CreateNoteFailed).into());
+                cx.notify();
+                return;
+            }
+            self.rescan_tree(cx);
+        }
+        self.expand_to(&path);
+        self.open_path(path, None, window, cx);
+    }
+
     /// The file is created on the first keystroke, so untouched notes leave no trace.
     pub(crate) fn new_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.record_session_note(cx);
@@ -184,6 +214,8 @@ impl AbstractApp {
                 if !ok {
                     this.notice = Some(t(Key::TrashFailed).into());
                 }
+                // Trash drops pins pointing at it (a folder covers its notes).
+                this.pins.retain(|p| !p.starts_with(&path));
                 this.rescan_tree(cx);
             })
             .ok();

@@ -20,6 +20,7 @@ mod search;
 mod spaces;
 mod store;
 mod table;
+mod tags;
 mod theme;
 mod tour;
 mod update;

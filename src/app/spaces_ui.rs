@@ -73,6 +73,12 @@ impl AbstractApp {
         self.spaces = spaces;
         self.spaces_open = false;
         self.dir = self.spaces.current().to_path_buf();
+        self.pins = self.session.pins(&self.dir);
+        self.tags_open = self.session.tags_open().unwrap_or(true);
+        self.tag_filter = None;
+        self.tags.clear();
+        self.tag_paths.clear();
+        self.refresh_tags(cx);
         self.start_watch(cx);
         self.tree.clear();
         self.expanded.clear();

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::i18n::LangPref;
 use crate::theme::ThemePref;
+use crate::vault;
 
 /// XDG-style base dir: `var` wins; on Windows fall back to `%APPDATA%` /
 /// `%LOCALAPPDATA%`, then `HOME`/`USERPROFILE` + `fallback`, else the cwd.
@@ -199,6 +200,19 @@ impl Settings {
         self.kv.set("update_checked", &secs.to_string());
     }
 
+    /// Folder daily notes go into; a stored name that fails validation
+    /// falls back to `Daily`.
+    pub fn daily_folder(&self) -> &str {
+        self.kv
+            .get("daily_folder")
+            .filter(|v| vault::valid_folder_name(v))
+            .unwrap_or("Daily")
+    }
+
+    pub fn set_daily_folder(&mut self, name: &str) {
+        self.kv.set("daily_folder", name);
+    }
+
     /// Blocking.
     pub fn save(&self) {
         let file = settings_file();
@@ -315,6 +329,61 @@ impl Session {
         }
     }
 
+    /// `pin = <space>\t<rel>` entries for `space`, newest first.
+    pub fn pins(&self, space: &Path) -> Vec<PathBuf> {
+        let s = space.to_string_lossy();
+        self.kv
+            .lines
+            .iter()
+            .filter_map(|l| {
+                let (k, v) = l.split_once('=')?;
+                if k.trim() != "pin" {
+                    return None;
+                }
+                let mut parts = v.split('\t');
+                if parts.next()?.trim() != s {
+                    return None;
+                }
+                let rel = parts.next()?.trim();
+                (parts.next().is_none() && !rel.is_empty()).then(|| space.join(rel))
+            })
+            .collect()
+    }
+
+    /// Rewrite the `pin` lines for `space`, keeping other spaces' entries.
+    pub fn set_pins(&mut self, space: &Path, pins: &[PathBuf]) {
+        let s = space.to_string_lossy();
+        self.kv.lines.retain(|l| {
+            let Some((k, v)) = l.split_once('=') else {
+                return true;
+            };
+            k.trim() != "pin" || v.split('\t').next().map(str::trim) != Some(s.as_ref())
+        });
+        for p in pins {
+            let Ok(rel) = p.strip_prefix(space) else {
+                continue;
+            };
+            let rel = rel.to_string_lossy();
+            if s.contains(['\t', '\n']) || rel.contains(['\t', '\n']) {
+                continue;
+            }
+            self.kv.lines.push(format!("pin = {s}\t{rel}"));
+        }
+    }
+
+    /// `None` when the key is missing or malformed.
+    pub fn tags_open(&self) -> Option<bool> {
+        match self.kv.get("tags") {
+            Some("open") => Some(true),
+            Some("closed") => Some(false),
+            _ => None,
+        }
+    }
+
+    pub fn set_tags_open(&mut self, open: bool) {
+        self.kv.set("tags", if open { "open" } else { "closed" });
+    }
+
     /// Blocking.
     pub fn save(&self) {
         let file = session_file();
@@ -428,6 +497,38 @@ mod tests {
         assert_eq!(s.window(), None);
         assert_eq!(s.sidebar_open(), None);
         assert!(s.notes().is_empty());
+    }
+
+    #[test]
+    fn pins_are_per_space_and_resilient() {
+        let space_a = PathBuf::from("/a");
+        let space_b = PathBuf::from("/b");
+        let mut s = Session::default();
+        s.set_pins(&space_a, &[space_a.join("x.md"), space_a.join("y.md")]);
+        s.set_pins(&space_b, &[space_b.join("b.md")]);
+        assert_eq!(
+            s.pins(&space_a),
+            vec![space_a.join("x.md"), space_a.join("y.md")]
+        );
+        // Rewriting space a leaves b's pins alone.
+        s.set_pins(&space_a, &[space_a.join("y.md")]);
+        assert_eq!(s.pins(&space_a), vec![space_a.join("y.md")]);
+        assert_eq!(s.pins(&space_b), vec![space_b.join("b.md")]);
+        // Malformed/foreign-space lines are skipped, not kept.
+        let s = Session {
+            kv: KeyVals::parse("pin = /a\npin = /b\t\textra\npin = /b\tm.md\n"),
+        };
+        assert_eq!(
+            s.pins(&PathBuf::from("/b")),
+            vec![PathBuf::from("/b").join("m.md")]
+        );
+        // tags open/closed round-trip.
+        let mut s = Session::default();
+        assert_eq!(s.tags_open(), None);
+        s.set_tags_open(false);
+        assert_eq!(s.tags_open(), Some(false));
+        s.set_tags_open(true);
+        assert_eq!(s.tags_open(), Some(true));
     }
 
     #[test]

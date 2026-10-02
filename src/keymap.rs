@@ -28,6 +28,7 @@ actions!(
         FindPrevious,
         OpenSettings,
         Quit,
+        DailyNote,
     ]
 );
 
@@ -65,5 +66,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("f2", RenameNote, c),
         KeyBinding::new("f1", StartTour, c),
         KeyBinding::new("cmd-q", Quit, c),
+        KeyBinding::new("ctrl-shift-d", DailyNote, c),
+        KeyBinding::new("cmd-shift-d", DailyNote, c),
     ]);
 }

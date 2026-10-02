@@ -168,6 +168,14 @@ pub fn stem_for_title(title: &str) -> String {
     }
 }
 
+/// A single safe path component for app-created folders (the daily-notes
+/// folder): survives `stem_for_title` unchanged and isn't hidden by a
+/// leading dot.
+pub fn valid_folder_name(name: &str) -> bool {
+    let t = name.trim();
+    !t.is_empty() && stem_for_title(t) == t && !t.starts_with('.')
+}
+
 /// `X.md`, `X 2.md`, … — `exclude` is the file being renamed so renaming to
 /// itself is fine.
 pub fn unique_path(dir: &Path, stem: &str, exclude: Option<&Path>) -> PathBuf {
