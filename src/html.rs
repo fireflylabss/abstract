@@ -509,18 +509,26 @@ impl<'a> Emitter<'a> {
     fn def_bodies(&mut self, node: Node, nb: &Range<usize>) -> bool {
         let len = self.text.len();
         let end = node.end_byte().min(len);
-        let mut found = false;
-        for f in &self.a.footnotes {
-            if !f.def || f.range.start < node.start_byte() || f.range.start >= end {
-                continue;
-            }
-            found = true;
-            let body = trim(self.text, clip(f.range.end..end, nb));
+        // Adjacent `[^x]:` defs can share one paragraph node — each body ends
+        // where the next def begins.
+        let defs: Vec<(Range<usize>, Range<usize>)> = self
+            .a
+            .footnotes
+            .iter()
+            .filter(|f| f.def && f.range.start >= node.start_byte() && f.range.start < end)
+            .map(|f| (f.range.clone(), f.label.clone()))
+            .collect();
+        if defs.is_empty() {
+            return false;
+        }
+        for (i, (range, label)) in defs.iter().enumerate() {
+            let next = defs.get(i + 1).map(|(r, _)| r.start).unwrap_or(end);
+            let body = trim(self.text, clip(range.end..next, nb));
             if !body.is_empty() {
-                self.defs.push((f.label.clone(), body));
+                self.defs.push((label.clone(), body));
             }
         }
-        found
+        true
     }
 
     fn footnote_section(&mut self, out: &mut String) {
@@ -980,14 +988,17 @@ mod tests {
 
     #[test]
     fn footnotes() {
-        let out = html("Text[^1] and[^note].\n\n[^1]: First.\n[^note]: Second **bold**.\n");
+        // Adjacent defs: each `<li>` ends at its own body.
+        let out =
+            html("Text[^1] and[^note].\n\n[^1]: First footnote.\n[^note]: Second **bold**.\n");
         assert!(
             out.contains(
                 "<sup class=\"footnote-ref\" id=\"fnref-1\"><a href=\"#fn-1\">1</a></sup>"
             )
         );
         assert!(out.contains("class=\"footnotes\""));
-        assert!(out.contains("<li id=\"fn-1\"><sup>1</sup> First."));
+        assert!(out.contains("<li id=\"fn-1\"><sup>1</sup> First footnote. <a"));
+        assert!(!out.contains("First footnote.\n Second"));
         assert!(out.contains("<li id=\"fn-note\"><sup>note</sup> Second <strong>bold</strong>."));
         assert!(out.contains("href=\"#fnref-note\""));
     }
