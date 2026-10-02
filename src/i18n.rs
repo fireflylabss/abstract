@@ -255,6 +255,11 @@ pub enum Key {
     CmdInsertImage,
     CmdStartTour,
     CmdQuit,
+    ExportAsHtml,
+    CopyAsHtml,
+    Exported,
+    ExportFailed,
+    CopyFailed,
 }
 
 impl Key {
@@ -430,6 +435,11 @@ impl Key {
         Key::CmdInsertImage,
         Key::CmdStartTour,
         Key::CmdQuit,
+        Key::ExportAsHtml,
+        Key::CopyAsHtml,
+        Key::Exported,
+        Key::ExportFailed,
+        Key::CopyFailed,
     ];
 }
 
@@ -621,6 +631,11 @@ fn en(k: Key) -> &'static str {
         Key::CmdInsertImage => "Insert image…",
         Key::CmdStartTour => "Start tour",
         Key::CmdQuit => "Quit abstract",
+        Key::ExportAsHtml => "Export as HTML…",
+        Key::CopyAsHtml => "Copy as HTML",
+        Key::Exported => "Exported {name}",
+        Key::ExportFailed => "Couldn't export",
+        Key::CopyFailed => "Couldn't copy",
     }
 }
 
@@ -814,6 +829,11 @@ fn pt(k: Key) -> &'static str {
         Key::CmdInsertImage => "Inserir imagem…",
         Key::CmdStartTour => "Iniciar o tour",
         Key::CmdQuit => "Sair do abstract",
+        Key::ExportAsHtml => "Exportar como HTML…",
+        Key::CopyAsHtml => "Copiar como HTML",
+        Key::Exported => "{name} exportado",
+        Key::ExportFailed => "Não foi possível exportar",
+        Key::CopyFailed => "Não foi possível copiar",
     }
 }
 
