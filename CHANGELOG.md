@@ -6,6 +6,42 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-02
+
+### Added
+- Note tabs: every open note gets a tab (with its own cursor, scroll and
+  undo state) on a new strip under the toolbar, and `Alt+←/→` (`Cmd+[`/`Cmd+]`)
+  walks the history of opened notes like a browser. `Ctrl+Tab` or
+  `Cmd+Shift+]`/`[` cycles tabs; `Cmd/Ctrl+W` or a middle-click closes one.
+  Tabs, the active tab and their positions are restored across launches.
+- Outline panel on the right listing the open note's headings, indented by
+  level — click a heading to jump to it. Toggle it from the toolbar or with
+  `Cmd/Ctrl+Shift+O`; the state persists.
+- Command palette: a `Cmd/Ctrl+P` query starting with `>` fuzzy-finds app
+  commands (localized labels, with their real shortcuts) and runs them.
+- YAML front matter: a `---`-fenced block at the top of a note collapses to
+  a dimmed `Properties (n keys)` row and no longer renders as a heading or
+  divider — move the caret into it to edit the raw YAML.
+- Link preview: holding the link modifier (`Cmd` on macOS, `Ctrl` elsewhere)
+  over a `[[link]]` pops a card with the target note's title and first
+  lines, or a click-to-create hint for notes that don't exist yet.
+- Tags: `#tag` anywhere in body text (never in code) collects into a new
+  collapsible TAGS sidebar section — click one to filter the note list.
+  Typing `#` autocompletes tag names.
+- Pinned notes: right-click a note to pin it — pinned notes appear in a
+  PINNED group on top of the note list and persist per space.
+- Daily note: `Cmd/Ctrl+Shift+D` opens (creating, when needed) today's
+  `YYYY-MM-DD.md` under the daily-notes folder, seeded with a localized
+  date heading; the folder name is configurable in Settings.
+- Export as HTML: a note exports to a standalone styled page via the save
+  dialog — callouts, tables, task lists, footnotes and wiki-links resolved
+  to relative links, with private `%%comments%%` left out — and **Copy as
+  HTML** puts formatted rich text on the clipboard.
+- Distribution manifests: a Homebrew cask (macOS arm + Intel), a Flatpak
+  manifest with AppStream metainfo, and a winget manifest set for the
+  portable Windows `.exe`, all under `packaging/` (see
+  `docs/RELEASING.md`).
+
 ## [0.1.3] - 2026-09-28
 
 ### Added
@@ -121,7 +157,8 @@ First public release.
   `SHA256SUMS`.
 - AUR packages `abstract-editor` (source) and `abstract-editor-bin`.
 
-[Unreleased]: https://github.com/fireflylabss/abstract/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/fireflylabss/abstract/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/fireflylabss/abstract/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/fireflylabss/abstract/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/fireflylabss/abstract/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/fireflylabss/abstract/compare/v0.1.0...v0.1.1
