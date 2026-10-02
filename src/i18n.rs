@@ -246,6 +246,14 @@ pub enum Key {
     DiscordPresence,
     DiscordPresenceHint,
     BrowsingNotes,
+    // Highlight colours
+    HighlightColor,
+    TintRed,
+    TintOrange,
+    TintYellow,
+    TintGreen,
+    TintBlue,
+    TintPurple,
 }
 
 impl Key {
@@ -412,6 +420,13 @@ impl Key {
         Key::DiscordPresence,
         Key::DiscordPresenceHint,
         Key::BrowsingNotes,
+        Key::HighlightColor,
+        Key::TintRed,
+        Key::TintOrange,
+        Key::TintYellow,
+        Key::TintGreen,
+        Key::TintBlue,
+        Key::TintPurple,
     ];
 }
 
@@ -594,6 +609,13 @@ fn en(k: Key) -> &'static str {
         Key::DiscordPresence => "Discord presence",
         Key::DiscordPresenceHint => "Show the note you're editing on your Discord profile.",
         Key::BrowsingNotes => "Browsing notes",
+        Key::HighlightColor => "Highlight color",
+        Key::TintRed => "Red",
+        Key::TintOrange => "Orange",
+        Key::TintYellow => "Yellow",
+        Key::TintGreen => "Green",
+        Key::TintBlue => "Blue",
+        Key::TintPurple => "Purple",
     }
 }
 
@@ -780,6 +802,13 @@ fn pt(k: Key) -> &'static str {
             "Mostra no seu perfil do Discord a nota que você está editando."
         }
         Key::BrowsingNotes => "Navegando nas notas",
+        Key::HighlightColor => "Cor do marca-texto",
+        Key::TintRed => "Vermelho",
+        Key::TintOrange => "Laranja",
+        Key::TintYellow => "Amarelo",
+        Key::TintGreen => "Verde",
+        Key::TintBlue => "Azul",
+        Key::TintPurple => "Roxo",
     }
 }
 

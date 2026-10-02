@@ -41,6 +41,9 @@ pub struct Palette {
     pub find_current: u32,
     /// Callout accents by `md::Tone`: note, tip, warning, danger.
     pub callout: [u32; 4],
+    /// `=={tint}…==` backgrounds by `md::Tint`, rgba — the palette's accent
+    /// hues at the highlight's alpha.
+    pub marks: [u32; 6],
 }
 
 impl Global for Palette {}
@@ -75,6 +78,9 @@ pub const DARK: Palette = Palette {
     highlight: 0xe5c07b40,
     find_current: 0xe5a13bb3,
     callout: [0x6ea8fe, 0x5fc88f, 0xe5b454, 0xf0736b],
+    marks: [
+        0xf0736b40, 0xd19a6640, 0xe5c07b40, 0x5fc88f40, 0x6ea8fe40, 0xb392f040,
+    ],
 };
 
 /// Warm monochrome, light.
@@ -107,6 +113,9 @@ pub const LIGHT: Palette = Palette {
     highlight: 0xffd84a80,
     find_current: 0xff9f1ab3,
     callout: [0x2f6fd6, 0x1f8a52, 0xa66a00, 0xc4372f],
+    marks: [
+        0xc4372f80, 0xd9770680, 0xffd84a80, 0x1f8a5280, 0x2f6fd680, 0x7c3aed80,
+    ],
 };
 
 /// Cool neutrals on white, light.
@@ -139,6 +148,9 @@ pub const PAPER: Palette = Palette {
     highlight: 0xffd33d66,
     find_current: 0xff9a00b3,
     callout: [0x0969da, 0x1a7f37, 0x9a6700, 0xcf222e],
+    marks: [
+        0xcf222e66, 0xbc4c0066, 0xffd33d66, 0x1a7f3766, 0x0969da66, 0x8250df66,
+    ],
 };
 
 /// Warm paper and brown ink, light.
@@ -171,6 +183,9 @@ pub const SEPIA: Palette = Palette {
     highlight: 0xf2c14e80,
     find_current: 0xe8891ab3,
     callout: [0x3a6ea5, 0x4f7d2c, 0x9a6a00, 0xb03a2e],
+    marks: [
+        0xb03a2e80, 0xc0562180, 0xf2c14e80, 0x4f7d2c80, 0x3a6ea580, 0x7d5ba680,
+    ],
 };
 
 /// Solarized (Ethan Schoonover), light.
@@ -203,6 +218,9 @@ pub const SOLARIZED_LIGHT: Palette = Palette {
     highlight: 0xb5890040,
     find_current: 0xcb4b1699,
     callout: [0x268bd2, 0x859900, 0xb58900, 0xdc322f],
+    marks: [
+        0xdc322f40, 0xcb4b1640, 0xb5890040, 0x85990040, 0x268bd240, 0x6c71c440,
+    ],
 };
 
 /// Blue-black with cool grays, dark.
@@ -235,6 +253,9 @@ pub const MIDNIGHT: Palette = Palette {
     highlight: 0xbb800966,
     find_current: 0xd29922b3,
     callout: [0x4493f8, 0x3fb950, 0xd29922, 0xf85149],
+    marks: [
+        0xf8514966, 0xdb6d2866, 0xbb800966, 0x3fb95066, 0x4493f866, 0xa371f766,
+    ],
 };
 
 /// Nord (Arctic Ice Studio), dark.
@@ -267,6 +288,9 @@ pub const NORD: Palette = Palette {
     highlight: 0xebcb8b40,
     find_current: 0xd08770b3,
     callout: [0x81a1c1, 0xa3be8c, 0xebcb8b, 0xbf616a],
+    marks: [
+        0xbf616a40, 0xd0877040, 0xebcb8b40, 0xa3be8c40, 0x81a1c140, 0xb48ead40,
+    ],
 };
 
 /// Solarized (Ethan Schoonover), dark.
@@ -299,6 +323,9 @@ pub const SOLARIZED_DARK: Palette = Palette {
     highlight: 0xb5890050,
     find_current: 0xcb4b16b3,
     callout: [0x268bd2, 0x859900, 0xb58900, 0xdc322f],
+    marks: [
+        0xdc322f50, 0xcb4b1650, 0xb5890050, 0x85990050, 0x268bd250, 0x6c71c450,
+    ],
 };
 
 /// A palette the settings can pick by `id`; `name` is shown as is.
