@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.fireflylabss.abstract</id>
+  <name>abstract</name>
+  <summary>Minimal local-first markdown notes editor</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <developer id="io.github.fireflylabss">
+    <name>fireflylabss</name>
+  </developer>
+  <launchable type="desktop-id">io.github.fireflylabss.abstract.desktop</launchable>
+  <description>
+    <p>
+      abstract is a minimal, local-first markdown notes editor written in
+      Rust and rendered on the GPU with GPUI. Notes are plain Markdown
+      files in real folders on disk — the folder is the workspace, so your
+      notes stay portable and never live behind an app-specific format.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Live-rendered Markdown with conceal, images, tables, tasks, footnotes and callouts</li>
+      <li>Wiki-links with autocomplete and backlinks between notes</li>
+      <li>Quick-open palette, find and sidebar browsing across spaces</li>
+      <li>Multiple spaces, themes and English/Portuguese UI</li>
+    </ul>
+  </description>
+  <url type="homepage">https://github.com/fireflylabss/abstract</url>
+  <url type="bugtracker">https://github.com/fireflylabss/abstract/issues</url>
+  <provides>
+    <binary>abstract</binary>
+  </provides>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <!-- Add the ISO date of each release; Flathub requires a date. -->
+    <release version="0.2.0" date="2026-10-01" />
+  </releases>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/fireflylabss/abstract/main/docs/screenshot-dark.png</image>
+      <caption>Editing a note in the dark theme</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/fireflylabss/abstract/main/docs/screenshot-light.png</image>
+      <caption>Editing a note in the light theme</caption>
+    </screenshot>
+  </screenshots>
+</component>

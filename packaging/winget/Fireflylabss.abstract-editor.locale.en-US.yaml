@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+PackageIdentifier: Fireflylabss.abstract-editor
+PackageVersion: 0.2.0
+PackageLocale: en-US
+Publisher: fireflylabss
+PublisherUrl: https://github.com/fireflylabss
+PublisherSupportUrl: https://github.com/fireflylabss/abstract/issues
+PackageName: abstract
+PackageUrl: https://github.com/fireflylabss/abstract
+License: Apache-2.0
+LicenseUrl: https://raw.githubusercontent.com/fireflylabss/abstract/main/LICENSE
+ShortDescription: Minimal local-first markdown notes editor, GPU-rendered with GPUI
+Description: >-
+  abstract is a minimal, local-first markdown notes editor. Notes are
+  plain Markdown files in real folders on disk — the folder is the
+  workspace. It features live-rendered Markdown with conceal, wiki-links
+  with backlinks, a quick-open palette, multiple spaces, themes and an
+  English/Portuguese UI.
+Moniker: abstract-editor
+Tags:
+  - markdown
+  - markdown-editor
+  - notes
+  - note-taking
+  - editor
+  - writing
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

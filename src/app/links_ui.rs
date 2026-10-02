@@ -269,4 +269,113 @@ impl AbstractApp {
                 .child(rows),
         )
     }
+
+    /// Cached Ctrl/`Cmd`-hover target: resolved title + body lines, or a
+    /// create hint for a link that resolves to nothing.
+    pub(crate) fn set_link_preview(&mut self, target: Option<&str>, cx: &mut Context<Self>) {
+        self.preview = target.map(|t| {
+            let Some(path) = crate::links::resolve(&self.tree, t) else {
+                return LinkPreview::missing(t);
+            };
+            let text = if self.current.as_ref().is_some_and(|c| c.path() == path) {
+                self.editor.read(cx).text().to_string()
+            } else {
+                std::fs::read_to_string(&path).unwrap_or_default()
+            };
+            LinkPreview::resolved(&path, &text)
+        });
+        cx.notify();
+    }
+
+    /// Card under the modifier-hovered `[[link]]` showing the target's head;
+    /// mounted inside the (relative) editor column, like the completion popup.
+    pub(crate) fn render_preview(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let p = self.preview.as_ref()?;
+        let anchor = self.editor.read(cx).preview_anchor()?;
+        let pal = cx.palette();
+        let mut body = div().flex().flex_col().pt(px(4.));
+        if p.missing {
+            body = body.child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(rgb(pal.faint))
+                    .child(tf(Key::LinkNew, &[])),
+            );
+        } else {
+            for line in &p.lines {
+                body = body.child(
+                    div()
+                        .text_size(px(12.))
+                        .line_height(px(18.))
+                        .text_color(rgb(pal.muted))
+                        .truncate()
+                        .child(line.clone()),
+                );
+            }
+        }
+        Some(
+            div()
+                .id("link-preview")
+                .absolute()
+                .left(px(anchor.x.max(8.)))
+                .top(px(anchor.y + 4.))
+                .w(px(280.))
+                .bg(rgb(pal.menu_bg))
+                .border_1()
+                .border_color(rgb(pal.menu_border))
+                .rounded(px(6.))
+                .shadow_lg()
+                .occlude()
+                .p(px(10.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_size(px(13.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(pal.fg))
+                        .truncate()
+                        .child(icon("icons/link.svg", pal.faint).size(px(12.)))
+                        .child(p.title.clone()),
+                )
+                .child(body),
+        )
+    }
+}
+
+/// The `[[target]]` preview payload: resolved note title plus its first
+/// non-empty body lines, or the target text itself when `missing`.
+pub(super) struct LinkPreview {
+    title: String,
+    lines: Vec<String>,
+    missing: bool,
+}
+
+impl LinkPreview {
+    fn missing(target: &str) -> Self {
+        Self {
+            title: target.to_string(),
+            lines: Vec::new(),
+            missing: true,
+        }
+    }
+
+    /// Title from `file_title` plus the first 8 non-empty lines after it
+    /// (front matter and the title line skipped), each ≤120 chars.
+    fn resolved(path: &Path, text: &str) -> Self {
+        let title = crate::search::file_title(path, text);
+        let body = crate::md::front_matter(text).map_or(text, |fm| &text[fm.end..]);
+        let mut lines = body.lines().filter(|l| !l.trim().is_empty());
+        lines.next();
+        let lines = lines
+            .map(|l| l.trim().chars().take(120).collect())
+            .take(8)
+            .collect();
+        Self {
+            title,
+            lines,
+            missing: false,
+        }
+    }
 }

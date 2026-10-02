@@ -246,6 +246,8 @@ pub enum Key {
     DailyNote,
     DailyFolder,
     DailyFolderHint,
+    Properties,
+    LinkNew,
     // Outline panel + command palette
     Outline,
     OutlineTip,
@@ -264,6 +266,11 @@ pub enum Key {
     CmdInsertImage,
     CmdStartTour,
     CmdQuit,
+    ExportAsHtml,
+    CopyAsHtml,
+    Exported,
+    ExportFailed,
+    CopyFailed,
 }
 
 impl Key {
@@ -430,6 +437,8 @@ impl Key {
         Key::DailyNote,
         Key::DailyFolder,
         Key::DailyFolderHint,
+        Key::Properties,
+        Key::LinkNew,
         Key::Outline,
         Key::OutlineTip,
         Key::NoHeadings,
@@ -447,6 +456,11 @@ impl Key {
         Key::CmdInsertImage,
         Key::CmdStartTour,
         Key::CmdQuit,
+        Key::ExportAsHtml,
+        Key::CopyAsHtml,
+        Key::Exported,
+        Key::ExportFailed,
+        Key::CopyFailed,
     ];
 }
 
@@ -629,6 +643,8 @@ fn en(k: Key) -> &'static str {
         Key::DailyNote => "Daily note ({MOD}+Shift+D)",
         Key::DailyFolder => "Daily notes folder",
         Key::DailyFolderHint => "{MOD}+Shift+D creates today's note inside it.",
+        Key::Properties => "Properties ({n} keys)",
+        Key::LinkNew => "Note doesn't exist yet — {MOD}+click to create",
         Key::Outline => "OUTLINE",
         Key::OutlineTip => "Outline ({MOD}+Shift+O)",
         Key::NoHeadings => "No headings",
@@ -646,6 +662,11 @@ fn en(k: Key) -> &'static str {
         Key::CmdInsertImage => "Insert image…",
         Key::CmdStartTour => "Start tour",
         Key::CmdQuit => "Quit abstract",
+        Key::ExportAsHtml => "Export as HTML…",
+        Key::CopyAsHtml => "Copy as HTML",
+        Key::Exported => "Exported {name}",
+        Key::ExportFailed => "Couldn't export",
+        Key::CopyFailed => "Couldn't copy",
     }
 }
 
@@ -830,6 +851,8 @@ fn pt(k: Key) -> &'static str {
         Key::DailyNote => "Nota diária ({MOD}+Shift+D)",
         Key::DailyFolder => "Pasta de notas diárias",
         Key::DailyFolderHint => "{MOD}+Shift+D cria a nota de hoje dentro dela.",
+        Key::Properties => "Propriedades ({n} chaves)",
+        Key::LinkNew => "A nota ainda não existe — {MOD}+clique para criar",
         Key::Outline => "SUMÁRIO",
         Key::OutlineTip => "Sumário ({MOD}+Shift+O)",
         Key::NoHeadings => "Sem títulos",
@@ -847,6 +870,11 @@ fn pt(k: Key) -> &'static str {
         Key::CmdInsertImage => "Inserir imagem…",
         Key::CmdStartTour => "Iniciar o tour",
         Key::CmdQuit => "Sair do abstract",
+        Key::ExportAsHtml => "Exportar como HTML…",
+        Key::CopyAsHtml => "Copiar como HTML",
+        Key::Exported => "{name} exportado",
+        Key::ExportFailed => "Não foi possível exportar",
+        Key::CopyFailed => "Não foi possível copiar",
     }
 }
 

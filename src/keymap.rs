@@ -30,6 +30,8 @@ actions!(
         Quit,
         DailyNote,
         ToggleOutline,
+        ExportHtml,
+        CopyAsHtml,
     ]
 );
 

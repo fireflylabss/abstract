@@ -167,7 +167,8 @@ impl AbstractApp {
                             |s, m| s.child(m),
                         )
                         .when_some(self.render_completion(cx), |s, m| s.child(m))
-                        .when_some(self.render_find(cx), |s, m| s.child(m)),
+                        .when_some(self.render_find(cx), |s, m| s.child(m))
+                        .when_some(self.render_preview(cx), |s, m| s.child(m)),
                 )
                 .child(self.render_outline(cx))
                 .into_any_element()

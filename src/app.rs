@@ -1,4 +1,5 @@
 mod attach_ui;
+mod export_ui;
 mod files_menu;
 mod find_ui;
 mod links_ui;
@@ -29,7 +30,7 @@ use crate::assets::{SANS, ease_out_quint, icon, icon_btn, rise};
 use crate::chrome::{
     chrome_left_pad, drag_fallback, session_window, titlebar_drag, window_controls,
 };
-use crate::editor::{Attach, Changed, CompletionKey, LiveEditor, OpenLink};
+use crate::editor::{Attach, Changed, CompletionKey, LinkHover, LiveEditor, OpenLink};
 use crate::i18n::{self, Key, t, tf};
 use crate::keymap::*;
 use crate::spaces::{self, Spaces};
@@ -56,7 +57,8 @@ const PINNED_ROW: &str = ".abstract-pinned";
 // ── Notes on disk ─────────────────────────────────────────────────────────
 
 fn title_of(text: &str) -> SharedString {
-    text.lines()
+    let body = crate::md::front_matter(text).map_or(text, |fm| &text[fm.end..]);
+    body.lines()
         .map(|l| l.trim().trim_start_matches('#').trim())
         .find(|l| !l.is_empty())
         .map(|l| SharedString::from(l.chars().take(80).collect::<String>()))
@@ -237,6 +239,8 @@ pub(crate) struct AbstractApp {
     tag_index: Arc<Mutex<crate::tags::TagIndex>>,
     daily_input: Entity<InputState>,
     _tags_task: Option<Task<()>>,
+    /// Ctrl/`Cmd`-hover `[[link]]` preview, cached by `set_link_preview`.
+    preview: Option<links_ui::LinkPreview>,
     /// Right-side outline panel; `outline_gen` keys its slide animation.
     outline_open: bool,
     outline_gen: usize,
@@ -271,6 +275,9 @@ impl AbstractApp {
         });
         let on_attach = cx.subscribe(&editor, |this: &mut Self, _, ev: &Attach, cx| {
             this.attach(ev.0.clone(), cx);
+        });
+        let on_link_hover = cx.subscribe(&editor, |this: &mut Self, _, ev: &LinkHover, cx| {
+            this.set_link_preview(ev.0.as_deref(), cx);
         });
         let on_quit = cx.on_app_quit(|this, cx| {
             this.flush_blocking(cx);
@@ -352,6 +359,7 @@ impl AbstractApp {
                 on_activation,
                 on_appearance,
                 on_daily,
+                on_link_hover,
             ],
             pins: Vec::new(),
             tags_open: true,
@@ -361,6 +369,7 @@ impl AbstractApp {
             tag_index: Arc::default(),
             daily_input,
             _tags_task: None,
+            preview: None,
             outline_open: false,
             outline_gen: 0,
         };
@@ -427,6 +436,10 @@ impl Render for AbstractApp {
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
             .on_action(cx.listener(|this, _: &DailyNote, window, cx| this.open_daily(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleOutline, _, cx| this.toggle_outline(cx)))
+            .on_action(
+                cx.listener(|this, _: &ExportHtml, window, cx| this.export_current(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &CopyAsHtml, _, cx| this.copy_as_html(cx)))
             .child(self.render_sidebar(cx))
             .child(self.render_main(window, cx))
             .when(self.settings_open, |el| el.child(self.render_settings(cx)))
