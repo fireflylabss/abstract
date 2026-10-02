@@ -1,11 +1,13 @@
 use super::*;
 use crate::editor::{CompletionKey, CompletionMove};
 
-/// Open `[[…]]` completion: buffer range of the prefix plus the items shown.
+/// Open `[[…]]` or `#…` completion: buffer range of the prefix plus the
+/// items shown. `tag` selects `#tag` completions (inserted bare).
 pub(super) struct Completion {
     range: Range<usize>,
     items: Vec<String>,
     selected: usize,
+    tag: bool,
 }
 
 impl AbstractApp {
@@ -29,31 +31,48 @@ impl AbstractApp {
         self.open_path(path, None, window, cx);
     }
 
-    /// Recompute the `[[…]]` completion on every buffer change.
+    /// Recompute the `[[…]]`/`#…` completion on every buffer change.
     pub(crate) fn update_completion(&mut self, cx: &mut Context<Self>) {
-        let prefix = self.editor.read(cx).wiki_prefix();
-        match prefix {
-            Some((range, p)) => {
-                let items = crate::links::complete(&self.tree, &p);
-                if items.is_empty() {
-                    self.clear_completion(cx);
-                    return;
-                }
-                let keep = self
-                    .completion
-                    .as_ref()
-                    .filter(|c| c.range.start == range.start)
-                    .map(|c| c.selected.min(items.len() - 1))
-                    .unwrap_or(0);
-                self.completion = Some(Completion {
-                    range,
-                    items,
-                    selected: keep,
-                });
-                self.editor.update(cx, |ed, _| ed.set_completing(true));
+        if let Some((range, p)) = self.editor.read(cx).wiki_prefix() {
+            self.set_completion(range, crate::links::complete(&self.tree, &p), false, cx);
+        } else if let Some((range, p)) = self.editor.read(cx).tag_prefix() {
+            let items = crate::tags::complete(&self.tags, &p);
+            // The fully-written name only echoes itself back — nothing left
+            // to complete (empty also lands here).
+            if items.iter().all(|i| *i == p) {
+                self.clear_completion(cx);
+            } else {
+                self.set_completion(range, items, true, cx);
             }
-            None => self.clear_completion(cx),
+        } else {
+            self.clear_completion(cx);
         }
+    }
+
+    fn set_completion(
+        &mut self,
+        range: Range<usize>,
+        items: Vec<String>,
+        tag: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if items.is_empty() {
+            self.clear_completion(cx);
+            return;
+        }
+        let keep = self
+            .completion
+            .as_ref()
+            .filter(|c| c.range.start == range.start)
+            .map(|c| c.selected.min(items.len() - 1))
+            .unwrap_or(0);
+        self.completion = Some(Completion {
+            range,
+            items,
+            selected: keep,
+            tag,
+        });
+        self.editor.update(cx, |ed, _| ed.set_completing(true));
     }
 
     pub(crate) fn clear_completion(&mut self, cx: &mut Context<Self>) {
@@ -72,7 +91,11 @@ impl AbstractApp {
         };
         self.editor.update(cx, |ed, cx| {
             ed.set_completing(false);
-            ed.complete_wiki(c.range, &item, cx);
+            if c.tag {
+                ed.complete_tag(c.range, &item, cx);
+            } else {
+                ed.complete_wiki(c.range, &item, cx);
+            }
         });
         cx.notify();
     }
@@ -220,7 +243,11 @@ impl AbstractApp {
                     .when(ix == c.selected, |s| s.bg(rgb(pal.active)))
                     .when(ix != c.selected, |s| s.hover(|s| s.bg(rgb(pal.hover))))
                     .on_click(cx.listener(move |this, _, _, cx| this.accept_completion(ix, cx)))
-                    .child(item.clone()),
+                    .child(if c.tag {
+                        format!("#{item}")
+                    } else {
+                        item.clone()
+                    }),
             );
         }
         Some(

@@ -58,6 +58,7 @@ impl AbstractApp {
                     self.rescan_tree(cx);
                 }
                 self.refresh_backlinks_if_renamed(cx);
+                self.refresh_tags(cx);
             }
             Err(err) => {
                 eprintln!("abstract: failed to save note: {err}");
@@ -112,6 +113,8 @@ impl AbstractApp {
         }
         self.record_session_note(cx);
         self.session.set_sidebar(self.sidebar_open);
+        self.session.set_tags_open(self.tags_open);
+        self.session.set_pins(&self.dir, &self.pins);
         if let Some(w) = self.window_state {
             self.session.set_window(&w);
         }
@@ -148,6 +151,8 @@ impl AbstractApp {
     pub(crate) fn save_session(&self, cx: &mut Context<Self>) {
         let mut session = self.session.clone();
         session.set_sidebar(self.sidebar_open);
+        session.set_tags_open(self.tags_open);
+        session.set_pins(&self.dir, &self.pins);
         if let Some(w) = self.window_state {
             session.set_window(&w);
         }
@@ -235,6 +240,7 @@ impl AbstractApp {
                         this.check_open_file(cx);
                         if notes {
                             this.refresh_backlinks(cx);
+                            this.refresh_tags(cx);
                         }
                         if assets {
                             this.refresh_images(cx);

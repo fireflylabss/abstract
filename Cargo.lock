@@ -7,6 +7,7 @@ name = "abstract-editor"
 version = "0.1.3"
 dependencies = [
  "arboard",
+ "chrono",
  "futures",
  "gpui-base",
  "gpui-component",

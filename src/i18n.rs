@@ -237,6 +237,15 @@ pub enum Key {
     ReportIssue,
     License,
     Close,
+    // Tags / pinned / daily notes
+    Tags,
+    Pinned,
+    Pin,
+    Unpin,
+    ClearFilter,
+    DailyNote,
+    DailyFolder,
+    DailyFolderHint,
     Properties,
     LinkNew,
     // Outline panel + command palette
@@ -420,6 +429,14 @@ impl Key {
         Key::ReportIssue,
         Key::License,
         Key::Close,
+        Key::Tags,
+        Key::Pinned,
+        Key::Pin,
+        Key::Unpin,
+        Key::ClearFilter,
+        Key::DailyNote,
+        Key::DailyFolder,
+        Key::DailyFolderHint,
         Key::Properties,
         Key::LinkNew,
         Key::Outline,
@@ -618,6 +635,14 @@ fn en(k: Key) -> &'static str {
         Key::ReportIssue => "Report an issue",
         Key::License => "License",
         Key::Close => "Close",
+        Key::Tags => "TAGS",
+        Key::Pinned => "PINNED",
+        Key::Pin => "Pin",
+        Key::Unpin => "Unpin",
+        Key::ClearFilter => "Show all notes",
+        Key::DailyNote => "Daily note ({MOD}+Shift+D)",
+        Key::DailyFolder => "Daily notes folder",
+        Key::DailyFolderHint => "{MOD}+Shift+D creates today's note inside it.",
         Key::Properties => "Properties ({n} keys)",
         Key::LinkNew => "Note doesn't exist yet — {MOD}+click to create",
         Key::Outline => "OUTLINE",
@@ -818,6 +843,14 @@ fn pt(k: Key) -> &'static str {
         Key::ReportIssue => "Reportar um problema",
         Key::License => "Licença",
         Key::Close => "Fechar",
+        Key::Tags => "TAGS",
+        Key::Pinned => "FIXADAS",
+        Key::Pin => "Fixar",
+        Key::Unpin => "Desafixar",
+        Key::ClearFilter => "Mostrar todas as notas",
+        Key::DailyNote => "Nota diária ({MOD}+Shift+D)",
+        Key::DailyFolder => "Pasta de notas diárias",
+        Key::DailyFolderHint => "{MOD}+Shift+D cria a nota de hoje dentro dela.",
         Key::Properties => "Propriedades ({n} chaves)",
         Key::LinkNew => "A nota ainda não existe — {MOD}+clique para criar",
         Key::Outline => "SUMÁRIO",
@@ -866,6 +899,46 @@ pub fn tf(k: Key, args: &[(&str, &str)]) -> String {
         s = s.replace(&format!("{{{name}}}"), value);
     }
     s
+}
+
+const MONTHS_EN: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+
+const MONTHS_PT: [&str; 12] = [
+    "janeiro",
+    "fevereiro",
+    "março",
+    "abril",
+    "maio",
+    "junho",
+    "julho",
+    "agosto",
+    "setembro",
+    "outubro",
+    "novembro",
+    "dezembro",
+];
+
+/// The `# <date>` heading a new daily note is seeded with, localized.
+pub fn long_date(date: chrono::NaiveDate) -> String {
+    use chrono::Datelike;
+    let (y, m, d) = (date.year(), date.month() as usize - 1, date.day());
+    match current() {
+        Lang::En => format!("{} {d}, {y}", MONTHS_EN[m]),
+        Lang::PtBr => format!("{d} de {} de {y}", MONTHS_PT[m]),
+    }
 }
 
 #[cfg(test)]

@@ -10,6 +10,9 @@ impl AbstractApp {
             self.spaces_open = false;
             self.status_open = false;
             self.settings_focus.focus(window, cx);
+            let folder = SharedString::from(self.settings.daily_folder().to_string());
+            self.daily_input
+                .update(cx, |s, cx| s.set_value(folder, window, cx));
         } else {
             self.editor.update(cx, |ed, cx| ed.focus(window, cx));
         }
@@ -20,6 +23,18 @@ impl AbstractApp {
         if self.settings_open {
             self.toggle_settings(window, cx);
         }
+    }
+
+    /// Input change: commit a valid folder name (invalid text just renders
+    /// red until it parses again).
+    pub(crate) fn daily_folder_changed(&mut self, cx: &mut Context<Self>) {
+        let name = self.daily_input.read(cx).value().trim().to_string();
+        if vault::valid_folder_name(&name) && name != self.settings.daily_folder() {
+            self.settings.set_daily_folder(&name);
+            let settings = self.settings.clone();
+            cx.background_spawn(async move { settings.save() }).detach();
+        }
+        cx.notify();
     }
 
     fn set_raw_tables(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -288,6 +303,7 @@ impl AbstractApp {
 
         let raw = self.settings.raw_tables();
         let updates = self.settings.updates();
+        let daily_ok = vault::valid_folder_name(self.daily_input.read(cx).value().trim());
         let body = div()
             .id("settings-body")
             .flex_1()
@@ -341,6 +357,53 @@ impl AbstractApp {
                             .text_color(rgb(pal.dim))
                             .child(self.lang_label())
                             .child(icon("icons/chevrons.svg", pal.faint).size(px(13.))),
+                    ),
+            )
+            .child(
+                div()
+                    .id("daily-folder")
+                    .px(px(8.))
+                    .py(px(7.))
+                    .mx(px(-8.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .rounded(px(6.))
+                    .text_size(px(13.))
+                    .text_color(rgb(pal.body))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .child(div().child(t(Key::DailyFolder)))
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(rgb(pal.dim))
+                                    .truncate()
+                                    .child(t(Key::DailyFolderHint)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .w(px(120.))
+                            .flex_none()
+                            .h(px(26.))
+                            .px(px(7.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(6.))
+                            .border_1()
+                            .border_color(rgb(if daily_ok { pal.line } else { pal.callout[3] }))
+                            .child(
+                                Input::new(&self.daily_input)
+                                    .appearance(false)
+                                    .bordered(false)
+                                    .w_full()
+                                    .text_size(px(12.))
+                                    .text_color(rgb(pal.fg)),
+                            ),
                     ),
             )
             .child(

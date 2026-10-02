@@ -116,11 +116,24 @@ impl AbstractApp {
         self.new_folder(window, cx);
     }
 
-    /// Right-click menu for a sidebar row.
+    /// Pin/Unpin from the row menu; the most recently pinned note floats
+    /// to the top of the PINNED group.
+    pub(crate) fn toggle_pin(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if let Some(i) = self.pins.iter().position(|p| *p == path) {
+            self.pins.remove(i);
+        } else {
+            self.pins.insert(0, path);
+        }
+        self.save_session(cx);
+        cx.notify();
+    }
+
+    /// Right-click menu for a sidebar row. `pinned` picks the Pin/Unpin label.
     pub(crate) fn row_menu(
         this: &WeakEntity<Self>,
         path: &Path,
         kind: NodeKind,
+        pinned: bool,
         mut menu: PopupMenu,
     ) -> PopupMenu {
         let item =
@@ -146,6 +159,10 @@ impl AbstractApp {
                     .item(item(t(Key::Duplicate), |this, p, _, w, cx| {
                         this.duplicate_note(p, w, cx)
                     }))
+                    .item(item(
+                        if pinned { t(Key::Unpin) } else { t(Key::Pin) },
+                        |this, p, _, _, cx| this.toggle_pin(p, cx),
+                    ))
                     .separator()
                     .item(item(t(Key::CopyNoteLink), |_, p, _, _, cx| {
                         cx.write_to_clipboard(ClipboardItem::new_string(format!(
