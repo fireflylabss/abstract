@@ -237,6 +237,8 @@ pub enum Key {
     ReportIssue,
     License,
     Close,
+    Properties,
+    LinkNew,
 }
 
 impl Key {
@@ -395,6 +397,8 @@ impl Key {
         Key::ReportIssue,
         Key::License,
         Key::Close,
+        Key::Properties,
+        Key::LinkNew,
     ];
 }
 
@@ -569,6 +573,8 @@ fn en(k: Key) -> &'static str {
         Key::ReportIssue => "Report an issue",
         Key::License => "License",
         Key::Close => "Close",
+        Key::Properties => "Properties ({n} keys)",
+        Key::LinkNew => "Note doesn't exist yet — {MOD}+click to create",
     }
 }
 
@@ -745,6 +751,8 @@ fn pt(k: Key) -> &'static str {
         Key::ReportIssue => "Reportar um problema",
         Key::License => "Licença",
         Key::Close => "Fechar",
+        Key::Properties => "Propriedades ({n} chaves)",
+        Key::LinkNew => "A nota ainda não existe — {MOD}+clique para criar",
     }
 }
 

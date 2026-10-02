@@ -33,6 +33,8 @@ pub enum Kind {
     Quote,
     Rule,
     Table,
+    /// YAML front matter: never a heading/rule, never an outline entry.
+    Meta,
 }
 
 /// A `- [ ]` / `- [x]` list-item marker; clicking toggles the task.
@@ -156,6 +158,19 @@ pub struct Analysis {
     pub callouts: Vec<Callout>,
     /// Pipe tables as line indices (end exclusive), in line order.
     pub tables: Vec<Range<usize>>,
+    /// `---`-fenced front matter at the top of the file, when detected.
+    pub frontmatter: Option<FrontMatter>,
+}
+
+/// The `---`/`...`-fenced YAML block at the top of a note.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FrontMatter {
+    /// Line indices covering the block, fences included (end exclusive).
+    pub lines: Range<usize>,
+    /// Byte offset where the close fence ends; the block is `0..end`.
+    pub end: usize,
+    /// Top-level `key:` entries counted inside (0 means malformed-ish YAML).
+    pub keys: usize,
 }
 
 pub struct Analyzer {
@@ -199,6 +214,7 @@ impl Analyzer {
             images: Vec::new(),
             callouts: Vec::new(),
             tables: Vec::new(),
+            frontmatter: None,
         };
         if len == 0 {
             return out;
@@ -700,11 +716,71 @@ impl Analyzer {
             }
         }
 
+        if let Some(fm) = front_matter(text) {
+            let end = fm.end;
+            let close = out.line_of(end - 1) + 1;
+            let keys = out.lines[1..close - 1]
+                .iter()
+                .filter(|(r, _)| yaml_key(&text[r.clone()]))
+                .count();
+            // No front-matter line may survive as a heading or a rule.
+            for line in &mut out.lines[..close] {
+                line.1 = Kind::Meta;
+            }
+            for f in &mut out.flags[..end] {
+                *f = MUTED;
+            }
+            out.conceals.retain(|c| c.hidden.start >= end);
+            out.items.retain(|i| i.line >= close);
+            out.tasks.retain(|t| t.marker.start >= end);
+            out.images.retain(|i| i.range.start >= end);
+            out.callouts.retain(|c| c.lines.start >= close);
+            out.tables.retain(|t| t.start >= close);
+            out.frontmatter = Some(FrontMatter {
+                lines: 0..close,
+                end,
+                keys,
+            });
+        }
+
         out.conceals.retain(|c| !c.hidden.is_empty());
         out.conceals.sort_by_key(|c| c.hidden.start);
         out.images.sort_by_key(|i| i.range.start);
         out
     }
+}
+
+/// `---`-fenced YAML front matter at the top of `text` (`...` also closes),
+/// as the byte range covering it — fences included, no trailing newline.
+pub(crate) fn front_matter(text: &str) -> Option<Range<usize>> {
+    let mut start = 0;
+    for (ix, chunk) in text.split_inclusive('\n').enumerate() {
+        let line = chunk.trim_end();
+        if ix == 0 {
+            if line != "---" {
+                return None;
+            }
+        } else if matches!(line, "---" | "...") {
+            return Some(0..start + line.len());
+        }
+        start += chunk.len();
+    }
+    None
+}
+
+/// Top-level `key:` entry: the head before the first `:` starts at column 0
+/// with a word-ish char and holds only key-ish chars. Indented lines, list
+/// items and comments don't count.
+fn yaml_key(line: &str) -> bool {
+    let Some((head, _)) = line.split_once(':') else {
+        return false;
+    };
+    head.chars()
+        .next()
+        .is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | '"' | '\''))
+        && head
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ' ' | '"' | '\''))
 }
 
 /// Remove conceals whose hidden range overlaps any of `spans`, which are
@@ -1226,5 +1302,42 @@ mod tests {
         assert_eq!(list_prefix("  9. x"), Some((5, "  10. ".into())));
         assert_eq!(list_prefix("- [x] done"), Some((6, "- [ ] ".into())));
         assert_eq!(list_prefix("plain"), None);
+    }
+
+    #[test]
+    fn front_matter_is_meta_not_heading_or_rule() {
+        let t = "---\ntitle: A\ntags:\n  - x\n...\n# Real\nbody\n";
+        let a = Analyzer::new().analyze(t);
+        let fm = a.frontmatter.as_ref().unwrap();
+        assert_eq!(fm.lines, 0..5);
+        assert_eq!(fm.end, t.find("\n# Real").unwrap());
+        assert_eq!(fm.keys, 2);
+        assert!(a.lines[..5].iter().all(|(_, k)| *k == Kind::Meta));
+        assert_eq!(a.lines[5].1, Kind::Heading(1));
+        // Every front-matter byte renders muted, nothing concealed.
+        assert!(a.flags[..fm.end].iter().all(|f| *f == MUTED));
+        assert!(a.conceals.iter().all(|c| c.hidden.start >= fm.end));
+        // Shown raw even with the caret far away (conceals were dropped).
+        assert!(shown(t, t.len()).starts_with("---\ntitle: A"));
+    }
+
+    #[test]
+    fn front_matter_needs_a_close_fence() {
+        for t in [
+            "---\nonly\n",
+            "---\n",
+            "---\n\nnext\n",
+            "x\n---\ny\n",
+            " ---\nk: v\n---\n",
+        ] {
+            assert!(Analyzer::new().analyze(t).frontmatter.is_none(), "{t:?}");
+        }
+        // `...` closes too; `--- ` (trailing space) still opens; empty
+        // front matter (0 keys) is detected but stays non-heading/rule.
+        let a = Analyzer::new().analyze("--- \nk: v\n...\nbody\n");
+        assert_eq!(a.frontmatter.as_ref().unwrap().keys, 1);
+        let empty = Analyzer::new().analyze("---\n---\nbody\n");
+        assert_eq!(empty.frontmatter.as_ref().unwrap().keys, 0);
+        assert!(empty.lines[..2].iter().all(|(_, k)| *k == Kind::Meta));
     }
 }

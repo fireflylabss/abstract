@@ -45,8 +45,10 @@ pub(crate) fn match_range(hay: &str, needle_lower: &str) -> Option<Range<usize>>
 }
 
 /// First `# heading`, else the file stem — mirrors `title_of`'s semantics.
+/// Front matter is skipped: a note is titled by its body, not its `---` fence.
 pub(crate) fn file_title(path: &Path, text: &str) -> String {
-    text.lines()
+    let body = crate::md::front_matter(text).map_or(text, |fm| &text[fm.end..]);
+    body.lines()
         .map(|l| l.trim().trim_start_matches('#').trim())
         .find(|l| !l.is_empty())
         .map(|l| l.chars().take(80).collect())
