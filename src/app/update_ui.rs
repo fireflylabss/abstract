@@ -114,6 +114,7 @@ impl AbstractApp {
                 .text_size(z(12.))
                 .text_color(rgb(pal.body))
                 .hover(|s| s.bg(rgb(pal.hover)))
+                .active(|s| s.bg(rgb(pal.active)))
                 .child(label)
         };
         let body: Option<SharedString> = match state {

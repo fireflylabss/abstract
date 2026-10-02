@@ -10,9 +10,9 @@ use std::sync::Arc;
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
 use gpui_kit::*;
 
-use crate::assets::{MONO, SANS};
 use crate::attach::Incoming;
 use crate::buffer::Buffer;
+use crate::fonts::Fonts;
 use crate::i18n::{Key, t};
 use crate::md::{self, Analysis, Analyzer, Kind};
 use crate::table::{self as pipe, Align};
@@ -1311,6 +1311,12 @@ fn shape_cell(
         .unwrap_or_default()
 }
 
+/// Palette + font-family snapshots the shaping path threads through.
+struct RunStyle<'a> {
+    pal: &'a Palette,
+    fonts: &'a Fonts,
+}
+
 /// Grid layout of table `t` (line indices), or `None` when it stays source:
 /// the selection touches it, it sits in a quote, or it has no delimiter row.
 fn plan_grid(
@@ -1318,7 +1324,7 @@ fn plan_grid(
     text: &str,
     a: &Analysis,
     reveal: &Range<usize>,
-    pal: &Palette,
+    style: &RunStyle,
     avail: f32,
     window: &mut Window,
 ) -> Option<Vec<(usize, Planned)>> {
@@ -1367,7 +1373,7 @@ fn plan_grid(
                             j += 1;
                         }
                         let f = if header { f | md::BOLD } else { f };
-                        runs.push(run(pal, Kind::Body, f, None, j - i));
+                        runs.push(run(style, Kind::Body, f, None, j - i));
                         display.push_str(&text[i..j]);
                         i = j;
                     }
@@ -1689,10 +1695,15 @@ fn tone_color(pal: &Palette, tone: md::Tone) -> u32 {
 }
 
 /// `accent` is the callout colour of the line, if it is in one.
-fn run(pal: &Palette, kind: Kind, flags: u16, accent: Option<u32>, len: usize) -> TextRun {
+fn run(style: &RunStyle, kind: Kind, flags: u16, accent: Option<u32>, len: usize) -> TextRun {
+    let pal = style.pal;
     let heading = matches!(kind, Kind::Heading(_));
     let code = matches!(kind, Kind::Code | Kind::Table) || flags & md::CODE != 0;
-    let mut f = font(if code { MONO } else { SANS });
+    let mut f = font(if code {
+        style.fonts.mono.clone()
+    } else {
+        style.fonts.sans.clone()
+    });
     if heading {
         f.weight = if matches!(kind, Kind::Heading(1 | 2)) {
             FontWeight::BOLD
@@ -1821,6 +1832,11 @@ impl Element for EditorElement {
         let ed = self.0.read(cx);
         let pal = *cx.global::<Palette>();
         let zf = factor();
+        let fonts = cx.global::<Fonts>().clone();
+        let style = RunStyle {
+            pal: &pal,
+            fonts: &fonts,
+        };
         let width = f32::from(bounds.size.width);
         let view_h = f32::from(bounds.size.height);
         let col_w = (width - PAD_X * zf * 2.).clamp(120. * zf, MAX_COL * zf);
@@ -1844,7 +1860,7 @@ impl Element for EditorElement {
         let mut grid_plan: HashMap<usize, Planned> = HashMap::new();
         if !ed.raw_tables {
             for t in &a.tables {
-                if let Some(rows) = plan_grid(t, text, a, &reveal, &pal, col_w, window) {
+                if let Some(rows) = plan_grid(t, text, a, &reveal, &style, col_w, window) {
                     grid_plan.extend(rows);
                 }
             }
@@ -1947,7 +1963,7 @@ impl Element for EditorElement {
             let segs = if text.is_empty() && ix == 0 {
                 let placeholder = crate::i18n::t(crate::i18n::Key::EditorPlaceholder);
                 display.push_str(placeholder);
-                runs.push(run(&pal, *kind, md::MARK, accent, placeholder.len()));
+                runs.push(run(&style, *kind, md::MARK, accent, placeholder.len()));
                 std::iter::once(0..0).collect()
             } else {
                 let mut segs = a.visible(buf.clone(), &reveal);
@@ -1969,7 +1985,7 @@ impl Element for EditorElement {
                         while j < s.end && a.flags[j] == f {
                             j += 1;
                         }
-                        runs.push(run(&pal, *kind, f, accent, j - i));
+                        runs.push(run(&style, *kind, f, accent, j - i));
                         display.push_str(&text[i..j]);
                         i = j;
                     }

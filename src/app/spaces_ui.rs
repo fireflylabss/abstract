@@ -77,6 +77,7 @@ impl AbstractApp {
         self.tree.clear();
         self.expanded.clear();
         self.current = None;
+        self.presence.set(None, spaces::name_of(&self.dir));
         self.loading = true;
         let dir = self.dir.clone();
         let snapshot = self.spaces.clone();
@@ -245,7 +246,7 @@ impl AbstractApp {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded(z(4.))
+                                .rounded(z(6.))
                                 .invisible()
                                 .group_hover("space-row", |s| s.visible())
                                 .hover(|s| s.bg(rgb(pal.active)))

@@ -28,6 +28,21 @@ impl AbstractApp {
         self.save_settings(window, cx);
     }
 
+    fn set_discord(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.settings.set_discord(on);
+        self.presence.set_enabled(on);
+        if on {
+            let title = self
+                .current
+                .as_ref()
+                .map(|_| title_of(self.editor.read(cx).text()).to_string());
+            self.presence.set(title, spaces::name_of(&self.dir));
+        }
+        let settings = self.settings.clone();
+        cx.background_spawn(async move { settings.save() }).detach();
+        cx.notify();
+    }
+
     fn pick_palette(
         &mut self,
         dark: bool,
@@ -120,6 +135,7 @@ impl AbstractApp {
                         .text_color(rgb(if on { pal.fg } else { pal.body }))
                         .when(on, |s| s.bg(rgb(pal.active)))
                         .hover(|s| s.bg(rgb(pal.hover)))
+                        .active(|s| s.bg(rgb(pal.active)))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.set_theme_pref(pref, window, cx)
                         }))
@@ -162,6 +178,7 @@ impl AbstractApp {
                     .border_color(rgb(if on { pal.fg } else { pal.line }))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgb(pal.hover)))
+                    .active(|s| s.bg(rgb(pal.active)))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.pick_palette(dark, id, window, cx)
                     }))
@@ -172,7 +189,7 @@ impl AbstractApp {
                             .flex()
                             .flex_col()
                             .gap(z(4.))
-                            .rounded(z(5.))
+                            .rounded(z(4.))
                             .bg(rgb(p.bg))
                             .border_1()
                             .border_color(rgb(p.line))
@@ -220,6 +237,7 @@ impl AbstractApp {
                     .rounded(z(6.))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgb(pal.hover)))
+                    .active(|s| s.bg(rgb(pal.active)))
                     .child(
                         div()
                             .flex_1()
@@ -279,6 +297,7 @@ impl AbstractApp {
                 .text_size(z(12.))
                 .text_color(rgb(pal.body))
                 .hover(|s| s.bg(rgb(pal.hover)))
+                .active(|s| s.bg(rgb(pal.active)))
                 .on_click(move |_, _, cx| cx.open_url(&url))
                 .child(icon(glyph, pal.dim).size(z(13.)))
                 .child(label)
@@ -286,6 +305,53 @@ impl AbstractApp {
 
         let raw = self.settings.raw_tables();
         let updates = self.settings.updates();
+        let font_names = cx.text_system().all_font_names();
+        let current_font = fonts::resolve(self.settings.font(), &font_names);
+        let font_rows =
+            div()
+                .flex()
+                .flex_col()
+                .children(fonts::choices(&font_names).into_iter().map(|family| {
+                    let on = current_font.eq_ignore_ascii_case(family);
+                    let label: SharedString = if family == fonts::SYSTEM {
+                        t(Key::ThemeSystem).into()
+                    } else {
+                        family.into()
+                    };
+                    div()
+                        .id(SharedString::from(format!("font-{family}")))
+                        .role(Role::RadioButton)
+                        .aria_label(label.clone())
+                        .aria_selected(on)
+                        .px(z(8.))
+                        .py(z(6.))
+                        .mx(z(-8.))
+                        .flex()
+                        .items_center()
+                        .gap(z(8.))
+                        .rounded(z(6.))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(rgb(pal.hover)))
+                        .on_click(
+                            cx.listener(move |this, _, window, cx| {
+                                this.set_font(family, window, cx)
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .font_family(family)
+                                .text_size(z(13.))
+                                .text_color(rgb(if on { pal.fg } else { pal.body }))
+                                .child(label),
+                        )
+                        .when(on, |s| {
+                            s.child(icon("icons/check.svg", pal.dim).size(z(14.)))
+                        })
+                }));
+        let discord = self.settings.discord();
         let body = div()
             .id("settings-body")
             .flex_1()
@@ -328,6 +394,7 @@ impl AbstractApp {
                     .text_size(z(13.))
                     .text_color(rgb(pal.body))
                     .hover(|s| s.bg(rgb(pal.hover)))
+                    .active(|s| s.bg(rgb(pal.active)))
                     .on_click(cx.listener(|this, _, _, cx| this.cycle_lang(cx)))
                     .child(div().flex_1().child(t(Key::Language)))
                     .child(
@@ -344,6 +411,25 @@ impl AbstractApp {
             .child(
                 toggle("updates-toggle", t(Key::CheckUpdates), None, updates)
                     .on_click(cx.listener(move |this, _, _, cx| this.set_updates(!updates, cx))),
+            )
+            .child(sub(t(Key::Font)))
+            .child(
+                div()
+                    .pb(z(4.))
+                    .text_size(z(12.))
+                    .line_height(z(17.))
+                    .text_color(rgb(pal.dim))
+                    .child(t(Key::FontHint)),
+            )
+            .child(font_rows)
+            .child(
+                toggle(
+                    "discord-presence",
+                    t(Key::DiscordPresence),
+                    Some(t(Key::DiscordPresenceHint)),
+                    discord,
+                )
+                .on_click(cx.listener(move |this, _, _, cx| this.set_discord(!discord, cx))),
             )
             .child(section(t(Key::About)))
             .child(
@@ -417,7 +503,7 @@ impl AbstractApp {
             .bg(rgb(pal.menu_bg))
             .border_1()
             .border_color(rgb(pal.menu_border))
-            .rounded(z(10.))
+            .rounded(z(8.))
             .shadow_lg()
             .occlude()
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
@@ -477,5 +563,11 @@ impl AbstractApp {
                 Animation::new(Duration::from_millis(160)).with_easing(ease_out_quint),
                 |el, d| el.opacity(d),
             )
+    }
+    /// `font` picker in General: applies the family live, then persists it.
+    fn set_font(&mut self, family: &'static str, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.set_font(family);
+        fonts::apply(&self.settings, cx);
+        self.save_settings(window, cx);
     }
 }

@@ -178,9 +178,10 @@ impl AbstractApp {
                     .truncate()
                     .text_size(z(12.))
                     .text_color(rgb(pal.body))
-                    .rounded(z(4.))
+                    .rounded(z(6.))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgb(pal.hover)))
+                    .active(|s| s.bg(rgb(pal.active)))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open_path(p.clone(), None, window, cx)
                     }))
@@ -215,10 +216,11 @@ impl AbstractApp {
                     .truncate()
                     .text_size(z(12.))
                     .text_color(rgb(if ix == c.selected { pal.fg } else { pal.body }))
-                    .rounded(z(4.))
+                    .rounded(z(6.))
                     .cursor_pointer()
                     .when(ix == c.selected, |s| s.bg(rgb(pal.active)))
                     .when(ix != c.selected, |s| s.hover(|s| s.bg(rgb(pal.hover))))
+                    .active(|s| s.bg(rgb(pal.active)))
                     .on_click(cx.listener(move |this, _, _, cx| this.accept_completion(ix, cx)))
                     .child(item.clone()),
             );
@@ -235,10 +237,10 @@ impl AbstractApp {
                 .bg(rgb(pal.menu_bg))
                 .border_1()
                 .border_color(rgb(pal.menu_border))
-                .rounded(z(6.))
+                .rounded(z(8.))
                 .shadow_lg()
                 .occlude()
-                .p(z(3.))
+                .p(z(4.))
                 .child(rows),
         )
     }

@@ -26,11 +26,12 @@ use gpui_kit::component::menu::ContextMenuExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::assets::{SANS, ease_out_quint, icon, icon_btn, rise};
+use crate::assets::{ease_out_quint, icon, icon_btn, rise};
 use crate::chrome::{
     chrome_left_pad, drag_fallback, session_window, titlebar_drag, window_controls,
 };
 use crate::editor::{Attach, Changed, CompletionKey, LiveEditor, OpenLink};
+use crate::fonts::{self, Fonts};
 use crate::i18n::{self, Key, t, tf};
 use crate::keymap::*;
 use crate::spaces::{self, Spaces};
@@ -223,6 +224,7 @@ pub(crate) struct AbstractApp {
     _watcher: Option<SpaceWatcher>,
     _watch_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
+    presence: crate::discord::Presence,
 }
 impl AbstractApp {
     pub(crate) fn new(
@@ -268,6 +270,7 @@ impl AbstractApp {
         let on_appearance = cx.observe_window_appearance(window, |this, window, cx| {
             this.appearance_changed(window, cx);
         });
+        let presence = crate::discord::Presence::new(settings.discord());
 
         let mut app = Self {
             spaces: Spaces {
@@ -329,6 +332,7 @@ impl AbstractApp {
                 on_activation,
                 on_appearance,
             ],
+            presence,
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
         app._io_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -347,12 +351,13 @@ impl AbstractApp {
 impl Render for AbstractApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pal = cx.palette();
+        let fonts = cx.global::<Fonts>().clone();
         div()
             .id("abstract-root")
             .key_context("AbstractApp")
             .size_full()
             .flex()
-            .font_family(SANS)
+            .font_family(fonts.sans)
             .bg(rgb(pal.bg))
             .text_color(rgb(pal.body))
             .border_1()

@@ -23,7 +23,7 @@ impl Render for DraggedRow {
             .shadow_md()
             .text_size(z(13.))
             .text_color(rgb(pal.fg))
-            .font_family(SANS)
+            .font_family(cx.global::<Fonts>().sans.clone())
             .child(self.name.clone())
     }
 }

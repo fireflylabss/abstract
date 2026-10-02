@@ -67,7 +67,7 @@ fn btn(id: &'static str, label: &'static str) -> Stateful<Div> {
         .role(Role::Button)
         .aria_label(label)
         .h(z(26.))
-        .px(z(10.))
+        .px(z(8.))
         .flex()
         .items_center()
         .justify_center()
@@ -106,7 +106,7 @@ pub fn bubble<V: TourHost>(
         .bg(rgb(p.menu_bg))
         .border_1()
         .border_color(rgb(p.menu_border))
-        .rounded(z(10.))
+        .rounded(z(8.))
         .shadow_lg()
         .occlude()
         .on_action(cx.listener(|this, _: &TourNext, window, cx| this.tour_next(window, cx)))
@@ -145,6 +145,7 @@ pub fn bubble<V: TourHost>(
                     btn("tour-skip", t(Key::TourSkip))
                         .text_color(rgb(p.dim))
                         .hover(|s| s.bg(rgb(p.hover)))
+                        .active(|s| s.bg(rgb(p.active)))
                         .on_click(cx.listener(|this, _, window, cx| this.tour_skip(window, cx))),
                 )
                 .when(step > 0, |row| {
@@ -152,6 +153,7 @@ pub fn bubble<V: TourHost>(
                         btn("tour-back", t(Key::TourBack))
                             .text_color(rgb(p.dim))
                             .hover(|s| s.bg(rgb(p.hover)))
+                            .active(|s| s.bg(rgb(p.active)))
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.tour_back(window, cx)),
                             ),
@@ -170,6 +172,7 @@ pub fn bubble<V: TourHost>(
                     .text_color(rgb(p.bg))
                     .font_weight(FontWeight::MEDIUM)
                     .hover(|s| s.opacity(0.85))
+                    .active(|s| s.opacity(0.7))
                     .on_click(cx.listener(|this, _, window, cx| this.tour_next(window, cx))),
                 ),
         )

@@ -164,6 +164,17 @@ impl Settings {
         self.kv.set("dark_theme", id);
     }
 
+    /// `font = <family>` — UI/prose typeface; missing or empty keeps the
+    /// bundled default (`fonts::resolve` validates it against installed
+    /// families).
+    pub fn font(&self) -> &str {
+        self.kv.get("font").unwrap_or(crate::assets::SANS)
+    }
+
+    pub fn set_font(&mut self, name: &str) {
+        self.kv.set("font", name);
+    }
+
     /// `raw_tables = on` shows tables as their Markdown source instead of a
     /// grid.
     pub fn raw_tables(&self) -> bool {
@@ -185,6 +196,15 @@ impl Settings {
 
     pub fn set_updates(&mut self, on: bool) {
         self.kv.set("updates", if on { "on" } else { "off" });
+    }
+
+    /// `discord = off` keeps the Discord presence socket untouched.
+    pub fn discord(&self) -> bool {
+        self.kv.get("discord") != Some("off")
+    }
+
+    pub fn set_discord(&mut self, on: bool) {
+        self.kv.set("discord", if on { "on" } else { "off" });
     }
 
     /// Unix seconds of the last release check.
