@@ -180,7 +180,12 @@ impl Glass {
         if !self.enabled {
             return None;
         }
-        self.alphas[s as usize].map(|a| (a * self.intensity).clamp(0., 1.))
+        let floor = if s == Surface::Menus {
+            MENU_MIN_ALPHA
+        } else {
+            0.
+        };
+        self.alphas[s as usize].map(|a| (a * self.intensity).clamp(floor, 1.))
     }
 
     /// `base` shaded for a surface: the opaque input untouched when the
@@ -308,16 +313,24 @@ pub fn root_bg(color: u32, cx: &App) -> Hsla {
     }
 }
 
-/// Blend `a` toward `b` by `t` in HSLA space (hue/lightness/saturation;
-/// alpha untouched).
+/// Menus and popovers float over note text with no backdrop blur, so they
+/// never drop below this opacity or their items collide with the text.
+pub const MENU_MIN_ALPHA: f32 = 0.88;
+
+/// Blend `a` toward `b` by `t` in RGB (alpha untouched). Mixing hue in
+/// HSL would sweep greys (hue 0, red) through yellow/green on the way.
 pub fn blend(a: Hsla, b: Hsla, t: f32) -> Hsla {
     let t = t.clamp(0., 1.);
-    Hsla {
-        h: a.h + (b.h - a.h) * t,
-        s: a.s + (b.s - a.s) * t,
-        l: a.l + (b.l - a.l) * t,
-        a: a.a,
+    let (x, y) = (a.to_rgb(), b.to_rgb());
+    let mut c: Hsla = Rgba {
+        r: x.r + (y.r - x.r) * t,
+        g: x.g + (y.g - x.g) * t,
+        b: x.b + (y.b - x.b) * t,
+        a: 1.,
     }
+    .into();
+    c.a = a.a;
+    c
 }
 
 /// Channel-wise lerp of two packed RGB colours (text contrast nudge).
@@ -329,6 +342,18 @@ pub fn mix_u32(a: u32, b: u32, t: f32) -> u32 {
         (x + (y - x) * t).round() as u32
     };
     (ch(16) << 16) | (ch(8) << 8) | ch(0)
+}
+
+/// High-contrast text: pull `c` toward the theme foreground, then toward
+/// pure black or white (whichever is farther from `bg`), so body and muted
+/// text both read clearly over translucent glass.
+pub fn contrast_u32(c: u32, fg: u32, bg: u32) -> u32 {
+    let luma = |x: u32| {
+        let ch = |s: u32| ((x >> s) & 0xff) as f32 / 255.;
+        0.2126 * ch(16) + 0.7152 * ch(8) + 0.0722 * ch(0)
+    };
+    let extreme = if luma(bg) > 0.5 { 0x000000 } else { 0xffffff };
+    mix_u32(mix_u32(c, fg, 0.5), extreme, 0.5)
 }
 
 /// Install the resolved [`Glass`] global and retint the component theme's
@@ -356,7 +381,7 @@ mod tests {
     // Explicit imports only: `use super::*` re-exports the whole
     // `gpui_kit::*` glob, and resolving that many macros makes rustc
     // hit the recursion limit expanding `#[test]`.
-    use super::{Glass, Surface, mix_u32};
+    use super::{Glass, Surface, contrast_u32, mix_u32};
     use crate::store::{KeyVals, Settings};
     use gpui_kit::{Hsla, WindowBackgroundAppearance, rgb};
 
@@ -409,6 +434,22 @@ mod tests {
     }
 
     #[test]
+    fn tint_on_grey_keeps_target_hue() {
+        let g = Glass::from_settings(&settings(
+            "glass = on\nglass_sidebar = 50\nglass_tint = custom\nglass_tint_color = 6ea8fe\nglass_tint_strength = 40\n",
+        ));
+        let c = g.shade(rgb(0xf2f2f2).into(), Surface::Sidebar);
+        assert!((c.h - Hsla::from(rgb(0x6ea8fe)).h).abs() < 0.02);
+    }
+
+    #[test]
+    fn menus_keep_a_readable_floor() {
+        let g = Glass::from_settings(&settings("glass = on\nglass_menus = 10\n"));
+        let c = g.shade(rgb(0x112233).into(), Surface::Menus);
+        assert!((c.a - super::MENU_MIN_ALPHA).abs() < 1e-4);
+    }
+
+    #[test]
     fn text_opacity_and_contrast() {
         let g = Glass::from_settings(&settings(
             "glass = on\nglass_text_opacity = 40\nglass_text_contrast = on\n",
@@ -417,5 +458,7 @@ mod tests {
         assert!(g.text_contrast());
         let mixed = mix_u32(0x888888, 0xffffff, 0.5);
         assert!(mixed > 0x888888 && mixed < 0xffffff);
+        // Light theme: body text darkens past the theme foreground.
+        assert!(contrast_u32(0x333333, 0x222222, 0xffffff) < 0x222222);
     }
 }
