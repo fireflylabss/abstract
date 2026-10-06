@@ -3,6 +3,7 @@ mod ctx_menu;
 mod export_ui;
 mod files_menu;
 mod find_ui;
+mod focus;
 mod links_ui;
 mod main_view;
 mod notes;
@@ -33,7 +34,7 @@ use crate::assets::{
 use crate::chrome::{
     chrome_left_pad, drag_fallback, session_window, titlebar_drag, window_controls,
 };
-use crate::editor::{Attach, Changed, CompletionKey, LiveEditor, OpenLink};
+use crate::editor::{Attach, Changed, CompletionKey, Escaped, LiveEditor, OpenLink};
 use crate::fonts::{self, Fonts};
 use crate::i18n::{self, Key, t, tf};
 use crate::keymap::*;
@@ -229,6 +230,9 @@ pub(crate) struct AbstractApp {
     _watch_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
     presence: crate::discord::Presence,
+    /// Focus mode hides chrome and dims everything but the caret's block;
+    /// deliberately not part of the saved session.
+    focus_mode: bool,
 }
 impl AbstractApp {
     pub(crate) fn new(
@@ -273,6 +277,9 @@ impl AbstractApp {
         });
         let on_appearance = cx.observe_window_appearance(window, |this, window, cx| {
             this.appearance_changed(window, cx);
+        });
+        let on_esc = cx.subscribe(&editor, |this: &mut Self, _, _: &Escaped, cx| {
+            this.exit_focus(cx);
         });
         let presence = crate::discord::Presence::new(settings.discord());
 
@@ -335,8 +342,10 @@ impl AbstractApp {
                 on_bounds,
                 on_activation,
                 on_appearance,
+                on_esc,
             ],
             presence,
+            focus_mode: false,
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
         app._io_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -406,6 +415,14 @@ impl Render for AbstractApp {
             .on_action(cx.listener(|this, _: &ZoomIn, window, cx| this.zoom_in(window, cx)))
             .on_action(cx.listener(|this, _: &ZoomOut, window, cx| this.zoom_out(window, cx)))
             .on_action(cx.listener(|this, _: &ZoomReset, window, cx| this.zoom_reset(window, cx)))
+            .on_action(cx.listener(|this, _: &ToggleFocus, _, cx| this.toggle_focus(cx)))
+            // Esc bubbles here only when nothing else (find, dialogs, menus)
+            // consumed it: leave focus mode.
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                if ev.keystroke.key == "escape" {
+                    this.exit_focus(cx);
+                }
+            }))
             .child(self.render_sidebar(window, cx))
             .child(self.render_main(window, cx))
             .child(self.render_settings(window, cx))

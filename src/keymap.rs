@@ -33,6 +33,7 @@ actions!(
         ZoomIn,
         ZoomOut,
         ZoomReset,
+        ToggleFocus,
     ]
 );
 
@@ -80,5 +81,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd--", ZoomOut, c),
         KeyBinding::new("ctrl-0", ZoomReset, c),
         KeyBinding::new("cmd-0", ZoomReset, c),
+        KeyBinding::new("ctrl-shift-enter", ToggleFocus, c),
+        KeyBinding::new("cmd-shift-enter", ToggleFocus, c),
     ]);
 }

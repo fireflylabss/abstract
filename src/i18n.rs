@@ -264,6 +264,8 @@ pub enum Key {
     TableInsertColumnRight,
     TableDeleteRow,
     TableDeleteColumn,
+    // Focus mode
+    FocusMode,
 }
 
 impl Key {
@@ -446,6 +448,7 @@ impl Key {
         Key::TableInsertColumnRight,
         Key::TableDeleteRow,
         Key::TableDeleteColumn,
+        Key::FocusMode,
     ];
 }
 
@@ -644,6 +647,7 @@ fn en(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Insert column to the right",
         Key::TableDeleteRow => "Delete row",
         Key::TableDeleteColumn => "Delete column",
+        Key::FocusMode => "Focus mode ({MOD}+Shift+Enter)",
     }
 }
 
@@ -846,6 +850,7 @@ fn pt(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Inserir coluna à direita",
         Key::TableDeleteRow => "Apagar linha",
         Key::TableDeleteColumn => "Apagar coluna",
+        Key::FocusMode => "Modo foco ({MOD}+Shift+Enter)",
     }
 }
 

@@ -188,6 +188,10 @@ pub enum CompletionMove {
 
 pub struct CompletionKey(pub CompletionMove);
 
+/// Esc reached the editor with no popup to consume it; the app listens so it
+/// can leave focus mode.
+pub struct Escaped;
+
 /// Images/files pasted or dropped: the app stores them and calls
 /// `insert_text` with the markdown that references them.
 pub struct Attach(pub Vec<Incoming>);
@@ -216,12 +220,16 @@ pub struct LiveEditor {
     find_current: Option<usize>,
     /// Tables stay Markdown source instead of rendering as a grid.
     raw_tables: bool,
+    /// Focus mode: dim text outside the caret's block and keep the caret
+    /// centered on move (manual scroll stays free).
+    focus_mode: bool,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
 impl EventEmitter<OpenLink> for LiveEditor {}
 impl EventEmitter<CompletionKey> for LiveEditor {}
 impl EventEmitter<Attach> for LiveEditor {}
+impl EventEmitter<Escaped> for LiveEditor {}
 
 impl Focusable for LiveEditor {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -250,6 +258,7 @@ impl LiveEditor {
             finds: Vec::new(),
             find_current: None,
             raw_tables: false,
+            focus_mode: false,
         }
     }
 
@@ -310,6 +319,15 @@ impl LiveEditor {
     pub fn set_raw_tables(&mut self, on: bool, cx: &mut Context<Self>) {
         if self.raw_tables != on {
             self.raw_tables = on;
+            cx.notify();
+        }
+    }
+
+    /// Focus mode flag from the app; entering asks for a recenter.
+    pub fn set_focus_mode(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.focus_mode != on {
+            self.focus_mode = on;
+            self.autoscroll = on;
             cx.notify();
         }
     }
@@ -1288,6 +1306,8 @@ impl Render for LiveEditor {
             .on_action(cx.listener(|this, _: &Escape, _, cx| {
                 if this.completing {
                     cx.emit(CompletionKey(CompletionMove::Cancel));
+                } else {
+                    cx.emit(Escaped);
                 }
             }))
             .on_action(cx.listener(|this, _: &Tab, _, cx| {
@@ -1481,6 +1501,26 @@ fn shape_cell(
 struct RunStyle<'a> {
     pal: &'a Palette,
     fonts: &'a Fonts,
+    /// Buffer range lit under focus mode; lines outside it draw muted.
+    focus: Option<Range<usize>>,
+}
+
+impl RunStyle<'_> {
+    /// Line `buf` sits outside the focus block.
+    fn dimmed(&self, buf: &Range<usize>) -> bool {
+        self.focus
+            .as_ref()
+            .is_some_and(|b| buf.start >= b.end || buf.end <= b.start)
+    }
+
+    /// Recolor `runs` muted when their line is outside the focus block.
+    fn dim_runs(&self, buf: &Range<usize>, runs: &mut [TextRun]) {
+        if self.dimmed(buf) {
+            for r in runs {
+                r.color = hsla(self.pal.muted);
+            }
+        }
+    }
 }
 
 /// Grid layout of table `t` (line indices), or `None` when it stays source:
@@ -1544,6 +1584,7 @@ fn plan_grid(
                         i = j;
                     }
                 }
+                style.dim_runs(&line, &mut runs);
                 let wrapped = shape_cell(window, &display, &runs, None);
                 (range, segs, display, runs, wrapped)
             })
@@ -2007,10 +2048,6 @@ impl Element for EditorElement {
         let pal = *cx.global::<Palette>();
         let zf = factor();
         let fonts = cx.global::<Fonts>().clone();
-        let style = RunStyle {
-            pal: &pal,
-            fonts: &fonts,
-        };
         let width = f32::from(bounds.size.width);
         let view_h = f32::from(bounds.size.height);
         let col_w = (width - PAD_X * zf * 2.).clamp(120. * zf, MAX_COL * zf);
@@ -2023,6 +2060,11 @@ impl Element for EditorElement {
         };
         let text = ed.buf.text();
         let a = &ed.analysis;
+        let style = RunStyle {
+            pal: &pal,
+            fonts: &fonts,
+            focus: ed.focus_mode.then(|| a.focus_block(text, ed.buf.cursor())),
+        };
 
         let mut lines = Vec::with_capacity(a.lines.len());
         let mut y = PAD_TOP * zf;
@@ -2173,6 +2215,7 @@ impl Element for EditorElement {
                 }
                 segs
             };
+            style.dim_runs(buf, &mut runs);
             // A concealed marker (selection outside the item's owner line)
             // shows as a painted bullet instead.
             let bullet = item.and_then(|i| {
@@ -2249,11 +2292,15 @@ impl Element for EditorElement {
         if ed.autoscroll
             && let Some((p, lh)) = layout.position(ed.buf.cursor())
         {
-            let margin = (view_h * 0.15).min(80.);
-            if p.y - layout.scroll < margin {
-                layout.scroll = p.y - margin;
-            } else if p.y + lh - layout.scroll > view_h - margin {
-                layout.scroll = p.y + lh - view_h + margin;
+            if ed.focus_mode {
+                layout.scroll = p.y + lh / 2. - view_h / 2.;
+            } else {
+                let margin = (view_h * 0.15).min(80.);
+                if p.y - layout.scroll < margin {
+                    layout.scroll = p.y - margin;
+                } else if p.y + lh - layout.scroll > view_h - margin {
+                    layout.scroll = p.y + lh - view_h + margin;
+                }
             }
         }
         // Allow scrolling the last line up to mid-screen for comfortable writing.

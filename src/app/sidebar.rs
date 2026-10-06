@@ -276,7 +276,7 @@ impl AbstractApp {
         .flex_1()
         .min_h_0();
 
-        let (from, to) = if self.sidebar_open {
+        let (from, to) = if self.sidebar_visible() {
             (0., SIDEBAR_W)
         } else {
             (SIDEBAR_W, 0.)

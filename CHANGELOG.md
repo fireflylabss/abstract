@@ -6,6 +6,12 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Focus mode (`Cmd/Ctrl`+`Shift`+`Enter` or the toolbar button): hides the
+  sidebar, dims the status area until hovered, mutes every paragraph but the
+  one holding the caret and keeps the caret centered while typing. `Esc`
+  leaves it; state is not persisted.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added
