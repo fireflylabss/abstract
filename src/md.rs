@@ -58,6 +58,15 @@ pub struct MarkSpan {
     pub tint: Tint,
 }
 
+/// A `$…$` or `$$…$$` math span; `content` is the TeX source between the
+/// delimiters and `block` marks a `$$` span that owns its line(s).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MathSpan {
+    pub range: Range<usize>,
+    pub content: Range<usize>,
+    pub block: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Body,
@@ -192,6 +201,8 @@ pub struct Analysis {
     /// `==…==` marks, in buffer order; `tint` comes from an optional `{color}`
     /// prefix right after the opener.
     pub marks: Vec<MarkSpan>,
+    /// `$…$`/`$$…$$` math spans, in buffer order.
+    pub maths: Vec<MathSpan>,
 }
 
 pub struct Analyzer {
@@ -236,6 +247,7 @@ impl Analyzer {
             callouts: Vec::new(),
             tables: Vec::new(),
             marks: Vec::new(),
+            maths: Vec::new(),
         };
         if len == 0 {
             return out;
@@ -556,10 +568,13 @@ impl Analyzer {
                     out.conceal(range.clone(), range.start..range.start + 1);
                     return false;
                 }
-                "html_tag" | "latex_block" => {
+                "html_tag" => {
                     out.mark(range, MUTED);
                     return false;
                 }
+                // `latex_block` falls through: math gets its delimiters and
+                // flags from the math pass in `analyze`, which applies the
+                // money guards the inline grammar lacks.
                 _ => {}
             }
             true
@@ -709,6 +724,29 @@ impl Analyzer {
             }
         }
         drop_overlapping(&mut out.conceals, &escapes);
+
+        // Math: `$…$` inline, `$$…$$` blocks. Delimiters conceal by the
+        // same owner/hidden rule as every other construct; earlier syntax
+        // (comments, marks, links) loses its conceals inside a math span.
+        let mskip = |o: usize| {
+            out.flags[o] & CODE != 0
+                || matches!(out.lines[out.line_of(o)].1, Kind::Code | Kind::Table)
+        };
+        let maths = math_spans(text, &mskip);
+        let spans: Vec<Range<usize>> = maths.iter().map(|m| m.range.clone()).collect();
+        drop_overlapping(&mut out.conceals, &spans);
+        for m in maths {
+            for f in &mut out.flags[m.range.clone()] {
+                *f = 0;
+            }
+            let open = m.range.start..m.content.start;
+            let close = m.content.end..m.range.end;
+            out.mark(open.clone(), MARK);
+            out.mark(close.clone(), MARK);
+            out.conceal(m.range.clone(), open);
+            out.conceal(m.range.clone(), close);
+            out.maths.push(m);
+        }
 
         let heads: Vec<(Range<usize>, CalloutHead)> = out
             .callouts
@@ -977,6 +1015,19 @@ impl Analysis {
         }
         out
     }
+
+    /// The math span covering `off`, if any.
+    pub fn math_at(&self, off: usize) -> Option<&MathSpan> {
+        let i = self.maths.partition_point(|m| m.range.end <= off);
+        self.maths.get(i).filter(|m| m.range.start <= off)
+    }
+
+    /// The math spans overlapping `r`, in buffer order.
+    pub fn maths_overlapping(&self, r: &Range<usize>) -> &[MathSpan] {
+        let s = self.maths.partition_point(|m| m.range.end <= r.start);
+        let e = self.maths.partition_point(|m| m.range.start < r.end);
+        &self.maths[s..e]
+    }
 }
 
 fn walk(cursor: &mut TreeCursor<'_>, mut f: impl FnMut(Node<'_>) -> bool) {
@@ -1018,6 +1069,84 @@ fn outermost_same_kind(mut node: Node<'_>) -> Range<usize> {
         node = parent;
     }
     node.byte_range()
+}
+
+/// `$…$` and `$$…$$` spans, delimiters included in `range`. A single `$`
+/// opens only before a non-blank, non-digit byte and closes only after a
+/// non-blank one that is not followed by a digit — `R$ 10`, `$ 20` and
+/// `$x$5` are money, not math. `$$` may open before a newline
+/// (`$$\n…\n$$`). `\$` escapes, an unmatched `$` stays literal, inline
+/// math never crosses a line break, and `$$` inside an open `$…$` (and
+/// vice versa) is literal text, not a nested delimiter.
+fn math_spans(text: &str, skip: &impl Fn(usize) -> bool) -> Vec<MathSpan> {
+    let b = text.as_bytes();
+    let blank = |c: Option<&u8>| matches!(c, None | Some(b' ' | b'\t' | b'\n'));
+    let mut out = Vec::new();
+    let mut open: Option<(usize, usize)> = None;
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\n' && matches!(open, Some((_, 1))) {
+            open = None;
+        }
+        if b[i] != b'$' {
+            i += 1;
+            continue;
+        }
+        let n = b[i..].iter().take_while(|&&c| c == b'$').count();
+        if (n != 1 && n != 2) || skip(i) || (i > 0 && b[i - 1] == b'\\') {
+            i += n;
+            continue;
+        }
+        match open {
+            Some((o, w)) if w == n => {
+                // A closer follows a non-blank byte; a single `$` also
+                // refuses a digit right after it.
+                if i > o + w
+                    && !matches!(b[i - 1], b' ' | b'\t')
+                    && (n == 2 || !b.get(i + 1).is_some_and(u8::is_ascii_digit))
+                {
+                    let end = i + n;
+                    out.push(MathSpan {
+                        range: o..end,
+                        content: o + w..i,
+                        block: n == 2 && block_math(text, o, end),
+                    });
+                    open = None;
+                }
+                i += n;
+            }
+            // A `$$` inside `$…$` (or a `$` inside `$$…$$`) is literal
+            // text: math never nests.
+            Some(_) => i += n,
+            None => {
+                let next = b.get(i + n);
+                let opens = if n == 1 {
+                    !blank(next) && !next.is_some_and(u8::is_ascii_digit)
+                } else {
+                    match next {
+                        Some(b'\n') => true,
+                        Some(c) => !matches!(c, b' ' | b'\t') && !c.is_ascii_digit(),
+                        None => false,
+                    }
+                };
+                if opens {
+                    open = Some((i, n));
+                }
+                i += n;
+            }
+        }
+    }
+    out
+}
+
+/// `o..e` (a `$$` span) owns its lines: only a `>` quote prefix before,
+/// only blanks after.
+fn block_math(text: &str, o: usize, e: usize) -> bool {
+    let b = text.as_bytes();
+    let ls = text[..o].rfind('\n').map_or(0, |p| p + 1);
+    let le = text[e..].find('\n').map_or(b.len(), |p| e + p);
+    b[ls..o].iter().all(|c| matches!(c, b' ' | b'\t' | b'>'))
+        && b[e..le].iter().all(|c| matches!(c, b' ' | b'\t'))
 }
 
 /// Continuation for Enter on a list/quote line: `(prefix byte len, next prefix)`.
@@ -1370,5 +1499,58 @@ mod tests {
         assert_eq!(list_prefix("  9. x"), Some((5, "  10. ".into())));
         assert_eq!(list_prefix("- [x] done"), Some((6, "- [ ] ".into())));
         assert_eq!(list_prefix("plain"), None);
+    }
+
+    #[test]
+    fn math_inline_conceals_dollars() {
+        let t = "soma $x + 1$ fim";
+        let a = Analyzer::new().analyze(t);
+        assert_eq!(a.maths.len(), 1);
+        assert!(!a.maths[0].block);
+        assert_eq!(&t[a.maths[0].content.clone()], "x + 1");
+        assert_ne!(a.flags[t.find('$').unwrap()] & MARK, 0);
+        // Hidden until the caret touches the span, exactly like `**b**`.
+        assert_eq!(shown(t, 0), "soma x + 1 fim");
+        assert_eq!(shown(t, t.find('x').unwrap()), "soma $x + 1$ fim");
+        // A bare single-`$` pair works too.
+        let t = "a $x$ b";
+        assert_eq!(Analyzer::new().analyze(t).maths.len(), 1);
+    }
+
+    #[test]
+    fn math_money_and_escapes_are_literal() {
+        for t in [
+            "R$ 10 e $ 20",
+            "$10",
+            "$x$5",
+            "a\\$b",
+            "um $x",
+            "$ x$",
+            "custa $$ 100",
+        ] {
+            let a = Analyzer::new().analyze(t);
+            assert!(a.maths.is_empty(), "{t:?}");
+        }
+    }
+
+    #[test]
+    fn math_skips_code_and_tables() {
+        let t = "`$x$` e $y$\n\n```\n$z$\n```\n| a | b |\n| - | - |\n| $w$ | q |\n";
+        let a = Analyzer::new().analyze(t);
+        assert_eq!(a.maths.len(), 1, "{:?}", a.maths);
+        assert_eq!(&t[a.maths[0].content.clone()], "y");
+    }
+
+    #[test]
+    fn math_block_multiline() {
+        let t = "antes\n\n$$\n\\sum_i x\n$$\n\ndepois\n";
+        let a = Analyzer::new().analyze(t);
+        assert_eq!(a.maths.len(), 1);
+        assert!(a.maths[0].block);
+        assert_eq!(&t[a.maths[0].content.clone()], "\n\\sum_i x\n");
+        assert_eq!(shown(t, 0), "antes\n\n\n\\sum_i x\n\n\ndepois\n");
+        // `$$` alone on a line also blocks; mid-paragraph it stays inline.
+        assert!(Analyzer::new().analyze("$$x^2$$").maths[0].block);
+        assert!(!Analyzer::new().analyze("v $$x$$ w").maths[0].block);
     }
 }

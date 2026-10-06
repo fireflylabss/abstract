@@ -267,6 +267,8 @@ pub enum Key {
     // Note tabs
     OpenInNewTab,
     CloseTab,
+    MathInline,
+    MathBlock,
 }
 
 impl Key {
@@ -451,6 +453,8 @@ impl Key {
         Key::TableDeleteColumn,
         Key::OpenInNewTab,
         Key::CloseTab,
+        Key::MathInline,
+        Key::MathBlock,
     ];
 }
 
@@ -651,6 +655,8 @@ fn en(k: Key) -> &'static str {
         Key::TableDeleteColumn => "Delete column",
         Key::OpenInNewTab => "Open in new tab",
         Key::CloseTab => "Close tab",
+        Key::MathInline => "Inline math",
+        Key::MathBlock => "Math block",
     }
 }
 
@@ -855,6 +861,8 @@ fn pt(k: Key) -> &'static str {
         Key::TableDeleteColumn => "Apagar coluna",
         Key::OpenInNewTab => "Abrir em nova aba",
         Key::CloseTab => "Fechar aba",
+        Key::MathInline => "Math inline",
+        Key::MathBlock => "Math em bloco",
     }
 }
 

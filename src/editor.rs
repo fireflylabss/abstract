@@ -92,6 +92,8 @@ actions!(
         InsertColumnRight,
         DeleteTableRow,
         DeleteTableColumn,
+        MathInline,
+        MathBlock,
     ]
 );
 
@@ -605,6 +607,12 @@ impl LiveEditor {
         self.insert_block(&text, Some(4 + inner.len()), cx);
     }
 
+    fn math_block(&mut self, cx: &mut Context<Self>) {
+        let inner = self.selected_text().to_string();
+        let text = format!("$$\n{inner}\n$$\n");
+        self.insert_block(&text, Some(3 + inner.len()), cx);
+    }
+
     fn right_click(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus, cx);
         if let Some(off) = self.offset_at(ev.position) {
@@ -713,6 +721,8 @@ impl LiveEditor {
                     .menu(t(Key::Divider), Box::new(Divider))
                     .menu(t(Key::Table), Box::new(InsertTable))
                     .menu(t(Key::Footnote), Box::new(InsertFootnote))
+                    .menu(t(Key::MathInline), Box::new(MathInline))
+                    .menu(t(Key::MathBlock), Box::new(MathBlock))
             });
         let menu = if in_table {
             menu.submenu(t(Key::Table), window, cx, move |m, _, _| {
@@ -1355,6 +1365,8 @@ impl Render for LiveEditor {
             .on_action(cx.listener(|this, _: &DeleteTableColumn, _, cx| {
                 this.table_op(pipe::Op::DeleteCol, cx)
             }))
+            .on_action(cx.listener(|this, _: &MathInline, _, cx| this.wrap("$", cx)))
+            .on_action(cx.listener(|this, _: &MathBlock, _, cx| this.math_block(cx)))
             .on_mouse_down(MouseButton::Right, cx.listener(Self::right_click))
             .on_drop(cx.listener(Self::drop_paths))
             .drag_over::<ExternalPaths>(|s, _, _, cx| s.bg(rgb(cx.global::<Palette>().hover)))
@@ -1382,7 +1394,7 @@ impl Render for LiveEditor {
 struct LineBox {
     buf: Range<usize>,
     /// Visible buffer sub-ranges, concatenated into the shaped text.
-    segs: Vec<Range<usize>>,
+    segs: Vec<Seg>,
     kind: Kind,
     x: f32,
     top: f32,
@@ -1417,7 +1429,7 @@ struct GridRow {
 struct GridCell {
     /// Buffer range of the trimmed cell content.
     range: Range<usize>,
-    segs: Vec<Range<usize>>,
+    segs: Vec<Seg>,
     wrapped: WrappedLine,
     /// Text origin and wrap width, content coordinates.
     x: f32,
@@ -1451,7 +1463,7 @@ enum Planned {
 
 struct PlannedCell {
     range: Range<usize>,
-    segs: Vec<Range<usize>>,
+    segs: Vec<Seg>,
     wrapped: WrappedLine,
     dx: f32,
     w: f32,
@@ -1520,26 +1532,26 @@ fn plan_grid(
                 let range = spans.get(c).map_or(line.end..line.end, |r| {
                     line.start + r.start..line.start + r.end
                 });
-                let mut segs: Vec<Range<usize>> = visible
+                let mut segs: Vec<Seg> = visible
                     .iter()
-                    .map(|s| s.start.max(range.start)..s.end.min(range.end))
-                    .filter(|s| s.start < s.end)
+                    .map(|s| Seg::plain(s.start.max(range.start)..s.end.min(range.end)))
+                    .filter(|s| s.buf.start < s.buf.end)
                     .collect();
                 if segs.is_empty() {
-                    segs.push(range.start..range.start);
+                    segs.push(Seg::plain(range.start..range.start));
                 }
                 let mut display = String::new();
                 let mut runs = Vec::new();
                 for s in &segs {
-                    let mut i = s.start;
-                    while i < s.end {
+                    let mut i = s.buf.start;
+                    while i < s.buf.end {
                         let f = a.flags[i];
                         let mut j = i + 1;
-                        while j < s.end && a.flags[j] == f {
+                        while j < s.buf.end && a.flags[j] == f {
                             j += 1;
                         }
                         let f = if header { f | md::BOLD } else { f };
-                        runs.push(run(style, Kind::Body, f, None, j - i, a.tint_at(i)));
+                        runs.push(run(style, Kind::Body, f, None, j - i, a.tint_at(i), false));
                         display.push_str(&text[i..j]);
                         i = j;
                     }
@@ -1619,29 +1631,103 @@ fn plan_grid(
     Some(out)
 }
 
-fn seg_to_display(segs: &[Range<usize>], off: usize) -> usize {
+/// A visible piece of a line: `buf` bytes shown verbatim, or replaced by
+/// `repl` on display (a math command's Unicode approximation).
+#[derive(Clone)]
+struct Seg {
+    buf: Range<usize>,
+    repl: Option<SharedString>,
+}
+
+impl Seg {
+    fn plain(buf: Range<usize>) -> Self {
+        Self { buf, repl: None }
+    }
+
+    /// Display byte length (`repl` or the verbatim source).
+    fn len(&self) -> usize {
+        self.repl
+            .as_ref()
+            .map_or(self.buf.end - self.buf.start, |r| r.len())
+    }
+}
+
+/// Split `s` at math-command pieces whose span the selection does not
+/// touch; a touched span keeps its source so the user edits real TeX.
+fn push_math_segs(
+    out: &mut Vec<Seg>,
+    s: Range<usize>,
+    a: &Analysis,
+    reveal: &Range<usize>,
+    text: &str,
+) {
+    let mut cur = s.start;
+    for m in a.maths_overlapping(&s) {
+        if m.range.start <= reveal.end && reveal.start <= m.range.end {
+            continue;
+        }
+        let c = m.content.start.max(s.start)..m.content.end.min(s.end);
+        if c.is_empty() {
+            continue;
+        }
+        for sub in crate::math::subs(&text[c.clone()]) {
+            let r = c.start + sub.range.start..c.start + sub.range.end;
+            if r.start > cur {
+                out.push(Seg::plain(cur..r.start));
+            }
+            cur = r.end.max(cur);
+            out.push(Seg {
+                buf: r,
+                repl: Some(sub.text.into()),
+            });
+        }
+    }
+    if cur < s.end {
+        out.push(Seg::plain(cur..s.end));
+    }
+}
+
+fn seg_to_display(segs: &[Seg], off: usize) -> usize {
     let mut acc = 0;
     for s in segs {
-        if off < s.start {
+        if off < s.buf.start {
             return acc;
         }
-        if off <= s.end {
-            return acc + off - s.start;
+        if off <= s.buf.end {
+            if s.repl.is_none() {
+                return acc + off - s.buf.start;
+            }
+            // A substituted piece snaps its inner positions to the nearer
+            // edge: its replacement is opaque to the caret.
+            let half = (s.buf.end - s.buf.start) / 2;
+            return acc
+                + if off - s.buf.start <= half {
+                    0
+                } else {
+                    s.len()
+                };
         }
         acc += s.len();
     }
     acc
 }
 
-fn seg_to_buffer(segs: &[Range<usize>], end: usize, di: usize) -> usize {
+fn seg_to_buffer(segs: &[Seg], end: usize, di: usize) -> usize {
     let mut acc = 0;
     for s in segs {
         if di <= acc + s.len() {
-            return s.start + di - acc;
+            if s.repl.is_none() {
+                return s.buf.start + di - acc;
+            }
+            return if di - acc <= s.len() / 2 {
+                s.buf.start
+            } else {
+                s.buf.end
+            };
         }
         acc += s.len();
     }
-    segs.last().map_or(end, |s| s.end)
+    segs.last().map_or(end, |s| s.buf.end)
 }
 
 impl LineBox {
@@ -1732,6 +1818,10 @@ impl Layout {
 
 const IMAGE_MAX_H: f32 = 520.;
 
+/// Height of a concealed `$$` delimiter line: the breathing room around a
+/// displayed math block.
+const MATH_GAP: f32 = 9.;
+
 /// First candidate that decodes; `None` while one is still loading (the
 /// asset cache notifies the view when it lands) or when none exists.
 fn load_image(
@@ -1791,7 +1881,7 @@ fn span_rects(
 
 /// `span_rects` for one shaped fragment at `(x, top)` with line height `lh`.
 fn text_rects(
-    segs: &[Range<usize>],
+    segs: &[Seg],
     wrapped: &WrappedLine,
     (x, top, lh): (f32, f32, f32),
     s: usize,
@@ -1861,7 +1951,9 @@ fn tone_color(pal: &Palette, tone: md::Tone) -> u32 {
 }
 
 /// `accent` is the callout colour of the line, if it is in one; `tint` the
-/// `=={tint}…==` colour of the run's mark.
+/// `=={tint}…==` colour of the run's mark. `math` styles `$…$`/`$$…$$`
+/// content: italic serif in the accent colour, the honest stand-in for a
+/// TeX renderer.
 fn run(
     style: &RunStyle,
     kind: Kind,
@@ -1869,15 +1961,28 @@ fn run(
     accent: Option<u32>,
     len: usize,
     tint: Option<md::Tint>,
+    math: bool,
 ) -> TextRun {
     let pal = style.pal;
     let heading = matches!(kind, Kind::Heading(_));
     let code = matches!(kind, Kind::Code | Kind::Table) || flags & md::CODE != 0;
     let mut f = font(if code {
         style.fonts.mono.clone()
+    } else if math {
+        // A serif keeps math readable next to the prose face; fallbacks cover
+        // platforms without Georgia (Arch ships DejaVu/Noto, not Times).
+        SharedString::from("Georgia")
     } else {
         style.fonts.sans.clone()
     });
+    if math {
+        f.fallbacks = Some(FontFallbacks::from_fonts(vec![
+            "Times New Roman".into(),
+            "DejaVu Serif".into(),
+            "Liberation Serif".into(),
+            "Noto Serif".into(),
+        ]));
+    }
     if heading {
         f.weight = if matches!(kind, Kind::Heading(1 | 2)) {
             FontWeight::BOLD
@@ -1888,7 +1993,7 @@ fn run(
     if flags & md::BOLD != 0 {
         f.weight = FontWeight::BOLD;
     }
-    if flags & md::ITALIC != 0 {
+    if flags & md::ITALIC != 0 || math {
         f.style = FontStyle::Italic;
     }
     if kind == Kind::Code {
@@ -1910,7 +2015,7 @@ fn run(
         pal.code_comment
     } else if kind == Kind::Code && flags & md::NUMBER != 0 {
         pal.code_num
-    } else if heading || flags & md::LINK != 0 {
+    } else if heading || flags & md::LINK != 0 || math {
         pal.head
     } else if let Some(c) = accent.filter(|_| flags & md::CALLOUT != 0) {
         c
@@ -2108,7 +2213,7 @@ impl Element for EditorElement {
                 y = top + rows_h;
                 lines.push(LineBox {
                     buf: buf.clone(),
-                    segs: std::iter::once(buf.start..buf.start).collect(),
+                    segs: std::iter::once(Seg::plain(buf.start..buf.start)).collect(),
                     kind: *kind,
                     x,
                     top,
@@ -2144,8 +2249,9 @@ impl Element for EditorElement {
                     accent,
                     placeholder.len(),
                     None,
+                    false,
                 ));
-                std::iter::once(0..0).collect()
+                std::iter::once(Seg::plain(0..0)).collect()
             } else {
                 let mut segs = a.visible(buf.clone(), &reveal);
                 // A displayed image replaces its source until the selection
@@ -2158,27 +2264,53 @@ impl Element for EditorElement {
                 if segs.is_empty() {
                     segs.push(buf.start..buf.start);
                 }
+                // Untouched math substitutes its commands on display.
+                let mut vsegs = Vec::with_capacity(segs.len());
                 for s in &segs {
-                    let mut i = s.start;
-                    while i < s.end {
+                    push_math_segs(&mut vsegs, s.clone(), a, &reveal, text);
+                }
+                for s in &vsegs {
+                    if let Some(repl) = &s.repl {
+                        runs.push(run(
+                            &style,
+                            *kind,
+                            a.flags[s.buf.start],
+                            accent,
+                            repl.len(),
+                            None,
+                            true,
+                        ));
+                        display.push_str(repl);
+                        continue;
+                    }
+                    let mut i = s.buf.start;
+                    while i < s.buf.end {
                         let f = a.flags[i];
                         let mut j = i + 1;
-                        while j < s.end && a.flags[j] == f {
+                        while j < s.buf.end && a.flags[j] == f {
                             j += 1;
                         }
-                        runs.push(run(&style, *kind, f, accent, j - i, a.tint_at(i)));
+                        runs.push(run(
+                            &style,
+                            *kind,
+                            f,
+                            accent,
+                            j - i,
+                            a.tint_at(i),
+                            a.math_at(i).is_some(),
+                        ));
                         display.push_str(&text[i..j]);
                         i = j;
                     }
                 }
-                segs
+                vsegs
             };
             // A concealed marker (selection outside the item's owner line)
             // shows as a painted bullet instead.
             let bullet = item.and_then(|i| {
                 let hidden = !segs
                     .iter()
-                    .any(|s| s.start < i.marker.end && i.marker.start < s.end);
+                    .any(|s| s.buf.start < i.marker.end && i.marker.start < s.buf.end);
                 hidden.then_some((i.bullet, i.depth))
             });
             let wrapped = window
@@ -2199,6 +2331,13 @@ impl Element for EditorElement {
             } else {
                 (wrapped.wrap_boundaries.len() + 1) as f32 * lh
             };
+            // An untouched `$$…$$` block: `$$` lines collapse to breathing
+            // room and each content line centers inside the column.
+            let math_blk = a
+                .maths_overlapping(buf)
+                .iter()
+                .find(|m| m.block)
+                .filter(|m| !(m.range.start <= reveal.end && reveal.start <= m.range.end));
             let mut images = Vec::new();
             let mut iy = top + text_h + if text_h > 0. { 6. * zf } else { 0. };
             let max_w = col_w - indent;
@@ -2216,13 +2355,21 @@ impl Element for EditorElement {
                 iy += b.size.height + 8. * zf;
                 images.push(((*img).clone(), b));
             }
-            let rows_h = if images.is_empty() { text_h } else { iy - top };
+            let mut rows_h = if images.is_empty() { text_h } else { iy - top };
+            let mut x = col_x + indent;
+            if math_blk.is_some() {
+                if display.is_empty() {
+                    rows_h = MATH_GAP * zf;
+                } else if wrapped.wrap_boundaries.is_empty() {
+                    x += ((col_w - indent - f32::from(wrapped.width())) / 2.).max(0.);
+                }
+            }
             y = top + rows_h + below;
             lines.push(LineBox {
                 buf: buf.clone(),
                 segs,
                 kind: *kind,
-                x: col_x + indent,
+                x,
                 top,
                 lh,
                 rows_h,
