@@ -37,6 +37,16 @@ const FONT_SANS_ITALIC: &[u8] = include_bytes!("../assets/fonts/NotoSans-Italic.
 const FONT_SANS_BOLD_ITALIC: &[u8] = include_bytes!("../assets/fonts/NotoSans-SemiBoldItalic.ttf");
 const FONT_MONO: &[u8] = include_bytes!("../assets/fonts/NotoSansMono-Regular.ttf");
 const FONT_MONO_BOLD: &[u8] = include_bytes!("../assets/fonts/NotoSansMono-Bold.ttf");
+// Noto Sans has no math coverage (∑, ∫, arrows, super-/subscripts come
+// out as .notdef boxes), so math prints in a DejaVu Sans subset instead —
+// italic keeps it set apart from the prose face.
+const FONT_MATH: &[u8] = include_bytes!("../assets/fonts/DejaVuSans-math-subset.ttf");
+const FONT_MATH_ITALIC: &[u8] =
+    include_bytes!("../assets/fonts/DejaVuSans-Oblique-math-subset.ttf");
+
+/// Glyphs `math.rs` can emit that DejaVu lacks — a run holding one falls
+/// back to its LaTeX source rather than drawing a .notdef box.
+const MATH_TOFU: &str = "\u{2322}\u{2323}\u{2a06}\u{2a3f}";
 
 const INK: Color = Color::Rgb(29, 29, 31);
 const MUTED: Color = Color::Rgb(85, 85, 90);
@@ -113,16 +123,11 @@ pub(crate) fn export(text: &str, title: &str, ctx: &Context) -> Result<Vec<u8>, 
         doc.set_font_size(BODY_PT);
         doc.set_line_spacing(1.35);
         doc.set_paper_size(genpdf::PaperSize::A4);
-        let mono = doc.add_font_family(FontFamily {
-            regular: FontData::new(FONT_MONO.to_vec(), None)?,
-            bold: FontData::new(FONT_MONO_BOLD.to_vec(), None)?,
-            italic: FontData::new(FONT_MONO.to_vec(), None)?,
-            bold_italic: FontData::new(FONT_MONO_BOLD.to_vec(), None)?,
-        });
+        let (mono, math) = add_fonts(&mut doc)?;
         doc.set_page_decorator(Footer::default());
         let a = Analyzer::new().analyze(text);
         let mut body = LinearLayout::vertical();
-        Emitter::new(text, &a, 0..text.len(), ctx, mono).render(&mut body);
+        Emitter::new(text, &a, 0..text.len(), ctx, mono, math).render(&mut body);
         doc.push(body);
         let mut out = Vec::new();
         doc.render(&mut out)?;
@@ -131,6 +136,24 @@ pub(crate) fn export(text: &str, title: &str, ctx: &Context) -> Result<Vec<u8>, 
     // Debug builds may still panic (release aborts) — never propagate one.
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(build))
         .unwrap_or_else(|_| Err(Error::new("PDF export panicked", ErrorKind::Internal)))
+}
+
+/// The extra font families an `Emitter` needs: `(mono, math)`.
+fn add_fonts(doc: &mut genpdf::Document) -> Result<(FontFamily<Font>, FontFamily<Font>), Error> {
+    let mono = doc.add_font_family(FontFamily {
+        regular: FontData::new(FONT_MONO.to_vec(), None)?,
+        bold: FontData::new(FONT_MONO_BOLD.to_vec(), None)?,
+        italic: FontData::new(FONT_MONO.to_vec(), None)?,
+        bold_italic: FontData::new(FONT_MONO_BOLD.to_vec(), None)?,
+    });
+    // The math face is always set italic; bold maps reuse the same pair.
+    let math = doc.add_font_family(FontFamily {
+        regular: FontData::new(FONT_MATH.to_vec(), None)?,
+        bold: FontData::new(FONT_MATH_ITALIC.to_vec(), None)?,
+        italic: FontData::new(FONT_MATH_ITALIC.to_vec(), None)?,
+        bold_italic: FontData::new(FONT_MATH_ITALIC.to_vec(), None)?,
+    });
+    Ok((mono, math))
 }
 
 /// Margins plus a centered page number.
@@ -329,6 +352,8 @@ struct Emitter<'a> {
     link_defs: Vec<(String, String)>,
     /// Monospace face for `code` and task bullets.
     mono: FontFamily<Font>,
+    /// DejaVu face for `$…$`/`$$…$$` math (the Noto faces lack the glyphs).
+    math: FontFamily<Font>,
     /// Body text color — gray inside plain block quotes.
     ink: Color,
     /// Inside a link run (links print colored; they aren't clickable).
@@ -342,6 +367,7 @@ impl<'a> Emitter<'a> {
         sel: Range<usize>,
         ctx: &'a Context<'a>,
         mono: FontFamily<Font>,
+        math: FontFamily<Font>,
     ) -> Self {
         let mut hidden: Vec<Range<usize>> = a.conceals.iter().map(|c| c.hidden.clone()).collect();
         hidden.extend(comments(text, a));
@@ -355,6 +381,7 @@ impl<'a> Emitter<'a> {
             defs: Vec::new(),
             link_defs: link_defs(text),
             mono,
+            math,
             ink: INK,
             link_depth: 0,
         }
@@ -887,6 +914,11 @@ impl<'a> Emitter<'a> {
             }
             return Some(range.end);
         }
+        if let Some(m) = at(&self.a.maths, i, |x| &x.range) {
+            let (range, content, block) = (m.range.clone(), m.content.clone(), m.block);
+            self.math(flow, content, block);
+            return Some(range.end);
+        }
         None
     }
 
@@ -894,6 +926,7 @@ impl<'a> Emitter<'a> {
         at(&self.a.images, i, |x| &x.range).is_some()
             || at(&self.a.wiki_links, i, |x| &x.range).is_some()
             || at(&self.a.footnotes, i, |x| &x.range).is_some()
+            || at(&self.a.maths, i, |x| &x.range).is_some()
     }
 
     fn hidden_end(&self, i: usize) -> Option<usize> {
@@ -910,6 +943,54 @@ impl<'a> Emitter<'a> {
         s.set_font_family(self.mono);
         s.set_font_size(CODE_PT);
         s
+    }
+
+    /// Italic DejaVu — math set apart from the sans prose.
+    fn math_style(&self) -> Style {
+        let mut s = Style::new().with_color(self.ink).italic();
+        s.set_font_family(self.math);
+        s
+    }
+
+    /// `$…$`/`$$…$$`: the editor's Unicode approximation in the math face.
+    /// A construct `math.rs` can't read — or that converts to a glyph the
+    /// face lacks — keeps its LaTeX source, printed in mono so it reads as
+    /// source instead of a broken glyph. `$$` blocks center on their own
+    /// line when the flow can hold a block element.
+    fn math(&mut self, flow: &mut Flow, content: Range<usize>, block: bool) {
+        let Some(src) = self.text.get(clip(content, &self.sel)) else {
+            return;
+        };
+        let mut runs: Vec<StyledString> = Vec::new();
+        let mut at = 0;
+        for p in crate::math::pieces(src) {
+            if p.range.start > at {
+                runs.push(StyledString::new(
+                    src[at..p.range.start].to_string(),
+                    self.math_style(),
+                ));
+            }
+            let show_source = match &p.text {
+                Some(t) => t.chars().any(|c| MATH_TOFU.contains(c)),
+                None => true,
+            };
+            runs.push(if show_source {
+                StyledString::new(src[p.range.clone()].to_string(), self.mono_style())
+            } else {
+                StyledString::new(p.text.unwrap_or_default(), self.math_style())
+            });
+            at = p.range.end.max(at);
+        }
+        if at < src.len() {
+            runs.push(StyledString::new(src[at..].to_string(), self.math_style()));
+        }
+        if block && flow.layout.is_some() {
+            flow.element(Paragraph::from(runs).aligned(Alignment::Center));
+        } else {
+            for r in runs {
+                flow.run(r);
+            }
+        }
     }
 
     /// A run of text under `sf` — underline/strike degrade to plain text,
@@ -1202,5 +1283,78 @@ mod tests {
         }
         let bytes = export(&text, "big", &ctx()).unwrap();
         assert!(bytes.starts_with(b"%PDF"));
+    }
+
+    /// The runs an `Emitter` produces for `text`, through the real
+    /// `inline()`/`special()` path.
+    fn runs(text: &str) -> Vec<StyledString> {
+        let mut doc = genpdf::Document::new(FontFamily {
+            regular: FontData::new(FONT_SANS.to_vec(), None).unwrap(),
+            bold: FontData::new(FONT_SANS_BOLD.to_vec(), None).unwrap(),
+            italic: FontData::new(FONT_SANS_ITALIC.to_vec(), None).unwrap(),
+            bold_italic: FontData::new(FONT_SANS_BOLD_ITALIC.to_vec(), None).unwrap(),
+        });
+        let (mono, math) = add_fonts(&mut doc).unwrap();
+        let a = Analyzer::new().analyze(text);
+        let c = ctx();
+        let mut e = Emitter::new(text, &a, 0..text.len(), &c, mono, math);
+        let mut flow = Flow::runs();
+        e.inline(&mut flow, 0..text.len());
+        flow.runs
+    }
+
+    fn joined(runs: &[StyledString]) -> String {
+        runs.iter().map(|s| s.s.clone()).collect()
+    }
+
+    #[test]
+    fn math_converts_to_unicode() {
+        let runs =
+            runs("ver $\x5calpha^2 \x5cleq \x5cinfty$ ok\n\n$$\x5csum_i x_i \x5cto \x5cint f$$\n");
+        let text = joined(&runs);
+        assert!(text.contains("α² ≤ ∞"), "{text}");
+        assert!(text.contains("∑ᵢ xᵢ → ∫ f"), "{text}");
+        // Math runs print italic in the DejaVu face.
+        assert!(
+            runs.iter()
+                .any(|r| r.style.is_italic() && r.s.contains('α')),
+            "math run not italic"
+        );
+    }
+
+    #[test]
+    fn unconvertible_math_shows_its_source() {
+        // No superscript π exists, so `e^{i\pi}` degrades — the pieces that
+        // still convert (\pi → π) must not drag the rest into TeX.
+        let text = joined(&runs("$e^{i\x5cpi}$ e $\x5cfoo{n}$"));
+        assert!(text.contains("e^iπ"), "{text}");
+        assert!(text.contains("\\foo{n}"), "{text}");
+    }
+
+    #[test]
+    fn money_amounts_stay_literal() {
+        let text = joined(&runs("R$ 10 e $ 20 no total"));
+        assert!(text.contains("R$ 10 e $ 20"), "{text}");
+    }
+
+    #[test]
+    fn math_glyphs_reach_the_pdf() {
+        // printpdf writes text as glyph ids; the ToUnicode CMap then lists
+        // each used glyph as `<id> <codepoint>` — a converted char only
+        // appears there if it really rendered (no .notdef tofu).
+        let bytes = export(
+            "ver $\x5calpha^2 \x5cleq \x5cinfty$\n\n$$\x5csum_i x_i \x5cto \x5cint f$$\n",
+            "M",
+            &ctx(),
+        )
+        .unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+        for cp in ["03b1", "00b2", "2264", "221e", "2211", "2192", "222b"] {
+            let needle = format!("<{cp}>");
+            assert!(
+                bytes.windows(needle.len()).any(|w| w == needle.as_bytes()),
+                "U+{cp} never reached a ToUnicode map"
+            );
+        }
     }
 }

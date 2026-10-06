@@ -14,6 +14,18 @@ pub struct Sub {
     pub text: String,
 }
 
+/// A piece of math source for a renderer that styles failures: `text` is
+/// the replacement when the construct converted, `None` marks one the
+/// approximator can't read — its source then shows verbatim instead of
+/// passing silently as prose.
+#[derive(Clone, Debug)]
+pub(crate) struct Piece {
+    /// Byte range in the string `pieces` was called on.
+    pub range: Range<usize>,
+    /// Display text, or `None` for an unconvertible construct.
+    pub text: Option<String>,
+}
+
 /// `src` with every substitution applied — the approximation of a nested
 /// argument (`\frac{a^2}{b}` → `(a²)/(b)`).
 pub fn approx(src: &str) -> String {
@@ -28,9 +40,33 @@ pub fn approx(src: &str) -> String {
     out
 }
 
+/// `src` split at every construct the walker saw, in order — converted
+/// pieces carry their replacement, failed ones carry `None`, and the
+/// spans between render literally.
+pub(crate) fn pieces(src: &str) -> Vec<Piece> {
+    let mut failed = Vec::new();
+    let mut out: Vec<Piece> = scan(src, &mut failed)
+        .into_iter()
+        .map(|s| Piece {
+            range: s.range,
+            text: Some(s.text),
+        })
+        .collect();
+    out.extend(failed.into_iter().map(|range| Piece { range, text: None }));
+    out.sort_by_key(|p| p.range.start);
+    out
+}
+
 /// The substituted pieces of `src`, in order; spans between them render
 /// literally.
 pub fn subs(src: &str) -> Vec<Sub> {
+    scan(src, &mut Vec::new())
+}
+
+/// The shared walk behind `subs`/`pieces`: `failed` collects the ranges of
+/// constructs that stayed verbatim (unknown commands, scripts without a
+/// glyph, malformed argument lists).
+fn scan(src: &str, failed: &mut Vec<Range<usize>>) -> Vec<Sub> {
     let b = src.as_bytes();
     let mut out: Vec<Sub> = Vec::new();
     // `out` indices of `{` subs with no `}` yet; unclosed braces revert to
@@ -39,8 +75,8 @@ pub fn subs(src: &str) -> Vec<Sub> {
     let mut i = 0;
     while i < b.len() {
         match b[i] {
-            b'\\' => i = command(src, i, &mut out),
-            b'^' | b'_' => i = script(src, i, &mut out),
+            b'\\' => i = command(src, i, &mut out, failed),
+            b'^' | b'_' => i = script(src, i, &mut out, failed),
             b'{' => {
                 braces.push(out.len());
                 out.push(Sub {
@@ -76,8 +112,9 @@ pub fn subs(src: &str) -> Vec<Sub> {
 
 /// A `\command` starting at `i`; returns where scanning resumes. Commands
 /// whose arguments fail to parse consume their parsed groups verbatim, so a
-/// malformed `\frac{a}` stays `\frac{a}` rather than losing its braces.
-fn command(src: &str, i: usize, out: &mut Vec<Sub>) -> usize {
+/// malformed `\frac{a}` stays `\frac{a}` rather than losing its braces —
+/// and lands in `failed` so a renderer can show it as source.
+fn command(src: &str, i: usize, out: &mut Vec<Sub>, failed: &mut Vec<Range<usize>>) -> usize {
     let b = src.as_bytes();
     let mut e = i + 1;
     while e < b.len() && b[e].is_ascii_alphabetic() {
@@ -94,9 +131,11 @@ fn command(src: &str, i: usize, out: &mut Vec<Sub>) -> usize {
     match name {
         "frac" | "dfrac" | "tfrac" => {
             let Ok((a, e1)) = arg(src, e) else {
+                failed.push(i..e);
                 return e;
             };
             let Ok((b2, e2)) = arg(src, e1) else {
+                failed.push(i..e1);
                 return e1;
             };
             out.push(Sub {
@@ -119,6 +158,7 @@ fn command(src: &str, i: usize, out: &mut Vec<Sub>) -> usize {
                 e1 += close + 1;
             }
             let Ok((a, e2)) = arg(src, e1) else {
+                failed.push(i..e1);
                 return e1;
             };
             let text = match root {
@@ -133,6 +173,7 @@ fn command(src: &str, i: usize, out: &mut Vec<Sub>) -> usize {
         }
         "mathbb" => {
             let Ok((a, e1)) = arg(src, e) else {
+                failed.push(i..e);
                 return e;
             };
             match double_struck(&src[a]) {
@@ -140,12 +181,16 @@ fn command(src: &str, i: usize, out: &mut Vec<Sub>) -> usize {
                     out.push(Sub { range: i..e1, text });
                     e1
                 }
-                None => e1,
+                None => {
+                    failed.push(i..e1);
+                    e1
+                }
             }
         }
         "text" | "mathrm" | "mathbf" | "mathit" | "mathsf" | "mathtt" | "operatorname"
         | "boldsymbol" | "mathop" | "mathbin" | "mathrel" | "mathinner" => {
             let Ok((a, e1)) = arg(src, e) else {
+                failed.push(i..e);
                 return e;
             };
             out.push(Sub {
@@ -157,6 +202,7 @@ fn command(src: &str, i: usize, out: &mut Vec<Sub>) -> usize {
         "vec" | "hat" | "widehat" | "bar" | "overline" | "underline" | "dot" | "ddot" | "tilde"
         | "widetilde" | "check" | "breve" | "acute" | "grave" | "mathring" => {
             let Ok((a, e1)) = arg(src, e) else {
+                failed.push(i..e);
                 return e;
             };
             let mark = match name {
@@ -185,6 +231,7 @@ fn command(src: &str, i: usize, out: &mut Vec<Sub>) -> usize {
         | "Biggm" => {
             // Sizing/delimiter commands: the following atom renders bare.
             let Ok((a, e1)) = arg(src, e) else {
+                failed.push(i..e);
                 return e;
             };
             let text = if &src[a.clone()] == "." {
@@ -205,6 +252,7 @@ fn command(src: &str, i: usize, out: &mut Vec<Sub>) -> usize {
                 // Unknown: the name stays literal, and so do `{…}` groups it
                 // takes — their braces are content, not markup to erase.
                 e = literal_groups(src, e);
+                failed.push(i..e);
             }
             e
         }
@@ -279,9 +327,10 @@ fn arg(src: &str, mut i: usize) -> Result<(Range<usize>, usize), ()> {
 
 /// `^atom` / `_atom` at `i`; returns where scanning resumes. The whole atom
 /// substitutes or the `^`/`_` stays literal — no half-rendered scripts.
-fn script(src: &str, i: usize, out: &mut Vec<Sub>) -> usize {
+fn script(src: &str, i: usize, out: &mut Vec<Sub>, failed: &mut Vec<Range<usize>>) -> usize {
     let sup = src.as_bytes()[i] == b'^';
     let Ok((a, e)) = arg(src, i + 1) else {
+        failed.push(i..i + 1);
         return i + 1;
     };
     // A `\cmd` atom maps via its symbol first (`x^\alpha` → xᵅ).
@@ -296,7 +345,10 @@ fn script(src: &str, i: usize, out: &mut Vec<Sub>) -> usize {
             out.push(Sub { range: i..e, text });
             e
         }
-        None => i + 1,
+        None => {
+            failed.push(i..i + 1);
+            i + 1
+        }
     }
 }
 
