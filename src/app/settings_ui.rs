@@ -1,7 +1,89 @@
 use super::*;
 
+use gpui_kit::component::color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState};
+use gpui_kit::component::slider::{Slider, SliderEvent, SliderState, SliderValue};
+
 const REPO: &str = env!("CARGO_PKG_REPOSITORY");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Which glass setting a slider writes.
+#[derive(Clone, Copy)]
+enum GlassSlider {
+    Intensity,
+    Surface(Surface),
+    TintStrength,
+    TextOpacity,
+}
+
+/// Slider and colour-picker entities behind the Glass settings. Created
+/// once so thumb positions and subscriptions survive across renders.
+pub(crate) struct GlassControls {
+    pub intensity: Entity<SliderState>,
+    pub surfaces: [Entity<SliderState>; 6],
+    pub tint_strength: Entity<SliderState>,
+    pub text_opacity: Entity<SliderState>,
+    pub tint_color: Entity<ColorPickerState>,
+    _subs: Vec<Subscription>,
+}
+
+impl GlassControls {
+    pub fn new(settings: &Settings, window: &mut Window, cx: &mut Context<AbstractApp>) -> Self {
+        let mut slider = |v: u8| {
+            cx.new(|_| {
+                SliderState::new()
+                    .min(0.)
+                    .max(100.)
+                    .step(1.)
+                    .default_value(f32::from(v))
+            })
+        };
+        let mut ctl = GlassControls {
+            intensity: slider(settings.glass_intensity()),
+            surfaces: Surface::ALL.map(|s| {
+                slider(
+                    settings
+                        .glass_surface(s)
+                        .or_else(|| s.default_percent())
+                        .unwrap_or(60),
+                )
+            }),
+            tint_strength: slider(settings.glass_tint_strength()),
+            text_opacity: slider(settings.glass_text_opacity()),
+            tint_color: cx.new(|cx| {
+                ColorPickerState::new(window, cx).default_value(rgb(settings.glass_tint_color()))
+            }),
+            _subs: Vec::new(),
+        };
+        for s in Surface::ALL {
+            let key = GlassSlider::Surface(s);
+            ctl._subs.push(
+                cx.subscribe(ctl.surface(s), move |this, _, ev: &SliderEvent, cx| {
+                    this.glass_slider(key, ev, cx)
+                }),
+            );
+        }
+        for (entity, key) in [
+            (&ctl.intensity, GlassSlider::Intensity),
+            (&ctl.tint_strength, GlassSlider::TintStrength),
+            (&ctl.text_opacity, GlassSlider::TextOpacity),
+        ] {
+            ctl._subs
+                .push(cx.subscribe(entity, move |this, _, ev: &SliderEvent, cx| {
+                    this.glass_slider(key, ev, cx)
+                }));
+        }
+        ctl._subs.push(
+            cx.subscribe(&ctl.tint_color, |this, _, ev: &ColorPickerEvent, cx| {
+                this.glass_tint_changed(ev, cx)
+            }),
+        );
+        ctl
+    }
+
+    fn surface(&self, s: Surface) -> &Entity<SliderState> {
+        &self.surfaces[s as usize]
+    }
+}
 
 impl AbstractApp {
     pub(crate) fn toggle_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -32,6 +114,89 @@ impl AbstractApp {
             self.editor.update(cx, |ed, cx| ed.set_raw_tables(on, cx));
         }
         self.save_settings(window, cx);
+    }
+
+    // ── Glass ─────────────────────────────────────────────────────────────
+
+    fn set_glass(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.set_glass(on);
+        self.save_settings(window, cx);
+    }
+
+    fn set_glass_material(
+        &mut self,
+        m: glass::Material,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings.set_glass_material(m);
+        self.save_settings(window, cx);
+    }
+
+    fn set_glass_tint(&mut self, custom: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.set_glass_tint(custom);
+        self.save_settings(window, cx);
+    }
+
+    fn set_glass_surface_on(
+        &mut self,
+        s: Surface,
+        on: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Re-enabling restores the slider's last position.
+        let v = on.then(|| {
+            self.glass_controls
+                .surface(s)
+                .read(cx)
+                .value()
+                .start()
+                .round()
+                .clamp(0., 100.) as u8
+        });
+        self.settings.set_glass_surface(s, v);
+        self.save_settings(window, cx);
+    }
+
+    fn set_glass_text_contrast(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.set_glass_text_contrast(on);
+        self.save_settings(window, cx);
+    }
+
+    /// A glass slider moved: apply live on `Change`, persist on `Release`.
+    fn glass_slider(&mut self, key: GlassSlider, ev: &SliderEvent, cx: &mut Context<Self>) {
+        let (v, commit) = match ev {
+            SliderEvent::Change(SliderValue::Single(v)) => (*v, false),
+            SliderEvent::Release(SliderValue::Single(v)) => (*v, true),
+            _ => return,
+        };
+        let v = v.round().clamp(0., 100.) as u8;
+        match key {
+            GlassSlider::Intensity => self.settings.set_glass_intensity(v),
+            GlassSlider::Surface(s) => self.settings.set_glass_surface(s, Some(v)),
+            GlassSlider::TintStrength => self.settings.set_glass_tint_strength(v),
+            GlassSlider::TextOpacity => self.settings.set_glass_text_opacity(v),
+        }
+        glass::apply(&self.settings, cx);
+        if commit {
+            let s = self.settings.clone();
+            cx.background_spawn(async move { s.save() }).detach();
+        }
+        cx.notify();
+    }
+
+    fn glass_tint_changed(&mut self, ev: &ColorPickerEvent, cx: &mut Context<Self>) {
+        let ColorPickerEvent::Change(Some(c)) = ev else {
+            return;
+        };
+        // `u32::from(Rgba)` packs RRGGBBAA; settings store RRGGBB.
+        self.settings
+            .set_glass_tint_color((u32::from(c.to_rgb()) >> 8) & 0xff_ff_ff);
+        glass::apply(&self.settings, cx);
+        let s = self.settings.clone();
+        cx.background_spawn(async move { s.save() }).detach();
+        cx.notify();
     }
 
     fn set_discord(&mut self, on: bool, cx: &mut Context<Self>) {
@@ -448,6 +613,240 @@ impl AbstractApp {
             }));
         let discord = self.settings.discord();
         let spell_on = self.settings.spellcheck();
+
+        // ── Glass section ───────────────────────────────────────────────
+        let glass_on = self.settings.glass();
+        let glass_mat = self.settings.glass_material();
+        let tint_custom = self.settings.glass_tint();
+        let ctl = &self.glass_controls;
+        let mat_label = |m: glass::Material| match m {
+            glass::Material::Blur => Key::GlassMaterialBlur,
+            glass::Material::Acrylic => Key::GlassMaterialAcrylic,
+            glass::Material::Mica => Key::GlassMaterialMica,
+            glass::Material::MicaAlt => Key::GlassMaterialMicaAlt,
+            glass::Material::Compositor => Key::GlassMaterialCompositor,
+        };
+        let surf_label = |s: Surface| match s {
+            Surface::Sidebar => Key::GlassSidebar,
+            Surface::Tabs => Key::GlassTabs,
+            Surface::Toolbar => Key::GlassToolbar,
+            Surface::Menus => Key::GlassMenus,
+            Surface::Panel => Key::GlassPanel,
+            Surface::Editor => Key::GlassEditor,
+        };
+        let switch_dot = |on: bool| {
+            div()
+                .flex_none()
+                .w(z(30.))
+                .h(z(18.))
+                .p(z(2.))
+                .flex()
+                .items_center()
+                .when(on, |s| s.justify_end())
+                .rounded_full()
+                .bg(rgb(if on { pal.fg } else { pal.active }))
+                .child(
+                    div()
+                        .size(z(14.))
+                        .rounded_full()
+                        .bg(rgb(if on { pal.bg } else { pal.dim })),
+                )
+        };
+        let slider_pct = |state: &Entity<SliderState>, cx: &App| {
+            state.read(cx).value().start().round().clamp(0., 100.) as u32
+        };
+        let slider_row = |id: &'static str,
+                          label: SharedString,
+                          state: &Entity<SliderState>,
+                          disabled: bool,
+                          cx: &mut App| {
+            div()
+                .px(z(8.))
+                .py(z(8.))
+                .mx(z(-8.))
+                .id(id)
+                .flex()
+                .items_center()
+                .gap(z(12.))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(z(13.))
+                        .text_color(rgb(pal.body))
+                        .child(label),
+                )
+                .child(
+                    Slider::new(state)
+                        .horizontal()
+                        .disabled(disabled)
+                        .w(z(110.))
+                        .bg(rgb(pal.fg))
+                        .text_color(rgb(pal.fg)),
+                )
+                .child(
+                    div()
+                        .w(z(30.))
+                        .flex()
+                        .justify_end()
+                        .text_size(z(12.))
+                        .text_color(rgb(pal.dim))
+                        .child(format!("{}%", slider_pct(state, cx))),
+                )
+        };
+        let surface_row = |s: Surface, window: &mut Window, cx: &mut Context<Self>| {
+            let on = self.settings.glass_surface(s).is_some();
+            let st = ctl.surface(s).clone();
+            let id = SharedString::from(format!("glass-surf-{}", s.key()));
+            div()
+                .px(z(4.))
+                .py(z(3.))
+                .mx(z(-4.))
+                .flex()
+                .items_center()
+                .gap(z(6.))
+                .child(
+                    hover_bg(
+                        div()
+                            .id(id.clone())
+                            .role(Role::Switch)
+                            .aria_label(t(surf_label(s)))
+                            .aria_toggled(on.into())
+                            .pl(z(4.))
+                            .pr(z(6.))
+                            .py(z(4.))
+                            .flex()
+                            .items_center()
+                            .gap(z(8.))
+                            .rounded(z(6.))
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.set_glass_surface_on(s, !on, window, cx)
+                            }))
+                            .child(switch_dot(on))
+                            .child(
+                                div()
+                                    .text_size(z(13.))
+                                    .text_color(rgb(pal.body))
+                                    .child(t(surf_label(s))),
+                            ),
+                        id,
+                        None,
+                        pal.hover,
+                        window,
+                        cx,
+                    )
+                    .flex_1()
+                    .min_w_0(),
+                )
+                .child(
+                    Slider::new(&st)
+                        .horizontal()
+                        .disabled(!on)
+                        .w(z(96.))
+                        .bg(rgb(pal.fg))
+                        .text_color(rgb(pal.fg)),
+                )
+                .child(
+                    div()
+                        .w(z(30.))
+                        .flex()
+                        .justify_end()
+                        .text_size(z(12.))
+                        .text_color(rgb(pal.dim))
+                        .child(format!("{}%", slider_pct(&st, cx))),
+                )
+        };
+        let material_row = div()
+            .flex()
+            .gap(z(4.))
+            .children(glass::Material::options().iter().map(|m| {
+                let m = *m;
+                let on = glass_mat == m;
+                let id = SharedString::from(format!("glass-mat-{}", m.as_str()));
+                hover_bg(
+                    div()
+                        .id(id.clone())
+                        .role(Role::RadioButton)
+                        .aria_selected(on)
+                        .flex_1()
+                        .h(z(30.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(z(6.))
+                        .border_1()
+                        .border_color(rgb(if on { pal.fg } else { pal.line }))
+                        .cursor_pointer()
+                        .text_size(z(12.))
+                        .text_color(rgb(if on { pal.fg } else { pal.body }))
+                        .active(|s| s.bg(rgb(pal.active)))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.set_glass_material(m, window, cx)
+                        }))
+                        .child(t(mat_label(m))),
+                    id,
+                    on.then_some(pal.active),
+                    pal.hover,
+                    window,
+                    cx,
+                )
+            }));
+        // Linux-only footnote under Material.
+        let glass_hint = if cfg!(target_os = "linux") {
+            Some(
+                div()
+                    .px(z(8.))
+                    .py(z(5.))
+                    .mx(z(-8.))
+                    .text_size(z(12.))
+                    .line_height(z(17.))
+                    .text_color(rgb(pal.dim))
+                    .child(t(if glass::is_gnome() {
+                        Key::GlassNoBlurHint
+                    } else {
+                        Key::GlassCompositorHint
+                    })),
+            )
+        } else {
+            None
+        };
+        let tint_row = div().flex().gap(z(4.)).children(
+            [(false, Key::GlassTintTheme), (true, Key::GlassTintCustom)].map(|(custom, key)| {
+                let on = tint_custom == custom;
+                let id = SharedString::from(format!("glass-tint-{custom}"));
+                hover_bg(
+                    div()
+                        .id(id.clone())
+                        .role(Role::RadioButton)
+                        .aria_selected(on)
+                        .flex_1()
+                        .h(z(30.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(z(6.))
+                        .border_1()
+                        .border_color(rgb(if on { pal.fg } else { pal.line }))
+                        .cursor_pointer()
+                        .text_size(z(12.))
+                        .text_color(rgb(if on { pal.fg } else { pal.body }))
+                        .active(|s| s.bg(rgb(pal.active)))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.set_glass_tint(custom, window, cx)
+                        }))
+                        .child(t(key)),
+                    id,
+                    on.then_some(pal.active),
+                    pal.hover,
+                    window,
+                    cx,
+                )
+            }),
+        );
+        let adv_ps = presence("glass-adv", self.glass_adv, window, cx);
+        let contrast_on = self.settings.glass_text_contrast();
+
         let body = div()
             .id("settings-body")
             .flex_1()
@@ -461,6 +860,145 @@ impl AbstractApp {
             .child(swatches(false, window, cx))
             .child(sub(t(Key::DarkTheme)))
             .child(swatches(true, window, cx))
+            .child(sub(t(Key::GlassSection)))
+            .child(
+                toggle(
+                    "glass-toggle",
+                    t(Key::GlassEnable),
+                    Some(t(Key::GlassHint)),
+                    glass_on,
+                    window,
+                    cx,
+                )
+                .on_click(
+                    cx.listener(move |this, _, window, cx| this.set_glass(!glass_on, window, cx)),
+                ),
+            )
+            .when(glass_on, |el| {
+                el.child(sub(t(Key::GlassMaterial)))
+                    .child(material_row)
+                    .when_some(glass_hint, |el, h| el.child(h))
+                    .child(slider_row(
+                        "glass-intensity",
+                        t(Key::GlassIntensity).into(),
+                        &ctl.intensity,
+                        false,
+                        cx,
+                    ))
+                    .child(hover_bg(
+                        div()
+                            .id("glass-adv")
+                            .role(Role::Button)
+                            .aria_label(t(Key::GlassAdvanced))
+                            .aria_expanded(self.glass_adv)
+                            .px(z(8.))
+                            .py(z(7.))
+                            .mx(z(-8.))
+                            .flex()
+                            .items_center()
+                            .gap(z(8.))
+                            .rounded(z(6.))
+                            .cursor_pointer()
+                            .active(|s| s.bg(rgb(pal.active)))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.glass_adv = !this.glass_adv;
+                                cx.notify();
+                            }))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_size(z(13.))
+                                    .text_color(rgb(pal.body))
+                                    .child(t(Key::GlassAdvanced)),
+                            )
+                            .child(
+                                icon(
+                                    if self.glass_adv {
+                                        "icons/chevron-down.svg"
+                                    } else {
+                                        "icons/chevron-right.svg"
+                                    },
+                                    pal.faint,
+                                )
+                                .size(z(13.)),
+                            ),
+                        "glass-adv",
+                        None,
+                        pal.hover,
+                        window,
+                        cx,
+                    ))
+                    .when(adv_ps.should_render(), |el| {
+                        el.child(
+                            div()
+                                .opacity(adv_ps.progress)
+                                .children(Surface::ALL.map(|s| surface_row(s, window, cx)))
+                                .child(sub(t(Key::GlassTint)))
+                                .child(tint_row)
+                                .when(tint_custom, |el| {
+                                    el.child(
+                                        div()
+                                            .px(z(8.))
+                                            .py(z(6.))
+                                            .mx(z(-8.))
+                                            .flex()
+                                            .items_center()
+                                            .gap(z(10.))
+                                            .child(ColorPicker::new(&ctl.tint_color))
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .text_size(z(13.))
+                                                    .text_color(rgb(pal.body))
+                                                    .child(t(Key::GlassTintStrength)),
+                                            )
+                                            .child(
+                                                Slider::new(&ctl.tint_strength)
+                                                    .horizontal()
+                                                    .w(z(80.))
+                                                    .bg(rgb(pal.fg))
+                                                    .text_color(rgb(pal.fg)),
+                                            )
+                                            .child(
+                                                div()
+                                                    .w(z(30.))
+                                                    .flex()
+                                                    .justify_end()
+                                                    .text_size(z(12.))
+                                                    .text_color(rgb(pal.dim))
+                                                    .child(format!(
+                                                        "{}%",
+                                                        slider_pct(&ctl.tint_strength, cx)
+                                                    )),
+                                            ),
+                                    )
+                                })
+                                .child(slider_row(
+                                    "glass-text-opacity",
+                                    t(Key::GlassTextOpacity).into(),
+                                    &ctl.text_opacity,
+                                    false,
+                                    cx,
+                                ))
+                                .child(
+                                    toggle(
+                                        "glass-text-contrast",
+                                        t(Key::GlassTextContrast),
+                                        None,
+                                        contrast_on,
+                                        window,
+                                        cx,
+                                    )
+                                    .on_click(cx.listener(
+                                        move |this, _, window, cx| {
+                                            this.set_glass_text_contrast(!contrast_on, window, cx)
+                                        },
+                                    )),
+                                ),
+                        )
+                    })
+            })
             .child(section(t(Key::EditorSection)))
             .child(
                 toggle(
@@ -679,7 +1217,7 @@ impl AbstractApp {
             .max_h(relative(0.86))
             .flex()
             .flex_col()
-            .bg(rgb(pal.menu_bg))
+            .bg(glass::bg(pal.menu_bg, Surface::Panel, cx))
             .border_1()
             .border_color(rgb(pal.menu_border))
             .rounded(z(8.))

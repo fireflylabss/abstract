@@ -20,6 +20,7 @@ use gpui_kit::base::motion::Interpolate;
 use crate::attach::Incoming;
 use crate::buffer::Buffer;
 use crate::fonts::Fonts;
+use crate::glass;
 use crate::i18n::{Key, t};
 use crate::md::{self, Analysis, Analyzer, Kind};
 use crate::spell::{self, SpellLang};
@@ -1839,14 +1840,31 @@ struct RunStyle<'a> {
     /// muted and lines newly inside `focus` fade back.
     fade_from: Option<Range<usize>>,
     fade_t: f32,
+    /// Glass text treatment: alpha multiplier and the contrast nudge toward
+    /// `pal.fg` (1.0 / false when glass is off, i.e. identical output).
+    text_alpha: f32,
+    text_contrast: bool,
 }
 
 impl RunStyle<'_> {
+    /// Final text colour: optional contrast blend toward the foreground,
+    /// then the glass text alpha.
+    fn text(&self, c: u32) -> Hsla {
+        let c = if self.text_contrast {
+            glass::mix_u32(c, self.pal.fg, 0.4)
+        } else {
+            c
+        };
+        let mut h = hsla(c);
+        h.a *= self.text_alpha;
+        h
+    }
+
     /// Recolor `runs` toward muted by the line's eased dim factor.
     fn dim_runs(&self, buf: &Range<usize>, runs: &mut [TextRun]) {
         let d = dim_amount(&self.focus, &self.fade_from, self.fade_t, buf);
         if d > 0. {
-            let muted = hsla(self.pal.muted);
+            let muted = self.text(self.pal.muted);
             for r in runs {
                 r.color = r.color.interpolate(&muted, d);
             }
@@ -2430,7 +2448,7 @@ fn run(
     TextRun {
         len,
         font: f,
-        color: hsla(color),
+        color: style.text(color),
         background_color,
         underline,
         strikethrough,
@@ -2494,6 +2512,9 @@ impl Element for EditorElement {
         let pal = *cx.global::<Palette>();
         let zf = factor();
         let fonts = cx.global::<Fonts>().clone();
+        let (text_alpha, text_contrast) = cx
+            .try_global::<glass::Glass>()
+            .map_or((1., false), |g| (g.text_alpha(), g.text_contrast()));
         let width = f32::from(bounds.size.width);
         let view_h = f32::from(bounds.size.height);
         // The column cap glides on `text_width` changes; snap under
@@ -2547,6 +2568,8 @@ impl Element for EditorElement {
             focus,
             fade_from: dim.prev.clone(),
             fade_t,
+            text_alpha,
+            text_contrast,
         };
 
         // Spellcheck: only lines whose top sits in the visible band ± one

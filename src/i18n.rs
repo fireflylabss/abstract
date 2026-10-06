@@ -290,6 +290,32 @@ pub enum Key {
     FocusMode,
     // Trash undo notice
     NoteTrashedUndo,
+    // Glass / translucency
+    GlassSection,
+    GlassEnable,
+    GlassHint,
+    GlassMaterial,
+    GlassMaterialBlur,
+    GlassMaterialAcrylic,
+    GlassMaterialMica,
+    GlassMaterialMicaAlt,
+    GlassMaterialCompositor,
+    GlassIntensity,
+    GlassAdvanced,
+    GlassSidebar,
+    GlassTabs,
+    GlassToolbar,
+    GlassMenus,
+    GlassPanel,
+    GlassEditor,
+    GlassTint,
+    GlassTintTheme,
+    GlassTintCustom,
+    GlassTintStrength,
+    GlassTextOpacity,
+    GlassTextContrast,
+    GlassCompositorHint,
+    GlassNoBlurHint,
 }
 
 impl Key {
@@ -492,6 +518,31 @@ impl Key {
         Key::SmartQuotesHint,
         Key::FocusMode,
         Key::NoteTrashedUndo,
+        Key::GlassSection,
+        Key::GlassEnable,
+        Key::GlassHint,
+        Key::GlassMaterial,
+        Key::GlassMaterialBlur,
+        Key::GlassMaterialAcrylic,
+        Key::GlassMaterialMica,
+        Key::GlassMaterialMicaAlt,
+        Key::GlassMaterialCompositor,
+        Key::GlassIntensity,
+        Key::GlassAdvanced,
+        Key::GlassSidebar,
+        Key::GlassTabs,
+        Key::GlassToolbar,
+        Key::GlassMenus,
+        Key::GlassPanel,
+        Key::GlassEditor,
+        Key::GlassTint,
+        Key::GlassTintTheme,
+        Key::GlassTintCustom,
+        Key::GlassTintStrength,
+        Key::GlassTextOpacity,
+        Key::GlassTextContrast,
+        Key::GlassCompositorHint,
+        Key::GlassNoBlurHint,
     ];
 }
 
@@ -710,6 +761,33 @@ fn en(k: Key) -> &'static str {
         Key::SmartQuotesHint => "Typographic “quotes” and — dashes while you type.",
         Key::FocusMode => "Focus mode ({MOD}+Shift+Enter)",
         Key::NoteTrashedUndo => "Note moved to trash · Undo",
+        Key::GlassSection => "Glass",
+        Key::GlassEnable => "Translucent glass",
+        Key::GlassHint => "See-through surfaces tinted by your wallpaper.",
+        Key::GlassMaterial => "Material",
+        Key::GlassMaterialBlur => "Blur",
+        Key::GlassMaterialAcrylic => "Acrylic",
+        Key::GlassMaterialMica => "Mica",
+        Key::GlassMaterialMicaAlt => "Mica Alt",
+        Key::GlassMaterialCompositor => "Compositor",
+        Key::GlassIntensity => "Intensity",
+        Key::GlassAdvanced => "Advanced",
+        Key::GlassSidebar => "Sidebar",
+        Key::GlassTabs => "Tab strip",
+        Key::GlassToolbar => "Toolbar",
+        Key::GlassMenus => "Menus & popovers",
+        Key::GlassPanel => "Settings panel",
+        Key::GlassEditor => "Editor",
+        Key::GlassTint => "Tint",
+        Key::GlassTintTheme => "Theme colour",
+        Key::GlassTintCustom => "Custom",
+        Key::GlassTintStrength => "Tint strength",
+        Key::GlassTextOpacity => "Text opacity",
+        Key::GlassTextContrast => "High-contrast text",
+        Key::GlassCompositorHint => {
+            "Blur strength comes from your compositor (Hyprland, KDE, picom)."
+        }
+        Key::GlassNoBlurHint => "GNOME has no window blur — surfaces fade to the desktop instead.",
     }
 }
 
@@ -932,6 +1010,35 @@ fn pt(k: Key) -> &'static str {
         Key::SmartQuotesHint => "Aspas “curvas” e travessões — ao digitar.",
         Key::FocusMode => "Modo foco ({MOD}+Shift+Enter)",
         Key::NoteTrashedUndo => "Nota movida para a lixeira · Desfazer",
+        Key::GlassSection => "Vidro",
+        Key::GlassEnable => "Vidro translúcido",
+        Key::GlassHint => "Superfícies translúcidas tingidas pelo papel de parede.",
+        Key::GlassMaterial => "Material",
+        Key::GlassMaterialBlur => "Desfoque",
+        Key::GlassMaterialAcrylic => "Acrílico",
+        Key::GlassMaterialMica => "Mica",
+        Key::GlassMaterialMicaAlt => "Mica Alt",
+        Key::GlassMaterialCompositor => "Compositor",
+        Key::GlassIntensity => "Intensidade",
+        Key::GlassAdvanced => "Avançado",
+        Key::GlassSidebar => "Barra lateral",
+        Key::GlassTabs => "Faixa de abas",
+        Key::GlassToolbar => "Barra de ferramentas",
+        Key::GlassMenus => "Menus e popovers",
+        Key::GlassPanel => "Painel de configurações",
+        Key::GlassEditor => "Editor",
+        Key::GlassTint => "Tonalidade",
+        Key::GlassTintTheme => "Cor do tema",
+        Key::GlassTintCustom => "Personalizada",
+        Key::GlassTintStrength => "Força da tonalidade",
+        Key::GlassTextOpacity => "Opacidade do texto",
+        Key::GlassTextContrast => "Texto em alto contraste",
+        Key::GlassCompositorHint => {
+            "A força do desfoque vem do seu compositor (Hyprland, KDE, picom)."
+        }
+        Key::GlassNoBlurHint => {
+            "O GNOME não oferece desfoque de janela — as superfícies ficam translúcidas."
+        }
     }
 }
 

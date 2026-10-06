@@ -50,6 +50,8 @@ impl AbstractApp {
     /// Re-apply the palette and persist `settings` off-thread.
     pub(crate) fn save_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.apply_theme(window, cx);
+        glass::apply_window(&self.settings, window);
+        glass::apply(&self.settings, cx);
         let settings = self.settings.clone();
         cx.background_spawn(async move { settings.save() }).detach();
         cx.notify();
@@ -363,7 +365,7 @@ impl AbstractApp {
             .opacity(ps.progress)
             .left(z(8.))
             .w(z(SIDEBAR_W - 16.))
-            .bg(rgb(pal.menu_bg))
+            .bg(glass::bg(pal.menu_bg, Surface::Menus, cx))
             .border_1()
             .border_color(rgb(pal.menu_border))
             .rounded(z(8.))

@@ -37,6 +37,7 @@ use crate::chrome::{
 };
 use crate::editor::{Attach, Changed, CompletionKey, Escaped, LiveEditor, OpenLink, TextWidth};
 use crate::fonts::{self, Fonts};
+use crate::glass::{self, Surface};
 use crate::i18n::{self, Key, t, tf};
 use crate::keymap::*;
 use crate::spaces::{self, Spaces};
@@ -300,6 +301,10 @@ pub(crate) struct AbstractApp {
     trash_undo: Option<PendingUndo>,
     /// Bumped per trash/undo so the notice's auto-dismiss fires once.
     trash_undo_gen: usize,
+    /// Slider/picker entities backing the Glass settings section.
+    glass_controls: settings_ui::GlassControls,
+    /// Whether the Glass "Advanced" disclosure is open; transient.
+    glass_adv: bool,
 }
 impl AbstractApp {
     pub(crate) fn new(
@@ -323,6 +328,7 @@ impl AbstractApp {
             this.appearance_changed(window, cx);
         });
         let presence = crate::discord::Presence::new(settings.discord());
+        let glass_controls = settings_ui::GlassControls::new(&settings, window, cx);
 
         let mut app = Self {
             spaces: Spaces {
@@ -385,6 +391,8 @@ impl AbstractApp {
             focus_mode: false,
             trash_undo: None,
             trash_undo_gen: 0,
+            glass_controls,
+            glass_adv: false,
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
         app._io_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -470,7 +478,7 @@ impl Render for AbstractApp {
             .size_full()
             .flex()
             .font_family(fonts.sans)
-            .bg(rgb(pal.bg))
+            .bg(glass::root_bg(pal.bg, cx))
             .text_color(rgb(pal.body))
             .border_1()
             .border_color(rgb(pal.frame_border))

@@ -310,7 +310,7 @@ impl AbstractApp {
             .flex_none()
             .h_full()
             .overflow_hidden()
-            .bg(rgb(pal.panel))
+            .bg(glass::bg(pal.panel, Surface::Sidebar, cx))
             .border_r_1()
             .border_color(rgb(pal.line))
             .child(

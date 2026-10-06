@@ -17,7 +17,7 @@ impl Render for DraggedRow {
             .px(z(10.))
             .py(z(5.))
             .rounded(z(6.))
-            .bg(rgb(pal.menu_bg))
+            .bg(glass::bg(pal.menu_bg, Surface::Menus, cx))
             .border_1()
             .border_color(rgb(pal.menu_border))
             .shadow_md()

@@ -105,6 +105,18 @@ All notable changes to abstract are documented here. The format follows
   hover/unsaved-dot states, the text-width setting eases the column to its
   new size, and switching light/dark crossfades the palette.
 
+### Added
+- Configurable "glass" translucency: a new Settings → Appearance section
+  turns on a real OS window material — NSVisualEffect blur on macOS,
+  Acrylic or Mica/Mica Alt on Windows, compositor blur on Linux (KDE via
+  org_kde_kwin_blur; Hyprland/picom blur a transparent window themselves;
+  GNOME warns it has none) — plus per-surface opacity sliders for the
+  sidebar, tab strip, toolbar, menus & popovers, Settings panel and editor,
+  an overall intensity slider, an optional custom tint and editor text
+  opacity / high-contrast text options under an Advanced disclosure. When
+  glass is off every surface renders byte-identical opaque colours; all
+  changes apply live and persist in settings.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added

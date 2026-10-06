@@ -254,7 +254,7 @@ impl AbstractApp {
                 .w(z(240.))
                 .max_h(z(180.))
                 .overflow_hidden()
-                .bg(rgb(pal.menu_bg))
+                .bg(glass::bg(pal.menu_bg, Surface::Menus, cx))
                 .border_1()
                 .border_color(rgb(pal.menu_border))
                 .rounded(z(8.))
