@@ -136,6 +136,10 @@ actions!(
         DeleteTableColumn,
         MathInline,
         MathBlock,
+        MoveLinesUp,
+        MoveLinesDown,
+        DuplicateLines,
+        SelectNextOccurrence,
     ]
 );
 
@@ -225,6 +229,12 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-/", Comment, c),
         KeyBinding::new("ctrl-k", ExternalLink, c),
         KeyBinding::new("cmd-k", ExternalLink, c),
+        KeyBinding::new("alt-up", MoveLinesUp, c),
+        KeyBinding::new("alt-down", MoveLinesDown, c),
+        KeyBinding::new("ctrl-shift-d", DuplicateLines, c),
+        KeyBinding::new("cmd-shift-d", DuplicateLines, c),
+        KeyBinding::new("ctrl-d", SelectNextOccurrence, c),
+        KeyBinding::new("cmd-d", SelectNextOccurrence, c),
     ]);
 }
 
@@ -1234,6 +1244,33 @@ impl LiveEditor {
         self.spell_cache.borrow_mut().clear();
         cx.notify();
     }
+
+    /// Alt+Up/Down: move the lines the selection touches one line up/down —
+    /// one undoable edit; a no-op against the document's edges.
+    fn move_lines(&mut self, down: bool, cx: &mut Context<Self>) {
+        let Some((r, new, sel)) = crate::lines::move_sel(self.buf.text(), &self.buf.sel(), down)
+        else {
+            return;
+        };
+        self.edit(r, &new, Some(sel), cx);
+    }
+
+    /// Cmd/Ctrl+Shift+D: copy the touched lines right below, sel on the copy.
+    fn duplicate_lines(&mut self, cx: &mut Context<Self>) {
+        let (r, new, sel) = crate::lines::duplicate_sel(self.buf.text(), &self.buf.sel());
+        self.edit(r, &new, Some(sel), cx);
+    }
+
+    /// Cmd/Ctrl+D: the word at a collapsed caret, or the next occurrence of
+    /// the selected text (wrapping) — single selection, scrolled into view.
+    fn select_next(&mut self, cx: &mut Context<Self>) {
+        let Some(sel) = crate::lines::select_next(self.buf.text(), &self.buf.sel()) else {
+            return;
+        };
+        self.buf.move_to(sel.start);
+        self.buf.select_to(sel.end);
+        self.after_move(cx);
+    }
 }
 
 impl EntityInputHandler for LiveEditor {
@@ -1543,6 +1580,10 @@ impl Render for LiveEditor {
             .on_action(
                 cx.listener(|this, a: &SpellAddWord, _, cx| this.spell_add_word(a.0.clone(), cx)),
             )
+            .on_action(cx.listener(|this, _: &MoveLinesUp, _, cx| this.move_lines(false, cx)))
+            .on_action(cx.listener(|this, _: &MoveLinesDown, _, cx| this.move_lines(true, cx)))
+            .on_action(cx.listener(|this, _: &DuplicateLines, _, cx| this.duplicate_lines(cx)))
+            .on_action(cx.listener(|this, _: &SelectNextOccurrence, _, cx| this.select_next(cx)))
             .on_mouse_down(MouseButton::Right, cx.listener(Self::right_click))
             .on_drop(cx.listener(Self::drop_paths))
             .drag_over::<ExternalPaths>(|s, _, _, cx| s.bg(rgb(cx.global::<Palette>().hover)))

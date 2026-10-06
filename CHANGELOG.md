@@ -59,6 +59,11 @@ All notable changes to abstract are documented here. The format follows
 - Text width setting in Settings → Editor: narrow (580), medium (700, the
   previous fixed width) or wide (880) column, applied instantly.
 
+### Added
+- Line-editing shortcuts: `Alt+↑`/`Alt+↓` move the current or selected
+  lines, `Ctrl`/`Cmd`+`Shift+D` duplicates them below and `Ctrl`/`Cmd`+`D`
+  selects the word under the caret or jumps to the next occurrence.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added
