@@ -7,7 +7,7 @@ use gpui_kit::*;
 
 use crate::store::Settings;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
     pub bg: u32,
     pub panel: u32,
@@ -470,9 +470,70 @@ pub fn apply(settings: &Settings, appearance: WindowAppearance, cx: &mut App) {
     );
 }
 
+/// Channel-wise lerp of the `n` low bytes of a packed color.
+fn lerp_channels(a: u32, b: u32, t: f32, n: u32) -> u32 {
+    let mut out = 0;
+    for i in 0..n {
+        let x = ((a >> (i * 8)) & 0xff) as f32;
+        let y = ((b >> (i * 8)) & 0xff) as f32;
+        out |= ((x + (y - x) * t).round() as u32 & 0xff) << (i * 8);
+    }
+    out
+}
+
+/// Theme crossfade: channel-wise lerp of every color, `t` eased 0..=1
+/// (0 = `a`, 1 = `b`). `rgb` fields lerp 3 channels, `rgba` ones lerp 4.
+pub(crate) fn lerp(a: &Palette, b: &Palette, t: f32) -> Palette {
+    let l = |x: u32, y: u32| lerp_channels(x, y, t, 3);
+    let la = |x: u32, y: u32| lerp_channels(x, y, t, 4);
+    Palette {
+        bg: l(a.bg, b.bg),
+        panel: l(a.panel, b.panel),
+        hover: l(a.hover, b.hover),
+        active: l(a.active, b.active),
+        line: l(a.line, b.line),
+        fg: l(a.fg, b.fg),
+        body: l(a.body, b.body),
+        dim: l(a.dim, b.dim),
+        faint: l(a.faint, b.faint),
+        menu_bg: l(a.menu_bg, b.menu_bg),
+        menu_border: l(a.menu_border, b.menu_border),
+        frame_border: l(a.frame_border, b.frame_border),
+        head: l(a.head, b.head),
+        quote: l(a.quote, b.quote),
+        mark: l(a.mark, b.mark),
+        muted: l(a.muted, b.muted),
+        code_bg: l(a.code_bg, b.code_bg),
+        code_kw: l(a.code_kw, b.code_kw),
+        code_str: l(a.code_str, b.code_str),
+        code_comment: l(a.code_comment, b.code_comment),
+        code_num: l(a.code_num, b.code_num),
+        inline_code_bg: l(a.inline_code_bg, b.inline_code_bg),
+        rule: l(a.rule, b.rule),
+        caret: l(a.caret, b.caret),
+        selection: la(a.selection, b.selection),
+        highlight: la(a.highlight, b.highlight),
+        find_current: la(a.find_current, b.find_current),
+        callout: [
+            l(a.callout[0], b.callout[0]),
+            l(a.callout[1], b.callout[1]),
+            l(a.callout[2], b.callout[2]),
+            l(a.callout[3], b.callout[3]),
+        ],
+        marks: [
+            la(a.marks[0], b.marks[0]),
+            la(a.marks[1], b.marks[1]),
+            la(a.marks[2], b.marks[2]),
+            la(a.marks[3], b.marks[3]),
+            la(a.marks[4], b.marks[4]),
+            la(a.marks[5], b.marks[5]),
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{DARKS, LIGHTS, NORD, named};
+    use super::{DARK, DARKS, LIGHT, LIGHTS, NORD, lerp, named};
 
     #[test]
     fn named_palettes_have_unique_ids_and_a_fallback() {
@@ -483,5 +544,29 @@ mod tests {
             assert_eq!(named(list, "nope").id, "abstract");
         }
         assert_eq!(named(&DARKS, "nord").palette.bg, NORD.bg);
+    }
+
+    #[test]
+    fn lerp_hits_endpoints_and_channel_midpoints() {
+        assert_eq!(lerp(&DARK, &LIGHT, 0.), DARK);
+        assert_eq!(lerp(&DARK, &LIGHT, 1.), LIGHT);
+        let mid = lerp(&DARK, &LIGHT, 0.5);
+        for i in 0..3 {
+            let a = ((DARK.bg >> (i * 8)) & 0xff) as f32;
+            let b = ((LIGHT.bg >> (i * 8)) & 0xff) as f32;
+            assert_eq!(
+                (mid.bg >> (i * 8)) & 0xff,
+                (a + (b - a) * 0.5).round() as u32
+            );
+        }
+        // rgba fields lerp alpha too.
+        for i in 0..4 {
+            let a = ((DARK.marks[0] >> (i * 8)) & 0xff) as f32;
+            let b = ((LIGHT.marks[0] >> (i * 8)) & 0xff) as f32;
+            assert_eq!(
+                (mid.marks[0] >> (i * 8)) & 0xff,
+                (a + (b - a) * 0.5).round() as u32
+            );
+        }
     }
 }

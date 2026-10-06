@@ -246,7 +246,23 @@ impl AbstractApp {
         if ix >= self.tabs.len() {
             return;
         }
-        self.tabs.remove(ix);
+        let t = self.tabs.remove(ix);
+        // The strip keeps a fading ghost pill at this slot for MOTION_OUT_MS.
+        self.closing_tabs.push(ClosingTab {
+            id: t.id,
+            ix,
+            title: if t.pending {
+                title_of(t.editor.read(cx).text())
+            } else {
+                SharedString::from(stem_of(&t.path()))
+            },
+            dirty: t.save != SaveState::Saved,
+            failed: t.save == SaveState::Failed,
+            at: Instant::now(),
+        });
+        if self.closing_tabs.len() > 8 {
+            self.closing_tabs.remove(0);
+        }
         let was_active = self.active == Some(ix);
         self.active = self.active.and_then(|a| match a.cmp(&ix) {
             std::cmp::Ordering::Greater => Some(a - 1),
