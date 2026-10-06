@@ -16,6 +16,7 @@ mod html;
 mod i18n;
 mod keymap;
 mod links;
+mod math;
 mod md;
 #[cfg(test)]
 mod perf;

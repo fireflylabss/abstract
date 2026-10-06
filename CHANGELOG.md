@@ -6,6 +6,21 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- LaTeX math: inline `$…$` and block `$$…$$` spans are recognized in notes.
+  Delimiters hide until the caret touches the span (like `**bold**`), money
+  like `R$ 10` and `\$` escapes stay literal, and nothing inside code spans,
+  fences or tables is parsed as math.
+- In the editor, math renders as a Unicode approximation — Greek letters,
+  `\sum`/`∫`-style operators, relations, arrows, `\sqrt{}`→`√(…)`,
+  `\frac{a}{b}`→`(a)/(b)`, and `^`/`_` scripts become Unicode
+  super/subscripts — in an italic serif look; unknown commands stay
+  literal. `$$` blocks render centered on their own line.
+- HTML export converts math to real MathML via `pulldown-latex` — browsers
+  render it natively, so the file stays self-contained with no CDN or JS.
+- Insert submenu gains "Math inline" (`$…$`) and "Math block" (`$$…$$`)
+  items that drop the delimiters with the caret inside.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added

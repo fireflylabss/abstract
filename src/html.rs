@@ -643,6 +643,11 @@ impl<'a> Emitter<'a> {
             }
             return Some(range.end);
         }
+        if let Some(m) = at(&self.a.maths, i, |x| &x.range) {
+            let (range, content, block) = (m.range.clone(), m.content.clone(), m.block);
+            mathml(out, &self.text[content], block);
+            return Some(range.end);
+        }
         None
     }
 
@@ -650,6 +655,7 @@ impl<'a> Emitter<'a> {
         at(&self.a.images, i, |x| &x.range).is_some()
             || at(&self.a.wiki_links, i, |x| &x.range).is_some()
             || at(&self.a.footnotes, i, |x| &x.range).is_some()
+            || at(&self.a.maths, i, |x| &x.range).is_some()
     }
 
     fn hidden_end(&self, i: usize) -> Option<usize> {
@@ -831,6 +837,33 @@ impl<'a> Emitter<'a> {
             self.link_defs = Some(defs);
         }
         self.link_defs.as_ref().unwrap()
+    }
+}
+
+/// LaTeX `src` → MathML via pulldown-latex: real math in the export with
+/// no JS and no CDN. `block` picks centered `display="block"` math; a span
+/// the converter can't read degrades to `<merror>` for that part only.
+fn mathml(out: &mut String, src: &str, block: bool) {
+    let src = src.trim();
+    let storage = pulldown_latex::Storage::new();
+    let parser = pulldown_latex::Parser::new(src, &storage);
+    let config = pulldown_latex::RenderConfig {
+        display_mode: if block {
+            pulldown_latex::config::DisplayMode::Block
+        } else {
+            pulldown_latex::config::DisplayMode::Inline
+        },
+        ..Default::default()
+    };
+    let mut body = String::new();
+    if pulldown_latex::push_mathml(&mut body, parser, config).is_ok() {
+        out.push_str(&body);
+    } else {
+        // The export never swallows the source: unrenderable math shows up
+        // as literal code instead of a broken `<math>` fragment.
+        out.push_str("<code class=\"math\">");
+        escape(out, src);
+        out.push_str("</code>");
     }
 }
 

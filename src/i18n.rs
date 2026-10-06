@@ -264,6 +264,8 @@ pub enum Key {
     TableInsertColumnRight,
     TableDeleteRow,
     TableDeleteColumn,
+    MathInline,
+    MathBlock,
 }
 
 impl Key {
@@ -446,6 +448,8 @@ impl Key {
         Key::TableInsertColumnRight,
         Key::TableDeleteRow,
         Key::TableDeleteColumn,
+        Key::MathInline,
+        Key::MathBlock,
     ];
 }
 
@@ -644,6 +648,8 @@ fn en(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Insert column to the right",
         Key::TableDeleteRow => "Delete row",
         Key::TableDeleteColumn => "Delete column",
+        Key::MathInline => "Inline math",
+        Key::MathBlock => "Math block",
     }
 }
 
@@ -846,6 +852,8 @@ fn pt(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Inserir coluna à direita",
         Key::TableDeleteRow => "Apagar linha",
         Key::TableDeleteColumn => "Apagar coluna",
+        Key::MathInline => "Math inline",
+        Key::MathBlock => "Math em bloco",
     }
 }
 
