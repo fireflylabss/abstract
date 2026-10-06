@@ -6,6 +6,11 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Line-editing shortcuts: `Alt+↑`/`Alt+↓` move the current or selected
+  lines, `Ctrl`/`Cmd`+`Shift+D` duplicates them below and `Ctrl`/`Cmd`+`D`
+  selects the word under the caret or jumps to the next occurrence.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added

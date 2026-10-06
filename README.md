@@ -119,6 +119,9 @@ cargo build --release
 | Find in note | `Ctrl+F` | `Cmd+F` |
 | Replace in note | `Ctrl+H` | `Cmd+Alt+F` |
 | Next / previous match | `F3` / `Shift+F3` | `Cmd+G` / `Cmd+Shift+G` |
+| Move line(s) up / down | `Alt+↑` / `Alt+↓` | `Alt+↑` / `Alt+↓` |
+| Duplicate line(s) | `Ctrl+Shift+D` | `Cmd+Shift+D` |
+| Select next occurrence | `Ctrl+D` | `Cmd+D` |
 | Rename | `F2` | `F2` |
 | Tour | `F1` | `F1` |
 | Quit | — | `Cmd+Q` |

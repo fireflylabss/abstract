@@ -15,6 +15,7 @@ mod footnote;
 mod html;
 mod i18n;
 mod keymap;
+mod lines;
 mod links;
 mod md;
 #[cfg(test)]
