@@ -854,7 +854,7 @@ fn pt(k: Key) -> &'static str {
         Key::TableDeleteRow => "Apagar linha",
         Key::TableDeleteColumn => "Apagar coluna",
         Key::OpenInNewTab => "Abrir em nova aba",
-        Key::CloseTab => "Fechar guia",
+        Key::CloseTab => "Fechar aba",
     }
 }
 
