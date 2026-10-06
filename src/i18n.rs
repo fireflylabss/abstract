@@ -264,6 +264,11 @@ pub enum Key {
     TableInsertColumnRight,
     TableDeleteRow,
     TableDeleteColumn,
+    // Text width setting
+    TextWidth,
+    TextWidthNarrow,
+    TextWidthMedium,
+    TextWidthWide,
 }
 
 impl Key {
@@ -446,6 +451,10 @@ impl Key {
         Key::TableInsertColumnRight,
         Key::TableDeleteRow,
         Key::TableDeleteColumn,
+        Key::TextWidth,
+        Key::TextWidthNarrow,
+        Key::TextWidthMedium,
+        Key::TextWidthWide,
     ];
 }
 
@@ -644,6 +653,10 @@ fn en(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Insert column to the right",
         Key::TableDeleteRow => "Delete row",
         Key::TableDeleteColumn => "Delete column",
+        Key::TextWidth => "Text width",
+        Key::TextWidthNarrow => "Narrow",
+        Key::TextWidthMedium => "Medium",
+        Key::TextWidthWide => "Wide",
     }
 }
 
@@ -846,6 +859,10 @@ fn pt(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Inserir coluna à direita",
         Key::TableDeleteRow => "Apagar linha",
         Key::TableDeleteColumn => "Apagar coluna",
+        Key::TextWidth => "Largura do texto",
+        Key::TextWidthNarrow => "Estreita",
+        Key::TextWidthMedium => "Média",
+        Key::TextWidthWide => "Larga",
     }
 }
 

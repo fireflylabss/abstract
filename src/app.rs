@@ -33,7 +33,7 @@ use crate::assets::{
 use crate::chrome::{
     chrome_left_pad, drag_fallback, session_window, titlebar_drag, window_controls,
 };
-use crate::editor::{Attach, Changed, CompletionKey, LiveEditor, OpenLink};
+use crate::editor::{Attach, Changed, CompletionKey, LiveEditor, OpenLink, TextWidth};
 use crate::fonts::{self, Fonts};
 use crate::i18n::{self, Key, t, tf};
 use crate::keymap::*;
@@ -348,6 +348,7 @@ impl AbstractApp {
                 .ok();
         }));
         app.check_updates(cx);
+        app.apply_text_width(&app.editor.clone(), cx);
         app
     }
 }
