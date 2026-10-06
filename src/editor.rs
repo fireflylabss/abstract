@@ -1141,12 +1141,13 @@ impl EntityInputHandler for LiveEditor {
         if self.smart_quotes && new.chars().count() == 1 {
             let text = self.buf.text();
             let line = self.line_range(r.start);
+            let before = &text[line.start..r.start];
             if let Some(s) = crate::smart::substitute(
                 &text[line.clone()],
-                &text[line.start..r.start],
+                before,
                 new.chars().next().unwrap_or_default(),
                 true,
-                crate::smart::literal_at(&self.analysis, r.start),
+                crate::smart::literal_at(&self.analysis, r.start, before),
             ) {
                 // `back` chars before the caret fold into the substitution
                 // (`--`: the first `-` goes into the `—`).

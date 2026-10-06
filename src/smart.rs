@@ -61,20 +61,49 @@ pub fn substitute(line: &str, before: &str, typed: char, on: bool, literal: bool
 }
 
 /// Whether `off` sits in a context that must stay literal: fenced or
-/// indented code block, `code` span, frontmatter. Extend here when math
-/// (`$…$`) lands — callers stay unchanged.
-pub fn literal_at(a: &Analysis, off: usize) -> bool {
+/// indented code block, `code` span, frontmatter. `before` is the line
+/// prefix up to `off`, so an as-yet-unclosed `code` span counts too —
+/// the tree only flags closed spans, but someone typing `` `x --` ``
+/// linearly is already inside one. Extend here when math (`$…$`)
+/// lands — callers stay unchanged.
+pub fn literal_at(a: &Analysis, off: usize, before: &str) -> bool {
     if matches!(a.lines[a.line_of(off)].1, Kind::Code) {
         return true;
     }
     if a.metadata.iter().any(|r| r.start < off && off <= r.end) {
         return true;
     }
-    // Inside a code span is strictly between two CODE-flagged bytes; a
-    // caret right at either edge is still prose.
-    off > 0
+    // Inside a closed code span is strictly between two CODE-flagged
+    // bytes; a caret right at either edge is still prose.
+    (off > 0
         && a.flags.get(off - 1).is_some_and(|f| f & CODE != 0)
-        && a.flags.get(off).is_some_and(|f| f & CODE != 0)
+        && a.flags.get(off).is_some_and(|f| f & CODE != 0))
+        || unclosed_span(before)
+}
+
+/// Is `before` inside an unclosed backtick run? A run of `n` opens a
+/// span that a run of exactly `n` closes; `\`-escaped runs don't count.
+fn unclosed_span(before: &str) -> bool {
+    let mut open: Vec<usize> = Vec::new();
+    let bytes = before.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'`' && (i == 0 || bytes[i - 1] != b'\\') {
+            let mut n = 1;
+            while i + n < bytes.len() && bytes[i + n] == b'`' {
+                n += 1;
+            }
+            if open.last() == Some(&n) {
+                open.pop();
+            } else {
+                open.push(n);
+            }
+            i += n;
+        } else {
+            i += 1;
+        }
+    }
+    !open.is_empty()
 }
 
 #[cfg(test)]
@@ -154,21 +183,33 @@ mod tests {
     fn literal_at_code_and_frontmatter() {
         // Fenced code block.
         let a = analysis("```\nfoo\n```");
-        assert!(literal_at(&a, 5));
+        assert!(literal_at(&a, 5, "f"));
         let a = analysis("a `b c` d");
         // Inside the code span (between `b` and ` `).
-        assert!(literal_at(&a, 4));
+        assert!(literal_at(&a, 4, "a `b"));
         // At the span's left edge and right after it: prose.
-        assert!(!literal_at(&a, 2));
-        assert!(!literal_at(&a, 7));
-        assert!(!literal_at(&a, 8));
+        assert!(!literal_at(&a, 2, "a "));
+        assert!(!literal_at(&a, 7, "a `b c`"));
+        assert!(!literal_at(&a, 8, "a `b c` "));
+        // An unclosed span counts: typing `` `x --` `` linearly is code
+        // even though the tree only flags the closed span.
+        let a = analysis("`tail --");
+        assert!(literal_at(&a, 5, "`tail"));
+        assert!(literal_at(&a, 6, "`tail -"));
+        // …and a closed one leaves prose outside.
+        assert!(!literal_at(&a, 0, ""));
+        let a = analysis("");
+        assert!(literal_at(&a, 0, "`x"));
+        assert!(!literal_at(&a, 0, "`x` "));
+        assert!(literal_at(&a, 0, "``x `"));
+        assert!(!literal_at(&a, 0, "\\`x "));
         // Frontmatter.
         let a = analysis("---\ntitle: x\n---\nbody");
-        assert!(literal_at(&a, 8));
-        assert!(literal_at(&a, 16));
-        assert!(!literal_at(&a, 18));
+        assert!(literal_at(&a, 8, "itle"));
+        assert!(literal_at(&a, 16, "-"));
+        assert!(!literal_at(&a, 18, ""));
         // Plain prose.
         let a = analysis("hello \"x\"");
-        assert!(!literal_at(&a, 6));
+        assert!(!literal_at(&a, 6, "hello "));
     }
 }
