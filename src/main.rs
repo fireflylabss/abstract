@@ -23,6 +23,7 @@ mod pdf;
 mod perf;
 mod search;
 mod spaces;
+mod spell;
 mod store;
 mod table;
 mod theme;

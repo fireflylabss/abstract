@@ -271,6 +271,13 @@ pub enum Key {
     MathBlock,
     ExportAsPdf,
     ExportingPdf,
+    // Spellcheck
+    SpellAddWord,
+    Spellcheck,
+    SpellcheckHint,
+    SpellLang,
+    SpellLangAuto,
+    SpellLangBoth,
 }
 
 impl Key {
@@ -459,6 +466,12 @@ impl Key {
         Key::MathBlock,
         Key::ExportAsPdf,
         Key::ExportingPdf,
+        Key::SpellAddWord,
+        Key::Spellcheck,
+        Key::SpellcheckHint,
+        Key::SpellLang,
+        Key::SpellLangAuto,
+        Key::SpellLangBoth,
     ];
 }
 
@@ -663,6 +676,12 @@ fn en(k: Key) -> &'static str {
         Key::MathBlock => "Math block",
         Key::ExportAsPdf => "Export as PDF…",
         Key::ExportingPdf => "Exporting PDF…",
+        Key::SpellAddWord => "Add to dictionary",
+        Key::Spellcheck => "Spellcheck",
+        Key::SpellcheckHint => "Underline misspelled words",
+        Key::SpellLang => "Spellcheck language",
+        Key::SpellLangAuto => "Automatic",
+        Key::SpellLangBoth => "Both",
     }
 }
 
@@ -871,6 +890,12 @@ fn pt(k: Key) -> &'static str {
         Key::MathBlock => "Math em bloco",
         Key::ExportAsPdf => "Exportar como PDF…",
         Key::ExportingPdf => "Exportando PDF…",
+        Key::SpellAddWord => "Adicionar ao dicionário",
+        Key::Spellcheck => "Ortografia",
+        Key::SpellcheckHint => "Sublinhar palavras com erro",
+        Key::SpellLang => "Idioma da ortografia",
+        Key::SpellLangAuto => "Automático",
+        Key::SpellLangBoth => "Ambos",
     }
 }
 

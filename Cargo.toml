@@ -36,11 +36,14 @@ arboard = { version = "=3.6.1", default-features = false }
 pulldown-latex = "0.8"
 genpdf = { version = "0.2.0", features = ["images"] }
 image = "0.23"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+spellbook = "0.4"
 
 [dev-dependencies]
 gpui = { version = "=0.3.4", package = "gpui-pre", features = ["test-support"] }
 
 [build-dependencies]
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 winresource = "=0.1.31"
 
 [package.metadata.deb]

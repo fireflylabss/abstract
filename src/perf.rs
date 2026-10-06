@@ -79,3 +79,23 @@ fn perf_report() {
     });
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// Worst case for the spellcheck: scanning EVERY line of a 1 MB note with
+/// both dictionaries (the UI only ever checks the visible band).
+#[test]
+#[ignore]
+fn perf_spell() {
+    let engine = crate::spell::Engine::load();
+    let text = big_note(1024 * 1024);
+    let mut a = crate::md::Analyzer::new();
+    let an = a.analyze(&text);
+    let langs = crate::spell::Langs::EN | crate::spell::Langs::PT;
+    let flagged = time("spell scan 1 MB note, all lines", 3, || {
+        let mut n = 0usize;
+        for ix in 0..an.lines.len() {
+            n += crate::spell::scan_line(&an, &text, ix, &engine, langs).len();
+        }
+        n
+    });
+    println!("perf spell flagged ranges: {flagged}");
+}
