@@ -352,6 +352,7 @@ impl AbstractApp {
 
         let raw = self.settings.raw_tables();
         let updates = self.settings.updates();
+        let smart_quotes = self.settings.smart_quotes();
         let font_names = cx.text_system().all_font_names();
         let current_font = fonts::resolve(self.settings.font(), &font_names);
         let font_rows =
@@ -429,6 +430,19 @@ impl AbstractApp {
                 .on_click(
                     cx.listener(move |this, _, window, cx| this.set_raw_tables(!raw, window, cx)),
                 ),
+            )
+            .child(
+                toggle(
+                    "smart-quotes",
+                    t(Key::SmartQuotes),
+                    Some(t(Key::SmartQuotesHint)),
+                    smart_quotes,
+                    window,
+                    cx,
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.set_smart_quotes(!smart_quotes, window, cx)
+                })),
             )
             .child(section(t(Key::General)))
             .child(hover_bg(
@@ -645,6 +659,12 @@ impl AbstractApp {
     fn set_font(&mut self, family: &'static str, window: &mut Window, cx: &mut Context<Self>) {
         self.settings.set_font(family);
         fonts::apply(&self.settings, cx);
+        self.save_settings(window, cx);
+    }
+
+    fn set_smart_quotes(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.set_smart_quotes(on);
+        self.editor.update(cx, |ed, cx| ed.set_smart_quotes(on, cx));
         self.save_settings(window, cx);
     }
 }

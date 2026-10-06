@@ -192,6 +192,8 @@ pub struct Analysis {
     /// `==…==` marks, in buffer order; `tint` comes from an optional `{color}`
     /// prefix right after the opener.
     pub marks: Vec<MarkSpan>,
+    /// YAML (`---`) / TOML (`+++`) frontmatter ranges, in buffer order.
+    pub metadata: Vec<Range<usize>>,
 }
 
 pub struct Analyzer {
@@ -236,6 +238,7 @@ impl Analyzer {
             callouts: Vec::new(),
             tables: Vec::new(),
             marks: Vec::new(),
+            metadata: Vec::new(),
         };
         if len == 0 {
             return out;
@@ -442,11 +445,12 @@ impl Analyzer {
                     out.tables.push(first..last + 1);
                     true
                 }
-                "html_block"
-                | "minus_metadata"
-                | "plus_metadata"
-                | "link_reference_definition"
-                | "pipe_table_delimiter_row" => {
+                "minus_metadata" | "plus_metadata" => {
+                    out.metadata.push(range.clone());
+                    out.mark(range, MUTED);
+                    false
+                }
+                "html_block" | "link_reference_definition" | "pipe_table_delimiter_row" => {
                     out.mark(range, MUTED);
                     false
                 }

@@ -216,6 +216,11 @@ pub struct LiveEditor {
     find_current: Option<usize>,
     /// Tables stay Markdown source instead of rendering as a grid.
     raw_tables: bool,
+    /// Typographic `"`/`'`/`--` substitution while typing (the setting).
+    smart_quotes: bool,
+    /// `(inserted range, original)` of the last substitution: a Backspace
+    /// right at its end restores the straight characters.
+    last_subst: Option<(Range<usize>, &'static str)>,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
@@ -250,6 +255,8 @@ impl LiveEditor {
             finds: Vec::new(),
             find_current: None,
             raw_tables: false,
+            smart_quotes: true,
+            last_subst: None,
         }
     }
 
@@ -310,6 +317,13 @@ impl LiveEditor {
     pub fn set_raw_tables(&mut self, on: bool, cx: &mut Context<Self>) {
         if self.raw_tables != on {
             self.raw_tables = on;
+            cx.notify();
+        }
+    }
+
+    pub fn set_smart_quotes(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.smart_quotes != on {
+            self.smart_quotes = on;
             cx.notify();
         }
     }
@@ -749,6 +763,7 @@ impl LiveEditor {
         self.find_current = None;
         self.scroll_y = 0.;
         self.caret = None;
+        self.last_subst = None;
         self.analysis = self.analyzer.analyze(self.buf.text());
         cx.notify();
     }
@@ -822,8 +837,23 @@ impl LiveEditor {
         self.analysis = self.analyzer.analyze(self.buf.text());
         self.autoscroll = true;
         self.goal_x = None;
+        self.last_subst = None;
         cx.emit(Changed);
         cx.notify();
+    }
+
+    /// Backspace right after a substitution restores the straight
+    /// characters (`”` → `"`, `—` → `--`) instead of deleting them.
+    fn backspace(&mut self, cx: &mut Context<Self>) {
+        if self.buf.sel().is_empty()
+            && let Some((r, orig)) = self.last_subst.clone()
+            && r.end == self.buf.cursor()
+        {
+            self.edit(r, orig, None, cx);
+            return;
+        }
+        self.buf.backspace();
+        self.changed(cx);
     }
 
     fn insert(&mut self, s: &str, cx: &mut Context<Self>) {
@@ -885,6 +915,7 @@ impl LiveEditor {
     fn after_move(&mut self, cx: &mut Context<Self>) {
         self.autoscroll = true;
         self.goal_x = None;
+        self.last_subst = None;
         cx.notify();
     }
 
@@ -1098,11 +1129,39 @@ impl EntityInputHandler for LiveEditor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let r = range
+        let mut r = range
             .map(|r| self.buf.range_from_utf16(&r))
             .or(self.buf.marked())
             .unwrap_or(self.buf.sel());
+        // Typographic substitution on typed text only (paste goes through
+        // `insert`, untouched): a lone `"`, `'` or `-` may become a curly
+        // quote or fold into `—`.
+        let mut sub = None;
+        let mut new = new;
+        if self.smart_quotes && new.chars().count() == 1 {
+            let text = self.buf.text();
+            let line = self.line_range(r.start);
+            if let Some(s) = crate::smart::substitute(
+                &text[line.clone()],
+                &text[line.start..r.start],
+                new.chars().next().unwrap_or_default(),
+                true,
+                crate::smart::literal_at(&self.analysis, r.start),
+            ) {
+                // `back` chars before the caret fold into the substitution
+                // (`--`: the first `-` goes into the `—`).
+                for _ in 0..s.back {
+                    r.start = self.buf.prev_boundary(r.start);
+                }
+                new = s.text;
+                sub = Some(s);
+            }
+        }
+        let at = r.start;
         self.edit(r, new, None, cx);
+        if let Some(s) = sub {
+            self.last_subst = Some((at..at + s.text.len(), s.orig));
+        }
     }
 
     fn replace_and_mark_text_in_range(
@@ -1177,10 +1236,7 @@ impl Render for LiveEditor {
             .aria_label(crate::i18n::t(crate::i18n::Key::EditorAria))
             .size_full()
             .cursor_text()
-            .on_action(cx.listener(|this, _: &Backspace, _, cx| {
-                this.buf.backspace();
-                this.changed(cx);
-            }))
+            .on_action(cx.listener(|this, _: &Backspace, _, cx| this.backspace(cx)))
             .on_action(cx.listener(|this, _: &Delete, _, cx| {
                 this.buf.delete();
                 this.changed(cx);

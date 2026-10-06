@@ -264,6 +264,9 @@ pub enum Key {
     TableInsertColumnRight,
     TableDeleteRow,
     TableDeleteColumn,
+    // Typographic substitution
+    SmartQuotes,
+    SmartQuotesHint,
 }
 
 impl Key {
@@ -446,6 +449,8 @@ impl Key {
         Key::TableInsertColumnRight,
         Key::TableDeleteRow,
         Key::TableDeleteColumn,
+        Key::SmartQuotes,
+        Key::SmartQuotesHint,
     ];
 }
 
@@ -644,6 +649,8 @@ fn en(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Insert column to the right",
         Key::TableDeleteRow => "Delete row",
         Key::TableDeleteColumn => "Delete column",
+        Key::SmartQuotes => "Smart quotes",
+        Key::SmartQuotesHint => "Typographic “quotes” and — dashes while you type.",
     }
 }
 
@@ -846,6 +853,8 @@ fn pt(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Inserir coluna à direita",
         Key::TableDeleteRow => "Apagar linha",
         Key::TableDeleteColumn => "Apagar coluna",
+        Key::SmartQuotes => "Aspas tipográficas",
+        Key::SmartQuotesHint => "Aspas “curvas” e travessões — ao digitar.",
     }
 }
 

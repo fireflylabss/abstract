@@ -6,6 +6,12 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Typographic substitution while typing (smart quotes): `"`/`'` become
+  curly by context, `--` folds into an em dash, and Backspace right after
+  a substitution restores the straight characters. Code and frontmatter
+  stay literal; toggle in Settings → Editor (on by default).
+
 ## [0.1.4] - 2026-10-02
 
 ### Added

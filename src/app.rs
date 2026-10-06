@@ -239,6 +239,9 @@ impl AbstractApp {
     ) -> Self {
         let editor = cx.new(LiveEditor::new);
         editor.update(cx, |ed, cx| ed.set_raw_tables(settings.raw_tables(), cx));
+        editor.update(cx, |ed, cx| {
+            ed.set_smart_quotes(settings.smart_quotes(), cx)
+        });
         let on_change = cx.subscribe(&editor, |this: &mut Self, editor, _: &Changed, cx| {
             let text = editor.read(cx).text();
             this.words = text.split_whitespace().count();
