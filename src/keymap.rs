@@ -38,6 +38,7 @@ actions!(
         PrevTab,
         ReopenClosedTab,
         ExportPdf,
+        ToggleFocus,
     ]
 );
 
@@ -119,5 +120,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-8", GoToTab { ix: 7, last: false }, c),
         KeyBinding::new("ctrl-9", GoToTab { ix: 0, last: true }, c),
         KeyBinding::new("cmd-9", GoToTab { ix: 0, last: true }, c),
+        KeyBinding::new("ctrl-shift-enter", ToggleFocus, c),
+        KeyBinding::new("cmd-shift-enter", ToggleFocus, c),
     ]);
 }

@@ -64,13 +64,18 @@ pub fn substitute(line: &str, before: &str, typed: char, on: bool, literal: bool
 /// indented code block, `code` span, frontmatter. `before` is the line
 /// prefix up to `off`, so an as-yet-unclosed `code` span counts too —
 /// the tree only flags closed spans, but someone typing `` `x --` ``
-/// linearly is already inside one. Extend here when math (`$…$`)
-/// lands — callers stay unchanged.
+/// linearly is already inside one. Closed math (`$…$`) is literal too.
 pub fn literal_at(a: &Analysis, off: usize, before: &str) -> bool {
     if matches!(a.lines[a.line_of(off)].1, Kind::Code) {
         return true;
     }
     if a.metadata.iter().any(|r| r.start < off && off <= r.end) {
+        return true;
+    }
+    if a.maths
+        .iter()
+        .any(|m| m.range.start < off && off < m.range.end)
+    {
         return true;
     }
     // Inside a closed code span is strictly between two CODE-flagged
@@ -177,6 +182,14 @@ mod tests {
         assert!(substitute("a --", "a -", '-', true, true).is_none());
         // Other chars never substitute.
         assert!(substitute("a ", "a ", 'x', true, false).is_none());
+    }
+
+    #[test]
+    fn literal_at_math() {
+        let a = analysis("x $a b$ y");
+        assert!(literal_at(&a, 4, "x $a"));
+        assert!(!literal_at(&a, 2, "x "));
+        assert!(!literal_at(&a, 8, "x $a b$ "));
     }
 
     #[test]

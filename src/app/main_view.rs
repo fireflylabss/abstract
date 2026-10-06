@@ -25,13 +25,21 @@ impl AbstractApp {
             )],
         ));
 
+        // Focus mode: the status chip goes quiet until hovered.
+        let status_dim = base::motion::transition(
+            ("status", "focus-dim"),
+            if self.chrome_hidden() { 0.35 } else { 1. },
+            base::motion::Transition::new(Duration::from_millis(MOTION_IN_MS)).ease(ease_out_quint),
+            window,
+            cx,
+        );
         let toolbar = drag_fallback(div().id("toolbar"))
             .h(z(48.))
             .flex_none()
             .flex()
             .items_center()
             .gap(z(2.))
-            .pl(px(chrome_left_pad(!self.sidebar_open)))
+            .pl(px(chrome_left_pad(!self.sidebar_visible())))
             .pr(z(9.))
             .child(
                 self.ring(
@@ -40,7 +48,7 @@ impl AbstractApp {
                         "toggle-sidebar",
                         "icons/sidebar.svg",
                         tf(Key::Sidebar, &[]).into(),
-                        !self.sidebar_open,
+                        !self.sidebar_visible(),
                         &pal,
                         window,
                         cx,
@@ -95,6 +103,8 @@ impl AbstractApp {
                             } else {
                                 pal.faint
                             }))
+                            .opacity(status_dim)
+                            .hover(|s| s.opacity(1.))
                             .child(status),
                         "status",
                         self.status_open.then_some(pal.active),
@@ -135,6 +145,18 @@ impl AbstractApp {
                     self.mark(4, Anchor::TopRight, point(z(30.), z(38.)), cx),
                     |s, m| s.child(m),
                 ),
+            )
+            .child(
+                icon_btn(
+                    "focus",
+                    "icons/focus.svg",
+                    tf(Key::FocusMode, &[]).into(),
+                    self.chrome_hidden(),
+                    &pal,
+                    window,
+                    cx,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.toggle_focus(cx))),
             )
             .when(has_note, |bar| {
                 bar.child(

@@ -3,6 +3,7 @@ mod ctx_menu;
 mod export_ui;
 mod files_menu;
 mod find_ui;
+mod focus;
 mod links_ui;
 mod main_view;
 mod notes;
@@ -34,7 +35,7 @@ use crate::assets::{
 use crate::chrome::{
     chrome_left_pad, drag_fallback, session_window, titlebar_drag, window_controls,
 };
-use crate::editor::{Attach, Changed, CompletionKey, LiveEditor, OpenLink, TextWidth};
+use crate::editor::{Attach, Changed, CompletionKey, Escaped, LiveEditor, OpenLink, TextWidth};
 use crate::fonts::{self, Fonts};
 use crate::i18n::{self, Key, t, tf};
 use crate::keymap::*;
@@ -263,6 +264,9 @@ pub(crate) struct AbstractApp {
     _scratch_subs: Option<Vec<Subscription>>,
     next_tab_id: u64,
     empty_focus: FocusHandle,
+    /// Focus mode hides chrome and dims everything but the caret's block;
+    /// deliberately not part of the saved session.
+    focus_mode: bool,
 }
 impl AbstractApp {
     pub(crate) fn new(
@@ -272,11 +276,6 @@ impl AbstractApp {
         session: Session,
     ) -> Self {
         let editor = cx.new(LiveEditor::new);
-        editor.update(cx, |ed, cx| ed.set_raw_tables(settings.raw_tables(), cx));
-        editor.update(cx, |ed, cx| {
-            ed.set_spell(settings.spellcheck(), settings.spell_lang(), cx);
-            ed.set_smart_quotes(settings.smart_quotes(), cx);
-        });
         let on_quit = cx.on_app_quit(|this, cx| {
             this.flush_blocking(cx);
             async {}
@@ -348,6 +347,7 @@ impl AbstractApp {
             _scratch_subs: None,
             next_tab_id: 0,
             empty_focus: cx.focus_handle(),
+            focus_mode: false,
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
         app._io_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -359,7 +359,7 @@ impl AbstractApp {
                 .ok();
         }));
         app.check_updates(cx);
-        app.apply_text_width(&app.editor.clone(), cx);
+        app.configure_editor(&app.editor.clone(), cx);
         app
     }
 
@@ -399,7 +399,10 @@ impl AbstractApp {
                 this.attach(ev.0.clone(), cx);
             }
         });
-        vec![on_change, on_completion, on_link, on_attach]
+        let on_esc = cx.subscribe(editor, |this: &mut Self, _, _: &Escaped, cx| {
+            this.exit_focus(cx);
+        });
+        vec![on_change, on_completion, on_link, on_attach, on_esc]
     }
 
     fn tab_ix(&self, editor: &Entity<LiveEditor>) -> Option<usize> {
@@ -490,6 +493,14 @@ impl Render for AbstractApp {
             .on_action(
                 cx.listener(|this, _: &ExportPdf, window, cx| this.export_pdf_current(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &ToggleFocus, _, cx| this.toggle_focus(cx)))
+            // Esc bubbles here only when nothing else (find, dialogs, menus)
+            // consumed it: leave focus mode.
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                if ev.keystroke.key == "escape" {
+                    this.exit_focus(cx);
+                }
+            }))
             .child(self.render_sidebar(window, cx))
             .child(self.render_main(window, cx))
             .child(self.render_settings(window, cx))

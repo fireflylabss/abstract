@@ -757,7 +757,9 @@ impl AbstractApp {
     fn set_spellcheck(&mut self, on: bool, cx: &mut Context<Self>) {
         self.settings.set_spellcheck(on);
         let lang = self.settings.spell_lang();
-        self.editor.update(cx, |ed, cx| ed.set_spell(on, lang, cx));
+        for editor in self.editors() {
+            editor.update(cx, |ed, cx| ed.set_spell(on, lang, cx));
+        }
         let settings = self.settings.clone();
         cx.background_spawn(async move { settings.save() }).detach();
         cx.notify();
@@ -768,7 +770,9 @@ impl AbstractApp {
         let lang = self.settings.spell_lang().next();
         self.settings.set_spell_lang(lang);
         let on = self.settings.spellcheck();
-        self.editor.update(cx, |ed, cx| ed.set_spell(on, lang, cx));
+        for editor in self.editors() {
+            editor.update(cx, |ed, cx| ed.set_spell(on, lang, cx));
+        }
         let settings = self.settings.clone();
         cx.background_spawn(async move { settings.save() }).detach();
         cx.notify();
@@ -787,7 +791,9 @@ impl AbstractApp {
     /// persists it.
     fn set_text_width(&mut self, width: TextWidth, window: &mut Window, cx: &mut Context<Self>) {
         self.settings.set_text_width(width);
-        self.apply_text_width(&self.editor.clone(), cx);
+        for editor in self.editors() {
+            self.apply_text_width(&editor, cx);
+        }
         self.save_settings(window, cx);
     }
 
@@ -798,9 +804,39 @@ impl AbstractApp {
         editor.update(cx, |ed, cx| ed.set_max_col(col, cx));
     }
 
+    /// Every live editor: one per tab, or the blank one when nothing is open.
+    pub(crate) fn editors(&self) -> Vec<Entity<LiveEditor>> {
+        if self.tabs.is_empty() {
+            vec![self.editor.clone()]
+        } else {
+            self.tabs.iter().map(|t| t.editor.clone()).collect()
+        }
+    }
+
+    /// Pushes every per-editor setting onto a fresh `LiveEditor`.
+    pub(crate) fn configure_editor(&self, editor: &Entity<LiveEditor>, cx: &mut App) {
+        let s = &self.settings;
+        let (raw, spell, lang, smart) = (
+            s.raw_tables(),
+            s.spellcheck(),
+            s.spell_lang(),
+            s.smart_quotes(),
+        );
+        let focus = self.focus_mode;
+        editor.update(cx, |ed, cx| {
+            ed.set_raw_tables(raw, cx);
+            ed.set_spell(spell, lang, cx);
+            ed.set_smart_quotes(smart, cx);
+            ed.set_focus_mode(focus, cx);
+        });
+        self.apply_text_width(editor, cx);
+    }
+
     fn set_smart_quotes(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.settings.set_smart_quotes(on);
-        self.editor.update(cx, |ed, cx| ed.set_smart_quotes(on, cx));
+        for editor in self.editors() {
+            editor.update(cx, |ed, cx| ed.set_smart_quotes(on, cx));
+        }
         self.save_settings(window, cx);
     }
 }

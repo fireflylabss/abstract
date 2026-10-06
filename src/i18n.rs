@@ -286,6 +286,8 @@ pub enum Key {
     // Typographic substitution
     SmartQuotes,
     SmartQuotesHint,
+    // Focus mode
+    FocusMode,
 }
 
 impl Key {
@@ -486,6 +488,7 @@ impl Key {
         Key::TextWidthWide,
         Key::SmartQuotes,
         Key::SmartQuotesHint,
+        Key::FocusMode,
     ];
 }
 
@@ -702,6 +705,7 @@ fn en(k: Key) -> &'static str {
         Key::TextWidthWide => "Wide",
         Key::SmartQuotes => "Smart quotes",
         Key::SmartQuotesHint => "Typographic “quotes” and — dashes while you type.",
+        Key::FocusMode => "Focus mode ({MOD}+Shift+Enter)",
     }
 }
 
@@ -922,6 +926,7 @@ fn pt(k: Key) -> &'static str {
         Key::TextWidthWide => "Larga",
         Key::SmartQuotes => "Aspas tipográficas",
         Key::SmartQuotesHint => "Aspas “curvas” e travessões — ao digitar.",
+        Key::FocusMode => "Modo foco ({MOD}+Shift+Enter)",
     }
 }
 

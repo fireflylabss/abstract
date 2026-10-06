@@ -1032,6 +1032,33 @@ impl Analysis {
         let e = self.maths.partition_point(|m| m.range.start < r.end);
         &self.maths[s..e]
     }
+
+    /// Buffer range of the block the cursor's line belongs to, for focus-mode
+    /// dimming. A heading or a list item stands alone and also owns the
+    /// non-blank continuation lines below it; other lines group into the
+    /// non-blank run (paragraph) around the cursor. On a blank line the block
+    /// is that line itself.
+    pub fn focus_block(&self, text: &str, cursor: usize) -> Range<usize> {
+        let blank = |ix: usize| text[self.lines[ix].0.clone()].trim().is_empty();
+        let item_at = |ix: usize| {
+            let i = self.items.partition_point(|it| it.line < ix);
+            self.items.get(i).is_some_and(|it| it.line == ix)
+        };
+        let unit_start = |ix: usize| matches!(self.lines[ix].1, Kind::Heading(_)) || item_at(ix);
+        let ix = self.line_of(cursor.min(text.len()));
+        if blank(ix) {
+            return self.lines[ix].0.clone();
+        }
+        let mut start = ix;
+        while start > 0 && !blank(start - 1) && !unit_start(start) {
+            start -= 1;
+        }
+        let mut end = ix;
+        while end + 1 < self.lines.len() && !blank(end + 1) && !unit_start(end + 1) {
+            end += 1;
+        }
+        self.lines[start].0.start..self.lines[end].0.end
+    }
 }
 
 fn walk(cursor: &mut TreeCursor<'_>, mut f: impl FnMut(Node<'_>) -> bool) {
@@ -1556,5 +1583,54 @@ mod tests {
         // `$$` alone on a line also blocks; mid-paragraph it stays inline.
         assert!(Analyzer::new().analyze("$$x^2$$").maths[0].block);
         assert!(!Analyzer::new().analyze("v $$x$$ w").maths[0].block);
+    }
+
+    fn block_of(t: &str, cursor: usize) -> String {
+        let a = Analyzer::new().analyze(t);
+        t[a.focus_block(t, cursor)].to_string()
+    }
+
+    #[test]
+    fn focus_block_paragraph() {
+        let t = "one\ntwo\n\nthree\nfour\n\nfive";
+        let at = |s: &str| t.find(s).unwrap();
+        // Inside a paragraph the whole run lights, first line included.
+        assert_eq!(block_of(t, at("four")), "three\nfour");
+        assert_eq!(block_of(t, at("three")), "three\nfour");
+        // First and last lines of the document bound the run too.
+        assert_eq!(block_of(t, 0), "one\ntwo");
+        assert_eq!(block_of(t, t.len()), "five");
+        // On a blank line only that line is the block (all text dims).
+        assert_eq!(block_of(t, at("\n\nthree") + 1), "");
+    }
+
+    #[test]
+    fn focus_block_list_item() {
+        let t = "- one\n- two\n  cont\n- three\n\npara";
+        let at = |s: &str| t.find(s).unwrap();
+        // Each item is its own unit; a continuation line belongs to its item.
+        assert_eq!(block_of(t, at("two")), "- two\n  cont");
+        assert_eq!(block_of(t, at("cont")), "- two\n  cont");
+        assert_eq!(block_of(t, at("one")), "- one");
+        assert_eq!(block_of(t, at("three")), "- three");
+        assert_eq!(block_of(t, at("para")), "para");
+    }
+
+    #[test]
+    fn focus_block_heading() {
+        let t = "# Title\n\nlead\n\n## Sub\nbody";
+        let at = |s: &str| t.find(s).unwrap();
+        assert_eq!(block_of(t, at("Title")), "# Title");
+        assert_eq!(block_of(t, at("Sub")), "## Sub\nbody");
+        assert_eq!(block_of(t, at("body")), "## Sub\nbody");
+        assert_eq!(block_of(t, at("lead")), "lead");
+    }
+
+    #[test]
+    fn focus_block_empty_document() {
+        assert_eq!(block_of("", 0), "");
+        assert_eq!(block_of("   ", 0), "   ");
+        let a = Analyzer::new().analyze("");
+        assert_eq!(a.focus_block("", 0), 0..0);
     }
 }

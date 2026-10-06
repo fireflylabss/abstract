@@ -253,6 +253,10 @@ pub enum CompletionMove {
 
 pub struct CompletionKey(pub CompletionMove);
 
+/// Esc reached the editor with no popup to consume it; the app listens so it
+/// can leave focus mode.
+pub struct Escaped;
+
 /// Images/files pasted or dropped: the app stores them and calls
 /// `insert_text` with the markdown that references them.
 pub struct Attach(pub Vec<Incoming>);
@@ -299,12 +303,16 @@ pub struct LiveEditor {
     /// `(inserted range, original)` of the last substitution: a Backspace
     /// right at its end restores the straight characters.
     last_subst: Option<(Range<usize>, &'static str)>,
+    /// Focus mode: dim text outside the caret's block and keep the caret
+    /// centered on move (manual scroll stays free).
+    focus_mode: bool,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
 impl EventEmitter<OpenLink> for LiveEditor {}
 impl EventEmitter<CompletionKey> for LiveEditor {}
 impl EventEmitter<Attach> for LiveEditor {}
+impl EventEmitter<Escaped> for LiveEditor {}
 
 impl Focusable for LiveEditor {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -341,6 +349,7 @@ impl LiveEditor {
             max_col: TextWidth::Medium.max_col(),
             smart_quotes: true,
             last_subst: None,
+            focus_mode: false,
         };
         // Dictionaries inflate + parse off the UI thread; underlines appear
         // when the engine lands (a repaint on `cx.notify`).
@@ -428,6 +437,15 @@ impl LiveEditor {
     pub fn set_smart_quotes(&mut self, on: bool, cx: &mut Context<Self>) {
         if self.smart_quotes != on {
             self.smart_quotes = on;
+            cx.notify();
+        }
+    }
+
+    /// Focus mode flag from the app; entering asks for a recenter.
+    pub fn set_focus_mode(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.focus_mode != on {
+            self.focus_mode = on;
+            self.autoscroll = on;
             cx.notify();
         }
     }
@@ -1562,6 +1580,8 @@ impl Render for LiveEditor {
             .on_action(cx.listener(|this, _: &Escape, _, cx| {
                 if this.completing {
                     cx.emit(CompletionKey(CompletionMove::Cancel));
+                } else {
+                    cx.emit(Escaped);
                 }
             }))
             .on_action(cx.listener(|this, _: &Tab, _, cx| {
@@ -1767,6 +1787,26 @@ fn shape_cell(
 struct RunStyle<'a> {
     pal: &'a Palette,
     fonts: &'a Fonts,
+    /// Buffer range lit under focus mode; lines outside it draw muted.
+    focus: Option<Range<usize>>,
+}
+
+impl RunStyle<'_> {
+    /// Line `buf` sits outside the focus block.
+    fn dimmed(&self, buf: &Range<usize>) -> bool {
+        self.focus
+            .as_ref()
+            .is_some_and(|b| buf.start >= b.end || buf.end <= b.start)
+    }
+
+    /// Recolor `runs` muted when their line is outside the focus block.
+    fn dim_runs(&self, buf: &Range<usize>, runs: &mut [TextRun]) {
+        if self.dimmed(buf) {
+            for r in runs {
+                r.color = hsla(self.pal.muted);
+            }
+        }
+    }
 }
 
 /// Grid layout of table `t` (line indices), or `None` when it stays source:
@@ -1839,6 +1879,7 @@ fn plan_grid(
                         i = j;
                     }
                 }
+                style.dim_runs(&line, &mut runs);
                 let wrapped = shape_cell(window, &display, &runs, None);
                 (range, segs, display, runs, wrapped)
             })
@@ -2239,6 +2280,7 @@ fn tone_color(pal: &Palette, tone: md::Tone) -> u32 {
 /// `=={tint}…==` colour of the run's mark. `math` styles `$…$`/`$$…$$`
 /// content: italic serif in the accent colour, the honest stand-in for a
 /// TeX renderer.
+#[allow(clippy::too_many_arguments)]
 fn run(
     style: &RunStyle,
     kind: Kind,
@@ -2405,10 +2447,6 @@ impl Element for EditorElement {
         let pal = *cx.global::<Palette>();
         let zf = factor();
         let fonts = cx.global::<Fonts>().clone();
-        let style = RunStyle {
-            pal: &pal,
-            fonts: &fonts,
-        };
         let width = f32::from(bounds.size.width);
         let view_h = f32::from(bounds.size.height);
         let col_w = (width - PAD_X * zf * 2.).clamp(120. * zf, ed.max_col * zf);
@@ -2421,6 +2459,11 @@ impl Element for EditorElement {
         };
         let text = ed.buf.text();
         let a = &ed.analysis;
+        let style = RunStyle {
+            pal: &pal,
+            fonts: &fonts,
+            focus: ed.focus_mode.then(|| a.focus_block(text, ed.buf.cursor())),
+        };
 
         // Spellcheck: only lines whose top sits in the visible band ± one
         // viewport are scanned; a dirty line inside `spell::DEBOUNCE` waits.
@@ -2675,6 +2718,7 @@ impl Element for EditorElement {
                 }
                 vsegs
             };
+            style.dim_runs(buf, &mut runs);
             // A concealed marker (selection outside the item's owner line)
             // shows as a painted bullet instead.
             let bullet = item.and_then(|i| {
@@ -2767,11 +2811,15 @@ impl Element for EditorElement {
         if ed.autoscroll
             && let Some((p, lh)) = layout.position(ed.buf.cursor())
         {
-            let margin = (view_h * 0.15).min(80.);
-            if p.y - layout.scroll < margin {
-                layout.scroll = p.y - margin;
-            } else if p.y + lh - layout.scroll > view_h - margin {
-                layout.scroll = p.y + lh - view_h + margin;
+            if ed.focus_mode {
+                layout.scroll = p.y + lh / 2. - view_h / 2.;
+            } else {
+                let margin = (view_h * 0.15).min(80.);
+                if p.y - layout.scroll < margin {
+                    layout.scroll = p.y - margin;
+                } else if p.y + lh - layout.scroll > view_h - margin {
+                    layout.scroll = p.y + lh - view_h + margin;
+                }
             }
         }
         // Allow scrolling the last line up to mid-screen for comfortable writing.

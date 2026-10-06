@@ -59,9 +59,8 @@ impl AbstractApp {
         let subs = Self::watch_editor(&editor, cx);
         let note_dir = file.path.parent().map(Path::to_path_buf);
         let root = self.dir.clone();
-        let raw = self.settings.raw_tables();
+        self.configure_editor(&editor, cx);
         editor.update(cx, |ed, cx| {
-            ed.set_raw_tables(raw, cx);
             ed.set_dirs(note_dir, root, cx);
             // `set_text` emits no `Changed`, so nothing is re-saved.
             ed.set_text(text, cx);
@@ -88,8 +87,7 @@ impl AbstractApp {
     pub(crate) fn scratch_editor(&mut self, cx: &mut Context<Self>) -> Entity<LiveEditor> {
         let editor = cx.new(LiveEditor::new);
         self._scratch_subs = Some(Self::watch_editor(&editor, cx));
-        let raw = self.settings.raw_tables();
-        editor.update(cx, |ed, cx| ed.set_raw_tables(raw, cx));
+        self.configure_editor(&editor, cx);
         editor
     }
 

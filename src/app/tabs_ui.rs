@@ -5,7 +5,7 @@ impl AbstractApp {
     /// unsaved dot, close button on hover — scrolled sideways when it
     /// overflows. `None` while nothing is open.
     pub(crate) fn render_tabs(&self, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
-        if self.tabs.is_empty() {
+        if self.tabs.is_empty() || self.chrome_hidden() {
             return None;
         }
         let pal = cx.palette();
