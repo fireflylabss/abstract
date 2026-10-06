@@ -37,6 +37,7 @@ actions!(
         NextTab,
         PrevTab,
         ReopenClosedTab,
+        ExportPdf,
     ]
 );
 

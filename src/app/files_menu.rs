@@ -176,6 +176,9 @@ impl AbstractApp {
                     }))
                     .item(item(t(Key::ExportAsHtml), |this, p, _, w, cx| {
                         this.export_note(p, w, cx)
+                    }))
+                    .item(item(t(Key::ExportAsPdf), |this, p, _, w, cx| {
+                        this.export_pdf(p, w, cx)
                     }));
             }
             NodeKind::Folder => {

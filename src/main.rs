@@ -18,6 +18,7 @@ mod keymap;
 mod links;
 mod math;
 mod md;
+mod pdf;
 #[cfg(test)]
 mod perf;
 mod search;

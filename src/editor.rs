@@ -742,6 +742,7 @@ impl LiveEditor {
         menu.separator()
             .menu(t(Key::ExportAsHtml), Box::new(crate::keymap::ExportHtml))
             .menu(t(Key::CopyAsHtml), Box::new(crate::keymap::CopyAsHtml))
+            .menu(t(Key::ExportAsPdf), Box::new(crate::keymap::ExportPdf))
     }
 
     pub fn text(&self) -> &str {

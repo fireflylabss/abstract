@@ -482,6 +482,9 @@ impl Render for AbstractApp {
             .on_action(
                 cx.listener(|this, _: &ReopenClosedTab, window, cx| this.reopen_closed(window, cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &ExportPdf, window, cx| this.export_pdf_current(window, cx)),
+            )
             .child(self.render_sidebar(window, cx))
             .child(self.render_main(window, cx))
             .child(self.render_settings(window, cx))

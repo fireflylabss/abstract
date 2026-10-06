@@ -269,6 +269,8 @@ pub enum Key {
     CloseTab,
     MathInline,
     MathBlock,
+    ExportAsPdf,
+    ExportingPdf,
 }
 
 impl Key {
@@ -455,6 +457,8 @@ impl Key {
         Key::CloseTab,
         Key::MathInline,
         Key::MathBlock,
+        Key::ExportAsPdf,
+        Key::ExportingPdf,
     ];
 }
 
@@ -657,6 +661,8 @@ fn en(k: Key) -> &'static str {
         Key::CloseTab => "Close tab",
         Key::MathInline => "Inline math",
         Key::MathBlock => "Math block",
+        Key::ExportAsPdf => "Export as PDF…",
+        Key::ExportingPdf => "Exporting PDF…",
     }
 }
 
@@ -863,6 +869,8 @@ fn pt(k: Key) -> &'static str {
         Key::CloseTab => "Fechar aba",
         Key::MathInline => "Math inline",
         Key::MathBlock => "Math em bloco",
+        Key::ExportAsPdf => "Exportar como PDF…",
+        Key::ExportingPdf => "Exportando PDF…",
     }
 }
 

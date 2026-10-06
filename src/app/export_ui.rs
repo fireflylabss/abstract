@@ -93,4 +93,72 @@ impl AbstractApp {
             cx.notify();
         }
     }
+
+    /// "Export as PDF…" for the note at `path` — same picker/notice flow as
+    /// `export_note`, but the PDF is built on a background thread so a big
+    /// note can't stall the UI.
+    pub(crate) fn export_pdf(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let text = self
+            .current
+            .as_ref()
+            .filter(|c| c.path() == path)
+            .map(|_| self.editor.read(cx).text().to_string())
+            .unwrap_or_else(|| std::fs::read_to_string(&path).unwrap_or_default());
+        let title = title_of(&text).to_string();
+        let dir = path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| self.dir.clone());
+        let suggested = format!("{}.pdf", vault::stem_for_title(&title));
+        let picked = cx.prompt_for_new_path(&dir, Some(&suggested));
+        let root = self.dir.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(dest))) = picked.await else {
+                return;
+            };
+            this.update_in(cx, |this, _, cx| {
+                this.notice = Some(t(Key::ExportingPdf).into());
+                cx.notify();
+            })
+            .ok();
+            let written = cx
+                .background_executor()
+                .spawn(async move {
+                    let ctx = crate::html::Context {
+                        note_dir: Some(&dir),
+                        root: Some(&root),
+                        // PDF links aren't clickable anyway, so the vault
+                        // tree (a non-Clone `Vec`) is skipped — wiki links
+                        // degrade to plain text.
+                        tree: None,
+                    };
+                    crate::pdf::export(&text, &title, &ctx)
+                        .ok()
+                        .and_then(|pdf| store::write_atomic(&dest, &pdf).is_ok().then_some(dest))
+                })
+                .await;
+            this.update_in(cx, |this, _, cx| {
+                this.notice = Some(match written {
+                    Some(p) => tf(Key::Exported, &[("name", &p.display().to_string())]).into(),
+                    None => t(Key::ExportFailed).into(),
+                });
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Export-as-PDF action: the open note, when there is one.
+    pub(crate) fn export_pdf_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(path) = self.current.as_ref().map(|c| c.path()) else {
+            return;
+        };
+        self.export_pdf(path, window, cx);
+    }
 }
