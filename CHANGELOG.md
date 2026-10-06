@@ -76,6 +76,14 @@ All notable changes to abstract are documented here. The format follows
   one holding the caret and keeps the caret centered while typing. `Esc`
   leaves it; state is not persisted.
 
+### Added
+- PDF export prints math: inline `$…$` and `$$…$$` spans get the same
+  Unicode approximation as the editor (α² ≤ ∞, ∑, √, super/subscripts) in
+  an italic DejaVu face embedded in the file, and `$$` blocks center on
+  their own line. Constructs the approximator can't read keep their LaTeX
+  source, printed monospace so they read as source rather than broken
+  glyphs; money like `R$ 10` stays literal.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added
