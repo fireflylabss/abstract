@@ -49,10 +49,43 @@ impl AbstractApp {
 
     /// Re-apply the palette and persist `settings` off-thread.
     pub(crate) fn save_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        theme::apply(&self.settings, window.appearance(), cx);
+        self.apply_theme(window, cx);
         let settings = self.settings.clone();
         cx.background_spawn(async move { settings.save() }).detach();
         cx.notify();
+    }
+
+    /// `theme::apply` plus a crossfade: keep drawing the old palette while a
+    /// task lerps the global to the new one over MOTION_IN_MS (snaps under
+    /// reduced motion or when the palette didn't actually change).
+    pub(crate) fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let from = *cx.global::<Palette>();
+        theme::apply(&self.settings, window.appearance(), cx);
+        let to = *cx.global::<Palette>();
+        if from == to || cx.reduce_motion() {
+            return;
+        }
+        cx.set_global(from);
+        let start = Instant::now();
+        self._pal_task = Some(cx.spawn_in(window, async move |this, cx| {
+            loop {
+                let t = ease_out_quint(
+                    (start.elapsed().as_secs_f32() * 1000. / MOTION_IN_MS as f32).min(1.),
+                );
+                let gone = this
+                    .update(cx, |_, cx| {
+                        cx.set_global(theme::lerp(&from, &to, t));
+                        cx.notify();
+                    })
+                    .is_err();
+                if gone || t >= 1. {
+                    break;
+                }
+                cx.background_executor()
+                    .timer(Duration::from_millis(16))
+                    .await;
+            }
+        }));
     }
 
     /// Switch to `spaces.current()`: flush the open note, persist the list,
@@ -94,6 +127,7 @@ impl AbstractApp {
         self.active = None;
         self.closed_tabs.clear();
         self.trash_undo = None;
+        self.closing_tabs.clear();
         self._scratch_subs = None;
         self.current = None;
         self.editor = self.scratch_editor(cx);

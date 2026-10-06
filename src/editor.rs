@@ -2,7 +2,7 @@
 //! undo; a custom element shapes each logical line at its own size (headings
 //! render large) and conceals markdown syntax the selection is not touching.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -13,6 +13,9 @@ use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::*;
 
 use crate::app::CtxMenuExt;
+
+use crate::assets::{MOTION_IN_MS, ease_out_quint};
+use gpui_kit::base::motion::Interpolate;
 
 use crate::attach::Incoming;
 use crate::buffer::Buffer;
@@ -306,6 +309,10 @@ pub struct LiveEditor {
     /// Focus mode: dim text outside the caret's block and keep the caret
     /// centered on move (manual scroll stays free).
     focus_mode: bool,
+    /// Focus-mode dim fade: the block drawn last frame and when it changed.
+    dim_fade: RefCell<DimFade>,
+    /// Column-cap tween `(from, to, started)` while `max_col` glides.
+    col_anim: Cell<Option<(f32, f32, Instant)>>,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
@@ -350,6 +357,8 @@ impl LiveEditor {
             smart_quotes: true,
             last_subst: None,
             focus_mode: false,
+            dim_fade: RefCell::default(),
+            col_anim: Cell::new(None),
         };
         // Dictionaries inflate + parse off the UI thread; underlines appear
         // when the engine lands (a repaint on `cx.notify`).
@@ -429,6 +438,19 @@ impl LiveEditor {
     /// Column cap the text wraps to, in points before zoom.
     pub fn set_max_col(&mut self, col: f32, cx: &mut Context<Self>) {
         if self.max_col != col {
+            // Unlaid-out editors (new tabs, restores) snap; a laid-out one
+            // glides from the column width drawn right now.
+            if self.layout.is_none() || cx.reduce_motion() {
+                self.col_anim.set(None);
+            } else {
+                let cur = self.col_anim.get().map_or(self.max_col, |(from, to, at)| {
+                    let t = ease_out_quint(
+                        (at.elapsed().as_secs_f32() * 1000. / MOTION_IN_MS as f32).min(1.),
+                    );
+                    from + (to - from) * t
+                });
+                self.col_anim.set(Some((cur, col, Instant::now())));
+            }
             self.max_col = col;
             cx.notify();
         }
@@ -1783,27 +1805,50 @@ fn shape_cell(
         .unwrap_or_default()
 }
 
+/// Focus-mode dim fade state: the block drawn last frame (`cur`), the one
+/// before it (`prev`), and when `cur` last changed.
+#[derive(Default)]
+struct DimFade {
+    cur: Option<Range<usize>>,
+    prev: Option<Range<usize>>,
+    at: Option<Instant>,
+}
+
+/// Eased dim factor for `buf` (0 = full color, 1 = muted): lines outside
+/// `cur` fade toward muted while lines re-entering it fade back.
+fn dim_amount(
+    cur: &Option<Range<usize>>,
+    prev: &Option<Range<usize>>,
+    t: f32,
+    buf: &Range<usize>,
+) -> f32 {
+    let out = |b: &Option<Range<usize>>| match b {
+        Some(b) if buf.start >= b.end || buf.end <= b.start => 1.,
+        _ => 0.,
+    };
+    out(prev) + (out(cur) - out(prev)) * t
+}
+
 /// Palette + font-family snapshots the shaping path threads through.
 struct RunStyle<'a> {
     pal: &'a Palette,
     fonts: &'a Fonts,
     /// Buffer range lit under focus mode; lines outside it draw muted.
     focus: Option<Range<usize>>,
+    /// Block lit last frame; while `fade_t < 1` its lines fade toward
+    /// muted and lines newly inside `focus` fade back.
+    fade_from: Option<Range<usize>>,
+    fade_t: f32,
 }
 
 impl RunStyle<'_> {
-    /// Line `buf` sits outside the focus block.
-    fn dimmed(&self, buf: &Range<usize>) -> bool {
-        self.focus
-            .as_ref()
-            .is_some_and(|b| buf.start >= b.end || buf.end <= b.start)
-    }
-
-    /// Recolor `runs` muted when their line is outside the focus block.
+    /// Recolor `runs` toward muted by the line's eased dim factor.
     fn dim_runs(&self, buf: &Range<usize>, runs: &mut [TextRun]) {
-        if self.dimmed(buf) {
+        let d = dim_amount(&self.focus, &self.fade_from, self.fade_t, buf);
+        if d > 0. {
+            let muted = hsla(self.pal.muted);
             for r in runs {
-                r.color = hsla(self.pal.muted);
+                r.color = r.color.interpolate(&muted, d);
             }
         }
     }
@@ -2077,6 +2122,8 @@ pub struct Layout {
     lines: Vec<LineBox>,
     /// Misspelled ranges in the checked band, for the context menu.
     misspells: Vec<Range<usize>>,
+    /// `scroll` is mid-glide toward the autoscroll target, not final.
+    glide: bool,
 }
 
 impl Layout {
@@ -2449,7 +2496,21 @@ impl Element for EditorElement {
         let fonts = cx.global::<Fonts>().clone();
         let width = f32::from(bounds.size.width);
         let view_h = f32::from(bounds.size.height);
-        let col_w = (width - PAD_X * zf * 2.).clamp(120. * zf, ed.max_col * zf);
+        // The column cap glides on `text_width` changes; snap under
+        // reduced motion or once the tween is done.
+        let max_col = match ed.col_anim.get() {
+            Some((from, to, at)) if !cx.reduce_motion() => {
+                let t = (at.elapsed().as_secs_f32() * 1000. / MOTION_IN_MS as f32).min(1.);
+                if t < 1. {
+                    window.request_animation_frame();
+                } else {
+                    ed.col_anim.set(None);
+                }
+                from + (to - from) * ease_out_quint(t)
+            }
+            _ => ed.max_col,
+        };
+        let col_w = (width - PAD_X * zf * 2.).clamp(120. * zf, max_col * zf);
         let col_x = ((width - col_w) / 2.).max(0.);
         // Unfocused: everything renders; focused: the selection reveals syntax.
         let reveal = if ed.focus.is_focused(window) {
@@ -2459,10 +2520,33 @@ impl Element for EditorElement {
         };
         let text = ed.buf.text();
         let a = &ed.analysis;
+        let focus = ed.focus_mode.then(|| a.focus_block(text, ed.buf.cursor()));
+        let mut dim = ed.dim_fade.borrow_mut();
+        if dim.cur != focus {
+            dim.prev = dim.cur.take();
+            dim.cur = focus.clone();
+            dim.at = Some(Instant::now());
+        }
+        // Dim colors ease 0→1 over MOTION_IN_MS; reduced motion snaps.
+        let fade_t = dim.at.map_or(1., |at| {
+            if cx.reduce_motion() {
+                1.
+            } else {
+                ease_out_quint((at.elapsed().as_secs_f32() * 1000. / MOTION_IN_MS as f32).min(1.))
+            }
+        });
+        if fade_t < 1. {
+            window.request_animation_frame();
+        } else {
+            dim.prev = None;
+            dim.at = None;
+        }
         let style = RunStyle {
             pal: &pal,
             fonts: &fonts,
-            focus: ed.focus_mode.then(|| a.focus_block(text, ed.buf.cursor())),
+            focus,
+            fade_from: dim.prev.clone(),
+            fade_t,
         };
 
         // Spellcheck: only lines whose top sits in the visible band ± one
@@ -2806,6 +2890,7 @@ impl Element for EditorElement {
             content_h,
             lines,
             misspells,
+            glide: false,
         };
 
         if ed.autoscroll
@@ -2825,6 +2910,20 @@ impl Element for EditorElement {
         // Allow scrolling the last line up to mid-screen for comfortable writing.
         let max_scroll = (content_h - view_h * 0.5).max(0.);
         layout.scroll = layout.scroll.clamp(0., max_scroll);
+        // Programmatic scrolls (caret-follow, typewriter, find) glide toward
+        // the target like the caret does; the wheel writes `scroll_y` 1:1.
+        layout.glide = false;
+        if ed.autoscroll && !cx.reduce_motion() {
+            let d = layout.scroll - ed.scroll_y;
+            if d.abs() > 0.5 {
+                let next = ed.scroll_y + d * 0.5;
+                if (layout.scroll - next).abs() > 0.5 {
+                    layout.scroll = next;
+                    layout.glide = true;
+                    window.request_animation_frame();
+                }
+            }
+        }
         // A line skipped by the typing debounce is re-checked on the next frame.
         if spell_deferred {
             window.request_animation_frame();
@@ -3129,7 +3228,7 @@ impl Element for EditorElement {
 
         self.0.update(cx, |ed, _| {
             ed.scroll_y = layout.scroll;
-            ed.autoscroll = false;
+            ed.autoscroll = layout.glide;
             ed.caret = next_caret;
             ed.layout = Some(layout);
         });

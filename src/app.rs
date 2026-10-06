@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use gpui_kit::component::input::{self, Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
@@ -118,6 +118,18 @@ impl NoteTab {
     pub(crate) fn path(&self) -> PathBuf {
         guard(&self.file).path.clone()
     }
+}
+
+/// Pill of a just-closed tab, kept mounted for its MOTION_OUT_MS fade-out
+/// (see `tabs_ui`).
+pub(crate) struct ClosingTab {
+    id: u64,
+    /// Strip slot it occupied when closed; the ghost renders there.
+    ix: usize,
+    title: SharedString,
+    dirty: bool,
+    failed: bool,
+    at: Instant,
 }
 
 /// Inline rename / new-folder input in a sidebar row.
@@ -263,6 +275,8 @@ pub(crate) struct AbstractApp {
     _backlinks_task: Option<Task<()>>,
     _watcher: Option<SpaceWatcher>,
     _watch_task: Option<Task<()>>,
+    /// Palette crossfade running after `apply_theme` (cancel on restart).
+    _pal_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
     presence: crate::discord::Presence,
     /// Open notes in tab-bar order; `editor`/`current`/`save`/`words`
@@ -273,6 +287,8 @@ pub(crate) struct AbstractApp {
     /// Recently closed note paths + their strip index, most recent last
     /// (`Cmd+Shift+T` reopens at the old slot).
     closed_tabs: Vec<(PathBuf, usize)>,
+    /// Pills of tabs closed within MOTION_OUT_MS, fading out in the strip.
+    closing_tabs: Vec<ClosingTab>,
     /// Subscriptions of the blank editor shown when every tab is closed.
     _scratch_subs: Option<Vec<Subscription>>,
     next_tab_id: u64,
@@ -356,11 +372,13 @@ impl AbstractApp {
             _backlinks_task: None,
             _watcher: None,
             _watch_task: None,
+            _pal_task: None,
             _subs: vec![on_quit, on_bounds, on_activation, on_appearance],
             presence,
             tabs: Vec::new(),
             active: None,
             closed_tabs: Vec::new(),
+            closing_tabs: Vec::new(),
             _scratch_subs: None,
             next_tab_id: 0,
             empty_focus: cx.focus_handle(),

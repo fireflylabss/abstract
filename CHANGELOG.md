@@ -96,6 +96,15 @@ All notable changes to abstract are documented here. The format follows
   reopens a closed tab at its former index instead of the end of the strip.
 - The focus-mode toolbar button renders its icon (it was blank).
 
+### Changed
+- Motion polish across the 0.1.5 features: the tab strip collapses and
+  fades out in step with the sidebar when focus mode hides chrome, focus
+  dimming fades paragraphs in and out instead of switching in one frame,
+  autoscroll (typing, find, typewriter) glides smoothly while the wheel
+  stays 1:1, tab pills fade in on open and out on close with animated
+  hover/unsaved-dot states, the text-width setting eases the column to its
+  new size, and switching light/dark crossfades the palette.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added

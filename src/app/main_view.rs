@@ -237,7 +237,7 @@ impl AbstractApp {
             .flex()
             .flex_col()
             .child(toolbar)
-            .when_some(self.render_tabs(cx), |s, tabs| s.child(tabs))
+            .when_some(self.render_tabs(window, cx), |s, tabs| s.child(tabs))
             .child(body)
             .when_some(self.search.as_ref(), |el, _| {
                 el.child(self.render_search(window, cx))
