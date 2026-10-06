@@ -140,4 +140,4 @@ cargo build --release
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE). Bundled Noto Sans / Noto Sans Mono fonts are licensed under the SIL Open Font License 1.1 — see [assets/fonts/OFL.txt](assets/fonts/OFL.txt).
+Apache-2.0 — see [LICENSE](LICENSE). Bundled Noto Sans / Noto Sans Mono fonts are licensed under the SIL Open Font License 1.1 — see [assets/fonts/OFL.txt](assets/fonts/OFL.txt). Bundled Hunspell dictionaries: `en_US` under MIT AND BSD, `pt_BR` under LGPL-3.0 OR MPL-2.0 (distributed under MPL-2.0) — see [assets/dict/](assets/dict/).

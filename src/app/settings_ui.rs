@@ -403,6 +403,7 @@ impl AbstractApp {
                     )
                 }));
         let discord = self.settings.discord();
+        let spell_on = self.settings.spellcheck();
         let body = div()
             .id("settings-body")
             .flex_1()
@@ -497,6 +498,51 @@ impl AbstractApp {
                 )
                 .on_click(cx.listener(move |this, _, _, cx| this.set_discord(!discord, cx))),
             )
+            .child(
+                toggle(
+                    "spellcheck-toggle",
+                    t(Key::Spellcheck),
+                    Some(t(Key::SpellcheckHint)),
+                    spell_on,
+                    window,
+                    cx,
+                )
+                .on_click(cx.listener(move |this, _, _, cx| this.set_spellcheck(!spell_on, cx))),
+            )
+            .child(hover_bg(
+                div()
+                    .id("spell-lang-cycle")
+                    .role(Role::Button)
+                    .aria_label(t(Key::SpellLang))
+                    .px(z(8.))
+                    .py(z(7.))
+                    .mx(z(-8.))
+                    .flex()
+                    .items_center()
+                    .gap(z(8.))
+                    .rounded(z(6.))
+                    .cursor_pointer()
+                    .text_size(z(13.))
+                    .text_color(rgb(pal.body))
+                    .active(|s| s.bg(rgb(pal.active)))
+                    .on_click(cx.listener(|this, _, _, cx| this.cycle_spell_lang(cx)))
+                    .child(div().flex_1().child(t(Key::SpellLang)))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(z(4.))
+                            .text_size(z(12.))
+                            .text_color(rgb(pal.dim))
+                            .child(self.spell_lang_label())
+                            .child(icon("icons/chevrons.svg", pal.faint).size(z(13.))),
+                    ),
+                "spell-lang-cycle",
+                None,
+                pal.hover,
+                window,
+                cx,
+            ))
             .child(section(t(Key::About)))
             .child(
                 div()
@@ -646,5 +692,35 @@ impl AbstractApp {
         self.settings.set_font(family);
         fonts::apply(&self.settings, cx);
         self.save_settings(window, cx);
+    }
+
+    /// Spellcheck toggle in General: applies to the editor live, then persists.
+    fn set_spellcheck(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.settings.set_spellcheck(on);
+        let lang = self.settings.spell_lang();
+        self.editor.update(cx, |ed, cx| ed.set_spell(on, lang, cx));
+        let settings = self.settings.clone();
+        cx.background_spawn(async move { settings.save() }).detach();
+        cx.notify();
+    }
+
+    /// Language row in General: Automático → English → Português → Ambos.
+    fn cycle_spell_lang(&mut self, cx: &mut Context<Self>) {
+        let lang = self.settings.spell_lang().next();
+        self.settings.set_spell_lang(lang);
+        let on = self.settings.spellcheck();
+        self.editor.update(cx, |ed, cx| ed.set_spell(on, lang, cx));
+        let settings = self.settings.clone();
+        cx.background_spawn(async move { settings.save() }).detach();
+        cx.notify();
+    }
+
+    pub(crate) fn spell_lang_label(&self) -> &'static str {
+        match self.settings.spell_lang() {
+            crate::spell::SpellLang::Auto => t(Key::SpellLangAuto),
+            crate::spell::SpellLang::En => "English",
+            crate::spell::SpellLang::PtBr => "Português (Brasil)",
+            crate::spell::SpellLang::Both => t(Key::SpellLangBoth),
+        }
     }
 }

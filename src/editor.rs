@@ -2,10 +2,12 @@
 //! undo; a custom element shapes each logical line at its own size (headings
 //! render large) and conceals markdown syntax the selection is not touching.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::*;
@@ -17,6 +19,7 @@ use crate::buffer::Buffer;
 use crate::fonts::Fonts;
 use crate::i18n::{Key, t};
 use crate::md::{self, Analysis, Analyzer, Kind};
+use crate::spell::{self, SpellLang};
 use crate::table::{self as pipe, Align};
 use crate::theme::Palette;
 use crate::zoom::{factor, z};
@@ -99,6 +102,17 @@ actions!(
 #[derive(Clone, PartialEq, gpui_kit::Action)]
 #[action(namespace = live_editor, no_json)]
 pub struct HighlightTint(pub md::Tint);
+
+/// Context-menu spell suggestion: replace the misspelled range (one undo
+/// step) and land the caret after the replacement.
+#[derive(Clone, PartialEq, gpui_kit::Action)]
+#[action(namespace = live_editor, no_json)]
+pub struct SpellApply(pub Range<usize>, pub String);
+
+/// Context-menu "add to dictionary" for the word under the caret.
+#[derive(Clone, PartialEq, gpui_kit::Action)]
+#[action(namespace = live_editor, no_json)]
+pub struct SpellAddWord(pub String);
 
 pub fn bind_keys(cx: &mut App) {
     let c = Some("LiveEditor");
@@ -216,6 +230,16 @@ pub struct LiveEditor {
     find_current: Option<usize>,
     /// Tables stay Markdown source instead of rendering as a grid.
     raw_tables: bool,
+    /// Lazily-built spell engine; `None` until the background load lands.
+    spell: Option<Arc<spell::Engine>>,
+    /// Settings → General: checking on (default) and which dictionaries.
+    spell_on: bool,
+    spell_lang: SpellLang,
+    /// Misspelled ranges per line (relative to the line start), keyed by
+    /// `spell::line_key` — editing a line only invalidates its own entry.
+    spell_cache: RefCell<HashMap<u64, Arc<Vec<Range<usize>>>>>,
+    /// Last `changed()` timestamp; fresh scans wait out `spell::DEBOUNCE`.
+    last_edit: Option<Instant>,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
@@ -233,7 +257,7 @@ impl LiveEditor {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let mut analyzer = Analyzer::new();
         let analysis = analyzer.analyze("");
-        Self {
+        let ed = Self {
             focus: cx.focus_handle(),
             buf: Buffer::new(),
             analyzer,
@@ -250,7 +274,24 @@ impl LiveEditor {
             finds: Vec::new(),
             find_current: None,
             raw_tables: false,
-        }
+            spell: None,
+            spell_on: true,
+            spell_lang: SpellLang::Auto,
+            spell_cache: RefCell::new(HashMap::new()),
+            last_edit: None,
+        };
+        // Dictionaries inflate + parse off the UI thread; underlines appear
+        // when the engine lands (a repaint on `cx.notify`).
+        cx.spawn(async move |this, cx| {
+            let engine = cx.background_spawn(async move { spell::shared() }).await;
+            this.update(cx, |ed, cx| {
+                ed.spell = Some(engine);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        ed
     }
 
     pub fn set_dirs(&mut self, note_dir: Option<PathBuf>, root: PathBuf, cx: &mut Context<Self>) {
@@ -645,9 +686,35 @@ impl LiveEditor {
             .as_ref()
             .and_then(|item| item.text())
             .is_some_and(|t| !t.trim().is_empty());
+        // Right-click on a misspelled word leads with suggestions +
+        // "add to dictionary"; anywhere else the menu is unchanged.
+        let misspelled = {
+            let e = editor.read(cx);
+            e.misspell_at(e.buf.cursor()).map(|r| {
+                let word = e.buf.text()[r.clone()].to_string();
+                let sugg = e
+                    .spell_cfg()
+                    .map(|(eng, langs)| eng.suggest(&word, langs, 5))
+                    .unwrap_or_default();
+                (r, word, sugg)
+            })
+        };
         let (f1, f2, f3, f4) = (focus.clone(), focus.clone(), focus.clone(), focus.clone());
+        let menu = menu.action_context(focus);
+        let menu = if let Some((range, word, sugg)) = misspelled {
+            let mut m = menu;
+            for s in sugg {
+                m = m.menu(
+                    SharedString::from(s.clone()),
+                    Box::new(SpellApply(range.clone(), s)),
+                );
+            }
+            m.menu(t(Key::SpellAddWord), Box::new(SpellAddWord(word)))
+                .separator()
+        } else {
+            menu
+        };
         let menu = menu
-            .action_context(focus)
             .menu_with_disabled(t(Key::Cut), Box::new(Cut), !has_sel)
             .menu_with_disabled(t(Key::Copy), Box::new(Copy), !has_sel)
             .menu_with_disabled(t(Key::Paste), Box::new(Paste), !paste_ok)
@@ -749,6 +816,7 @@ impl LiveEditor {
         self.find_current = None;
         self.scroll_y = 0.;
         self.caret = None;
+        self.last_edit = None;
         self.analysis = self.analyzer.analyze(self.buf.text());
         cx.notify();
     }
@@ -822,6 +890,7 @@ impl LiveEditor {
         self.analysis = self.analyzer.analyze(self.buf.text());
         self.autoscroll = true;
         self.goal_x = None;
+        self.last_edit = Some(Instant::now());
         cx.emit(Changed);
         cx.notify();
     }
@@ -1052,6 +1121,55 @@ impl LiveEditor {
     fn scroll(&mut self, ev: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.scroll_y -= f32::from(ev.delta.pixel_delta(z(28.)).y);
         self.autoscroll = false;
+        cx.notify();
+    }
+
+    /// `(engine, dictionaries)` when checking can actually run: loaded and
+    /// switched on.
+    fn spell_cfg(&self) -> Option<(Arc<spell::Engine>, spell::Langs)> {
+        if !self.spell_on {
+            return None;
+        }
+        let eng = self.spell.clone()?;
+        Some((eng, self.spell_lang.langs()))
+    }
+
+    /// Misspelled range containing `off` (either edge), from the last
+    /// painted band.
+    fn misspell_at(&self, off: usize) -> Option<Range<usize>> {
+        let bad = &self.layout.as_ref()?.misspells;
+        let i = bad.partition_point(|r| r.end < off);
+        bad.get(i).filter(|r| r.start <= off).cloned()
+    }
+
+    /// Accept a context-menu suggestion: replace the misspelled range as one
+    /// undo step; caret lands after the replacement.
+    fn spell_apply(&mut self, range: Range<usize>, new: &str, cx: &mut Context<Self>) {
+        let caret = range.start + new.len();
+        self.edit(range, new, Some(caret..caret), cx);
+    }
+
+    /// "Add to dictionary": remember the word, persist it off-thread and
+    /// rebuild the affected squiggles.
+    fn spell_add_word(&mut self, word: String, cx: &mut Context<Self>) {
+        let Some(eng) = self.spell.clone() else {
+            return;
+        };
+        eng.add_user_word(&word);
+        self.spell_cache.borrow_mut().clear();
+        cx.background_spawn(async move { eng.save_user() }).detach();
+        cx.notify();
+    }
+
+    /// Settings → General: enable checking and pick the dictionaries; takes
+    /// effect immediately.
+    pub fn set_spell(&mut self, on: bool, lang: SpellLang, cx: &mut Context<Self>) {
+        if self.spell_on == on && self.spell_lang == lang {
+            return;
+        }
+        self.spell_on = on;
+        self.spell_lang = lang;
+        self.spell_cache.borrow_mut().clear();
         cx.notify();
     }
 }
@@ -1355,6 +1473,12 @@ impl Render for LiveEditor {
             .on_action(cx.listener(|this, _: &DeleteTableColumn, _, cx| {
                 this.table_op(pipe::Op::DeleteCol, cx)
             }))
+            .on_action(
+                cx.listener(|this, a: &SpellApply, _, cx| this.spell_apply(a.0.clone(), &a.1, cx)),
+            )
+            .on_action(
+                cx.listener(|this, a: &SpellAddWord, _, cx| this.spell_add_word(a.0.clone(), cx)),
+            )
             .on_mouse_down(MouseButton::Right, cx.listener(Self::right_click))
             .on_drop(cx.listener(Self::drop_paths))
             .drag_over::<ExternalPaths>(|s, _, _, cx| s.bg(rgb(cx.global::<Palette>().hover)))
@@ -1539,7 +1663,7 @@ fn plan_grid(
                             j += 1;
                         }
                         let f = if header { f | md::BOLD } else { f };
-                        runs.push(run(style, Kind::Body, f, None, j - i, a.tint_at(i)));
+                        runs.push(run(style, Kind::Body, f, None, j - i, a.tint_at(i), false));
                         display.push_str(&text[i..j]);
                         i = j;
                     }
@@ -1665,6 +1789,8 @@ pub struct Layout {
     col_w: f32,
     content_h: f32,
     lines: Vec<LineBox>,
+    /// Misspelled ranges in the checked band, for the context menu.
+    misspells: Vec<Range<usize>>,
 }
 
 impl Layout {
@@ -1869,6 +1995,7 @@ fn run(
     accent: Option<u32>,
     len: usize,
     tint: Option<md::Tint>,
+    misspelled: bool,
 ) -> TextRun {
     let pal = style.pal;
     let heading = matches!(kind, Kind::Heading(_));
@@ -1919,13 +2046,20 @@ fn run(
     } else {
         pal.body
     };
-    let underline = (flags & (md::UNDERLINE | md::LINK) != 0 && flags & md::MARK == 0).then(|| {
-        UnderlineStyle {
+    let underline = if misspelled {
+        // Misspelled word: a wavy red line, per-theme danger tone.
+        Some(UnderlineStyle {
+            thickness: z(1.),
+            color: Some(hsla(tone_color(pal, md::Tone::Danger))),
+            wavy: true,
+        })
+    } else {
+        (flags & (md::UNDERLINE | md::LINK) != 0 && flags & md::MARK == 0).then(|| UnderlineStyle {
             thickness: z(1.),
             color: (flags & md::LINK != 0).then(|| hsla(pal.muted)),
             wavy: false,
-        }
-    });
+        })
+    };
     let strikethrough =
         (flags & (md::STRIKE | md::DONE) != 0 && flags & md::MARK == 0).then(|| {
             StrikethroughStyle {
@@ -2024,6 +2158,15 @@ impl Element for EditorElement {
         let text = ed.buf.text();
         let a = &ed.analysis;
 
+        // Spellcheck: only lines whose top sits in the visible band ± one
+        // viewport are scanned; a dirty line inside `spell::DEBOUNCE` waits.
+        let (spell_engine, spell_langs) = ed.spell_cfg().unzip();
+        let debouncing = ed.last_edit.is_some_and(|t| t.elapsed() < spell::DEBOUNCE);
+        let band_start = ed.scroll_y - view_h;
+        let band_end = ed.scroll_y + view_h * 2.;
+        let mut spell_deferred = false;
+        let mut misspells: Vec<Range<usize>> = Vec::new();
+
         let mut lines = Vec::with_capacity(a.lines.len());
         let mut y = PAD_TOP * zf;
         let mut display = String::new();
@@ -2059,6 +2202,12 @@ impl Element for EditorElement {
             });
             let accent = callout.map(|c| c.0);
             let (fs, lh, above, below) = metrics(*kind);
+            // In the checked band? (top within one viewport of the scroll
+            // window; `lh` is the minimum possible bottom margin).
+            let spell_in_view = {
+                let t = y + above;
+                t <= band_end && t + lh >= band_start
+            };
             // A line can carry several markers (e.g. "- 1. x"); the
             // innermost item decides the indent and the painted bullet.
             let mut item = None;
@@ -2144,6 +2293,7 @@ impl Element for EditorElement {
                     accent,
                     placeholder.len(),
                     None,
+                    false,
                 ));
                 std::iter::once(0..0).collect()
             } else {
@@ -2158,6 +2308,34 @@ impl Element for EditorElement {
                 if segs.is_empty() {
                     segs.push(buf.start..buf.start);
                 }
+                // Misspelled words on this line (absolute), only when the
+                // line is in the checked band; cache keyed by line content.
+                let spell_bad = spell_engine.as_ref().and_then(|eng| {
+                    if !spell_in_view || *kind == Kind::Code {
+                        return None;
+                    }
+                    let key =
+                        spell::line_key(&text[buf.clone()], spell_langs.unwrap(), eng.epoch());
+                    if let Some(hit) = ed.spell_cache.borrow().get(&key) {
+                        return Some(hit.clone());
+                    }
+                    if debouncing {
+                        spell_deferred = true;
+                        return None;
+                    }
+                    let rel: Arc<Vec<Range<usize>>> =
+                        Arc::new(spell::scan_line(a, text, ix, eng, spell_langs.unwrap()));
+                    ed.spell_cache.borrow_mut().insert(key, rel.clone());
+                    Some(rel)
+                });
+                let spell_bad: Option<Vec<Range<usize>>> = spell_bad.map(|rel| {
+                    rel.iter()
+                        .map(|r| buf.start + r.start..buf.start + r.end)
+                        .collect()
+                });
+                if let Some(bad) = &spell_bad {
+                    misspells.extend(bad.iter().cloned());
+                }
                 for s in &segs {
                     let mut i = s.start;
                     while i < s.end {
@@ -2166,7 +2344,37 @@ impl Element for EditorElement {
                         while j < s.end && a.flags[j] == f {
                             j += 1;
                         }
-                        runs.push(run(&style, *kind, f, accent, j - i, a.tint_at(i)));
+                        if let Some(bad) = &spell_bad {
+                            // Split the flag-run at misspelled boundaries so
+                            // only the word itself gets the squiggle.
+                            let mut pts = Vec::with_capacity(bad.len() * 2 + 2);
+                            pts.push(i);
+                            for r in bad.iter() {
+                                if r.end <= i || r.start >= j {
+                                    continue;
+                                }
+                                pts.push(r.start.max(i));
+                                pts.push(r.end.min(j));
+                            }
+                            pts.push(j);
+                            pts.sort_unstable();
+                            pts.dedup();
+                            for w in pts.windows(2) {
+                                let (m, n) = (w[0], w[1]);
+                                let is_bad = bad.iter().any(|r| r.start <= m && n <= r.end);
+                                runs.push(run(
+                                    &style,
+                                    *kind,
+                                    f,
+                                    accent,
+                                    n - m,
+                                    a.tint_at(i),
+                                    is_bad,
+                                ));
+                            }
+                        } else {
+                            runs.push(run(&style, *kind, f, accent, j - i, a.tint_at(i), false));
+                        }
                         display.push_str(&text[i..j]);
                         i = j;
                     }
@@ -2244,6 +2452,7 @@ impl Element for EditorElement {
             col_w,
             content_h,
             lines,
+            misspells,
         };
 
         if ed.autoscroll
@@ -2259,6 +2468,10 @@ impl Element for EditorElement {
         // Allow scrolling the last line up to mid-screen for comfortable writing.
         let max_scroll = (content_h - view_h * 0.5).max(0.);
         layout.scroll = layout.scroll.clamp(0., max_scroll);
+        // A line skipped by the typing debounce is re-checked on the next frame.
+        if spell_deferred {
+            window.request_animation_frame();
+        }
         Some(layout)
     }
 

@@ -6,6 +6,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use crate::i18n::LangPref;
+use crate::spell::SpellLang;
 use crate::theme::ThemePref;
 
 /// XDG-style base dir: `var` wins; on Windows fall back to `%APPDATA%` /
@@ -241,6 +242,27 @@ impl Settings {
                 file.display()
             );
         }
+    }
+
+    /// `spellcheck = off` disables spell checking; on by default.
+    pub fn spellcheck(&self) -> bool {
+        self.kv.get("spellcheck") != Some("off")
+    }
+
+    pub fn set_spellcheck(&mut self, on: bool) {
+        self.kv.set("spellcheck", if on { "on" } else { "off" });
+    }
+
+    /// `spell_lang = auto|en|pt-BR|both`; missing/unknown → auto (follows the
+    /// UI language).
+    pub fn spell_lang(&self) -> SpellLang {
+        self.kv
+            .get("spell_lang")
+            .map_or(SpellLang::Auto, SpellLang::parse)
+    }
+
+    pub fn set_spell_lang(&mut self, lang: SpellLang) {
+        self.kv.set("spell_lang", lang.as_str());
     }
 }
 

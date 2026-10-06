@@ -6,6 +6,19 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Spellcheck for English and Portuguese (Brazil): misspelled words get a
+  discreet red wavy underline in the editor. Right-click on a marked word
+  for up to five suggestions (applied in one undo step) and "Add to
+  dictionary" for a personal dictionary that persists across launches.
+  Code, URLs, link and `[[wiki-link]]` targets, frontmatter, math and image
+  filenames are never marked, and words with digits, ALL-CAPS acronyms or
+  camelCase pass through. Settings → General has the on/off toggle (on by
+  default) and the language row — Automático (follows the UI language),
+  English, Português (Brasil) or Ambos — applied instantly. Checking runs
+  only over the visible area with a per-line cache so typing stays fast on
+  large notes.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added
