@@ -6,6 +6,8 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-06
+
 ### Added
 - Note tabs: several notes open at once under a compact tab strip above the
   editor — each tab shows the note title, an unsaved dot and a close button
@@ -19,8 +21,6 @@ All notable changes to abstract are documented here. The format follows
 - Open tabs, the active one and each tab's cursor/scroll are restored when
   the app or a space is reopened; every tab keeps its own autosave and
   word count.
-
-### Added
 - LaTeX math: inline `$…$` and block `$$…$$` spans are recognized in notes.
   Delimiters hide until the caret touches the span (like `**bold**`), money
   like `R$ 10` and `\$` escapes stay literal, and nothing inside code spans,
@@ -34,15 +34,11 @@ All notable changes to abstract are documented here. The format follows
   render it natively, so the file stays self-contained with no CDN or JS.
 - Insert submenu gains "Math inline" (`$…$`) and "Math block" (`$$…$$`)
   items that drop the delimiters with the caret inside.
-
-### Added
 - Export a note as PDF via "Export as PDF…" next to the HTML export —
   pure-Rust rendering with the bundled Noto fonts embedded: A4 pages,
   headings, styled text and highlights, lists and task checkboxes, quotes,
   callouts, code blocks, tables, images, footnotes and page numbers.
   Generation runs on a background thread with an in-progress notice.
-
-### Added
 - Spellcheck for English and Portuguese (Brazil): misspelled words get a
   discreet red wavy underline in the editor. Right-click on a marked word
   for up to five suggestions (applied in one undo step) and "Add to
@@ -54,35 +50,44 @@ All notable changes to abstract are documented here. The format follows
   English, Português (Brasil) or Ambos — applied instantly. Checking runs
   only over the visible area with a per-line cache so typing stays fast on
   large notes.
-
-### Added
 - Text width setting in Settings → Editor: narrow (580), medium (700, the
   previous fixed width) or wide (880) column, applied instantly.
-
-### Added
 - Line-editing shortcuts: `Alt+↑`/`Alt+↓` move the current or selected
   lines, `Ctrl`/`Cmd`+`Shift+D` duplicates them below and `Ctrl`/`Cmd`+`D`
   selects the word under the caret or jumps to the next occurrence.
-
-### Added
 - Typographic substitution while typing (smart quotes): `"`/`'` become
   curly by context, `--` folds into an em dash, and Backspace right after
   a substitution restores the straight characters. Code and frontmatter
   stay literal; toggle in Settings → Editor (on by default).
-
-### Added
 - Focus mode (`Cmd/Ctrl`+`Shift`+`Enter` or the toolbar button): hides the
   sidebar, dims the status area until hovered, mutes every paragraph but the
   one holding the caret and keeps the caret centered while typing. `Esc`
   leaves it; state is not persisted.
-
-### Added
 - PDF export prints math: inline `$…$` and `$$…$$` spans get the same
   Unicode approximation as the editor (α² ≤ ∞, ∑, √, super/subscripts) in
   an italic DejaVu face embedded in the file, and `$$` blocks center on
   their own line. Constructs the approximator can't read keep their LaTeX
   source, printed monospace so they read as source rather than broken
   glyphs; money like `R$ 10` stays literal.
+- Configurable "glass" translucency: a new Settings → Appearance section
+  turns on a real OS window material — NSVisualEffect blur on macOS,
+  Acrylic or Mica/Mica Alt on Windows, compositor blur on Linux (KDE via
+  org_kde_kwin_blur; Hyprland/picom blur a transparent window themselves;
+  GNOME warns it has none) — plus per-surface opacity sliders for the
+  sidebar, tab strip, toolbar, menus & popovers, Settings panel and editor,
+  an overall intensity slider, an optional custom tint and editor text
+  opacity / high-contrast text options under an Advanced disclosure. When
+  glass is off every surface renders byte-identical opaque colours; all
+  changes apply live and persist in settings.
+
+### Changed
+- Motion polish across the 0.1.5 features: the tab strip collapses and
+  fades out in step with the sidebar when focus mode hides chrome, focus
+  dimming fades paragraphs in and out instead of switching in one frame,
+  autoscroll (typing, find, typewriter) glides smoothly while the wheel
+  stays 1:1, tab pills fade in on open and out on close with animated
+  hover/unsaved-dot states, the text-width setting eases the column to its
+  new size, and switching light/dark crossfades the palette.
 
 ### Fixed
 - Deleting a note (toolbar trash, `Cmd/Ctrl`+`Shift`+`Backspace` or the
@@ -95,27 +100,6 @@ All notable changes to abstract are documented here. The format follows
   sessions saved by older versions still load). `Cmd/Ctrl`+`Shift`+`T`
   reopens a closed tab at its former index instead of the end of the strip.
 - The focus-mode toolbar button renders its icon (it was blank).
-
-### Changed
-- Motion polish across the 0.1.5 features: the tab strip collapses and
-  fades out in step with the sidebar when focus mode hides chrome, focus
-  dimming fades paragraphs in and out instead of switching in one frame,
-  autoscroll (typing, find, typewriter) glides smoothly while the wheel
-  stays 1:1, tab pills fade in on open and out on close with animated
-  hover/unsaved-dot states, the text-width setting eases the column to its
-  new size, and switching light/dark crossfades the palette.
-
-### Added
-- Configurable "glass" translucency: a new Settings → Appearance section
-  turns on a real OS window material — NSVisualEffect blur on macOS,
-  Acrylic or Mica/Mica Alt on Windows, compositor blur on Linux (KDE via
-  org_kde_kwin_blur; Hyprland/picom blur a transparent window themselves;
-  GNOME warns it has none) — plus per-surface opacity sliders for the
-  sidebar, tab strip, toolbar, menus & popovers, Settings panel and editor,
-  an overall intensity slider, an optional custom tint and editor text
-  opacity / high-contrast text options under an Advanced disclosure. When
-  glass is off every surface renders byte-identical opaque colours; all
-  changes apply live and persist in settings.
 
 ## [0.1.4] - 2026-10-02
 
