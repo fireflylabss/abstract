@@ -264,6 +264,9 @@ pub enum Key {
     TableInsertColumnRight,
     TableDeleteRow,
     TableDeleteColumn,
+    // Note tabs
+    OpenInNewTab,
+    CloseTab,
 }
 
 impl Key {
@@ -446,6 +449,8 @@ impl Key {
         Key::TableInsertColumnRight,
         Key::TableDeleteRow,
         Key::TableDeleteColumn,
+        Key::OpenInNewTab,
+        Key::CloseTab,
     ];
 }
 
@@ -644,6 +649,8 @@ fn en(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Insert column to the right",
         Key::TableDeleteRow => "Delete row",
         Key::TableDeleteColumn => "Delete column",
+        Key::OpenInNewTab => "Open in new tab",
+        Key::CloseTab => "Close tab",
     }
 }
 
@@ -846,6 +853,8 @@ fn pt(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Inserir coluna à direita",
         Key::TableDeleteRow => "Apagar linha",
         Key::TableDeleteColumn => "Apagar coluna",
+        Key::OpenInNewTab => "Abrir em nova aba",
+        Key::CloseTab => "Fechar guia",
     }
 }
 

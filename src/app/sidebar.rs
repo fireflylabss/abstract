@@ -28,13 +28,16 @@ impl AbstractApp {
             rows[ix].path = ed.target.join(NEW_FOLDER_ROW);
             rows[ix].kind = NodeKind::Folder;
         }
-        if let Some(p) = &self.pending_new
-            && !rows.iter().any(|r| r.path == *p)
-            && let Some(parent) = p.parent()
-        {
-            let ix = insert(&mut rows, parent);
-            rows[ix].path = p.clone();
-            rows[ix].name = t(Key::Untitled).into();
+        // Unsaved pending notes show as ghost rows where they'll land.
+        for p in self.tabs.iter().filter(|t| t.pending).map(NoteTab::path) {
+            if rows.iter().any(|r| r.path == p) {
+                continue;
+            }
+            if let Some(parent) = p.parent() {
+                let ix = insert(&mut rows, parent);
+                rows[ix].path = p.clone();
+                rows[ix].name = t(Key::Untitled).into();
+            }
         }
         rows
     }
@@ -108,11 +111,29 @@ impl AbstractApp {
             }
             pill = pill.on_click(cx.listener({
                 let path = path.clone();
-                move |this, _, window, cx| match kind {
+                move |this, ev: &ClickEvent, window, cx| match kind {
                     NodeKind::Folder => this.toggle_folder(path.clone(), cx),
-                    NodeKind::Note => this.open_path(path.clone(), None, window, cx),
+                    // Cmd/Ctrl+click keeps the active tab; a plain click
+                    // retargets it.
+                    NodeKind::Note => {
+                        if ev.modifiers().secondary() {
+                            this.open_path_tab(path.clone(), None, window, cx);
+                        } else {
+                            this.open_path(path.clone(), None, window, cx);
+                        }
+                    }
                 }
             }));
+            if kind == NodeKind::Note {
+                let path = path.clone();
+                pill = pill.on_mouse_down(
+                    MouseButton::Middle,
+                    cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.open_path_tab(path.clone(), None, window, cx);
+                    }),
+                );
+            }
         }
         if folder {
             pill = pill
@@ -238,7 +259,7 @@ impl AbstractApp {
                         // new-folder input, an unsaved pending note and the
                         // row being renamed.
                         let menuable = !path.ends_with(NEW_FOLDER_ROW)
-                            && this.pending_new.as_ref() != Some(&path)
+                            && !this.tabs.iter().any(|t| t.pending && t.path() == path)
                             && !this
                                 .editing
                                 .as_ref()

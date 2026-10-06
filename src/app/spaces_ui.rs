@@ -63,12 +63,9 @@ impl AbstractApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.record_session_note(cx);
         self.save_session(cx);
-        self.flush(cx);
-        self._save_task = None;
+        self.flush_all(cx);
         self.editing = None;
-        self.pending_new = None;
         self.target_folder = None;
         self.spaces = spaces;
         self.spaces_open = false;
@@ -76,39 +73,85 @@ impl AbstractApp {
         self.start_watch(cx);
         self.tree.clear();
         self.expanded.clear();
+        // The old space's tabs die here; the mirrors reset when the new
+        // space's tabs are restored (or a note is opened) below.
+        self.tabs.clear();
+        self.active = None;
+        self.closed_tabs.clear();
+        self._scratch_subs = None;
         self.current = None;
+        self.editor = self.scratch_editor(cx);
+        self.save = SaveState::Saved;
+        self.words = 0;
+        self.completion = None;
+        self.backlinks.clear();
+        self.backlinks_key = None;
         self.presence.set(None, spaces::name_of(&self.dir));
         self.loading = true;
         let dir = self.dir.clone();
         let snapshot = self.spaces.clone();
+        // This space's open tabs from the session file (`note` lines from a
+        // pre-tab version count as one).
+        let saved: Vec<(PathBuf, usize, f32)> = self
+            .session_notes
+            .iter()
+            .filter(|n| n.space == dir)
+            .map(|n| (dir.join(&n.rel), n.cursor, n.scroll))
+            .collect();
+        let active = self
+            .session
+            .active_tab()
+            .filter(|(s, _)| *s == dir)
+            .map(|(_, r)| dir.join(r));
         self._io_task = Some(cx.spawn_in(window, async move |this, cx| {
-            let scanned = cx
+            let read = cx
                 .background_executor()
                 .spawn(async move {
                     spaces::save(&snapshot);
-                    vault::scan(&dir)
+                    let tree = vault::scan(&dir);
+                    let reads: Vec<(PathBuf, String, Option<SystemTime>, usize, f32)> = saved
+                        .into_iter()
+                        .filter_map(|(p, cursor, scroll)| {
+                            std::fs::read_to_string(&p).ok().map(|text| {
+                                let m = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
+                                (p, text, m, cursor, scroll)
+                            })
+                        })
+                        .collect();
+                    (tree, reads)
                 })
                 .await;
             this.update_in(cx, |this, window, cx| {
                 this.loading = false;
-                match scanned {
+                match read.0 {
                     Ok(tree) => this.tree = tree,
                     Err(err) => eprintln!("abstract: cannot read space: {err}"),
                 }
-                // Session's last note for this space, else the newest.
-                let restore = this
-                    .session_notes
-                    .iter()
-                    .rfind(|n| n.space == this.dir)
-                    .map(|n| (this.dir.join(&n.rel), n.cursor, n.scroll));
-                match restore {
-                    Some((p, cursor, scroll)) if vault::contains(&this.tree, &p) => {
-                        this.open_path(p, Some((cursor, scroll)), window, cx)
-                    }
-                    _ => match vault::newest_note(&this.tree, None) {
+                for (path, text, mtime, cursor, scroll) in read.1 {
+                    let synced = vault::synced_stem(&stem_of(&path), &title_of(&text));
+                    this.push_tab(
+                        NoteFile {
+                            path,
+                            mtime,
+                            deleted: false,
+                        },
+                        synced,
+                        text,
+                        Some((cursor, scroll)),
+                        false,
+                        cx,
+                    );
+                }
+                if !this.tabs.is_empty() {
+                    let ix = active
+                        .and_then(|p| this.tabs.iter().position(|t| t.path() == p))
+                        .unwrap_or(this.tabs.len() - 1);
+                    this.activate(ix, window, cx);
+                } else {
+                    match vault::newest_note(&this.tree, None) {
                         Some(p) => this.open_path(p, None, window, cx),
                         None => this.new_note(window, cx),
-                    },
+                    }
                 }
                 if !this.tour_shown && !this.settings.tour_done() {
                     this.start_tour(window, cx);

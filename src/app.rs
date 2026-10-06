@@ -12,6 +12,7 @@ mod search_ui;
 mod settings_ui;
 mod sidebar;
 mod spaces_ui;
+mod tabs_ui;
 mod tour_ui;
 mod update_ui;
 mod zoom;
@@ -96,6 +97,28 @@ impl CurrentNote {
     }
 }
 
+/// An open note: its own `LiveEditor`, save state and subscriptions, so
+/// switching tabs preserves cursor, scroll and undo history for free.
+pub(crate) struct NoteTab {
+    /// Stable identity for tab-strip element ids; survives reorders.
+    id: u64,
+    pub(crate) file: Arc<Mutex<NoteFile>>,
+    /// Same rule as `CurrentNote::synced`.
+    synced: bool,
+    /// Planned path of a note not yet written (first keystroke creates it).
+    pending: bool,
+    save: SaveState,
+    pub(crate) editor: Entity<LiveEditor>,
+    _save_task: Option<Task<()>>,
+    _subs: Vec<Subscription>,
+}
+
+impl NoteTab {
+    pub(crate) fn path(&self) -> PathBuf {
+        guard(&self.file).path.clone()
+    }
+}
+
 /// Inline rename / new-folder input in a sidebar row.
 pub(crate) struct RenameEdit {
     state: Entity<InputState>,
@@ -123,9 +146,10 @@ fn write_note(
     synced: bool,
     text: &str,
     space: Option<&Path>,
+    open: &[PathBuf],
 ) -> std::io::Result<bool> {
     let held = crate::crash::unsaved(text);
-    let result = write_note_now(lock, file, synced, text, space);
+    let result = write_note_now(lock, file, synced, text, space, open);
     if result.is_ok() {
         crate::crash::saved(held);
     }
@@ -138,6 +162,7 @@ fn write_note_now(
     synced: bool,
     text: &str,
     space: Option<&Path>,
+    open: &[PathBuf],
 ) -> std::io::Result<bool> {
     let _write = guard(lock);
     let mut f = guard(file);
@@ -160,7 +185,7 @@ fn write_note_now(
             if let Some(space) = space
                 && !vault::is_placeholder_stem(&old)
             {
-                crate::links::relink(space, &target, &old, Some(&target), true);
+                crate::links::relink(space, &target, &old, open, true);
             }
         } else {
             // Rename failed: still save under the old name.
@@ -177,9 +202,8 @@ pub(crate) struct AbstractApp {
     dir: PathBuf,
     tree: Vec<vault::Node>,
     expanded: HashSet<PathBuf>,
+    /// Mirror of the active tab's note identity (`tabs[active]`).
     current: Option<CurrentNote>,
-    /// Planned path of a note not yet written (first keystroke creates it).
-    pending_new: Option<PathBuf>,
     /// Last clicked folder; target dir for new notes and folders.
     target_folder: Option<PathBuf>,
     editing: Option<RenameEdit>,
@@ -209,7 +233,6 @@ pub(crate) struct AbstractApp {
     image_stamps: HashMap<PathBuf, Option<SystemTime>>,
     /// Serializes on-disk ops on the open note (rename + write + trash mark).
     write_lock: Arc<Mutex<()>>,
-    _save_task: Option<Task<()>>,
     _io_task: Option<Task<()>>,
     _bounds_task: Option<Task<()>>,
     search: Option<search_ui::SearchPalette>,
@@ -229,6 +252,17 @@ pub(crate) struct AbstractApp {
     _watch_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
     presence: crate::discord::Presence,
+    /// Open notes in tab-bar order; `editor`/`current`/`save`/`words`
+    /// mirror `tabs[active]`.
+    tabs: Vec<NoteTab>,
+    /// Index into `tabs`; `None` shows the empty state.
+    active: Option<usize>,
+    /// Recently closed note paths, most recent last (`Cmd+Shift+T` reopens).
+    closed_tabs: Vec<PathBuf>,
+    /// Subscriptions of the blank editor shown when every tab is closed.
+    _scratch_subs: Option<Vec<Subscription>>,
+    next_tab_id: u64,
+    empty_focus: FocusHandle,
 }
 impl AbstractApp {
     pub(crate) fn new(
@@ -239,28 +273,6 @@ impl AbstractApp {
     ) -> Self {
         let editor = cx.new(LiveEditor::new);
         editor.update(cx, |ed, cx| ed.set_raw_tables(settings.raw_tables(), cx));
-        let on_change = cx.subscribe(&editor, |this: &mut Self, editor, _: &Changed, cx| {
-            let text = editor.read(cx).text();
-            this.words = text.split_whitespace().count();
-            this.schedule_save(cx);
-            this.update_completion(cx);
-            this.refresh_find(false, None, cx);
-            cx.notify();
-        });
-        let on_completion = cx.subscribe(&editor, |this: &mut Self, _, ev: &CompletionKey, cx| {
-            this.completion_key(ev, cx);
-        });
-        let on_link = cx.subscribe(&editor, |_this: &mut Self, _, ev: &OpenLink, cx| {
-            let target = ev.0.clone();
-            cx.spawn(async move |this, cx| {
-                this.update_in(cx, |this, window, cx| this.open_link(&target, window, cx))
-                    .ok();
-            })
-            .detach();
-        });
-        let on_attach = cx.subscribe(&editor, |this: &mut Self, _, ev: &Attach, cx| {
-            this.attach(ev.0.clone(), cx);
-        });
         let on_quit = cx.on_app_quit(|this, cx| {
             this.flush_blocking(cx);
             async {}
@@ -286,13 +298,12 @@ impl AbstractApp {
             tree: Vec::new(),
             expanded: HashSet::new(),
             current: None,
-            pending_new: None,
             target_folder: None,
             editing: None,
             notice: None,
             theme_pref: settings.theme(),
             settings,
-            session_notes: session.notes(),
+            session_notes: session.tabs(),
             session,
             window_state: None,
             tour_step: None,
@@ -310,7 +321,6 @@ impl AbstractApp {
             settings_focus: cx.focus_handle(),
             image_stamps: HashMap::new(),
             write_lock: Arc::new(Mutex::new(())),
-            _save_task: None,
             _io_task: None,
             _bounds_task: None,
             search: None,
@@ -326,17 +336,14 @@ impl AbstractApp {
             _backlinks_task: None,
             _watcher: None,
             _watch_task: None,
-            _subs: vec![
-                on_change,
-                on_completion,
-                on_link,
-                on_attach,
-                on_quit,
-                on_bounds,
-                on_activation,
-                on_appearance,
-            ],
+            _subs: vec![on_quit, on_bounds, on_activation, on_appearance],
             presence,
+            tabs: Vec::new(),
+            active: None,
+            closed_tabs: Vec::new(),
+            _scratch_subs: None,
+            next_tab_id: 0,
+            empty_focus: cx.focus_handle(),
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
         app._io_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -349,6 +356,62 @@ impl AbstractApp {
         }));
         app.check_updates(cx);
         app
+    }
+
+    /// The subscriptions every tab editor needs; stored on the tab so
+    /// closing it unsubscribes. Buffer edits always schedule a save; the
+    /// view-side effects only run for the active tab.
+    fn watch_editor(editor: &Entity<LiveEditor>, cx: &mut Context<Self>) -> Vec<Subscription> {
+        let on_change = cx.subscribe(editor, |this: &mut Self, editor, _: &Changed, cx| {
+            let Some(ix) = this.tab_ix(&editor) else {
+                return;
+            };
+            if this.active == Some(ix) {
+                let text = editor.read(cx).text();
+                this.words = text.split_whitespace().count();
+                this.update_completion(cx);
+                this.refresh_find(false, None, cx);
+            }
+            this.schedule_tab_save(ix, cx);
+            cx.notify();
+        });
+        let on_completion =
+            cx.subscribe(editor, |this: &mut Self, editor, ev: &CompletionKey, cx| {
+                if this.tab_ix(&editor) == this.active {
+                    this.completion_key(ev, cx);
+                }
+            });
+        let on_link = cx.subscribe(editor, |_this: &mut Self, _, ev: &OpenLink, cx| {
+            let target = ev.0.clone();
+            cx.spawn(async move |this, cx| {
+                this.update_in(cx, |this, window, cx| this.open_link(&target, window, cx))
+                    .ok();
+            })
+            .detach();
+        });
+        let on_attach = cx.subscribe(editor, |this: &mut Self, editor, ev: &Attach, cx| {
+            if this.tab_ix(&editor) == this.active {
+                this.attach(ev.0.clone(), cx);
+            }
+        });
+        vec![on_change, on_completion, on_link, on_attach]
+    }
+
+    fn tab_ix(&self, editor: &Entity<LiveEditor>) -> Option<usize> {
+        self.tabs
+            .iter()
+            .position(|t| t.editor.entity_id() == editor.entity_id())
+    }
+
+    /// The active tab, when any.
+    pub(crate) fn cur_tab(&self) -> Option<&NoteTab> {
+        self.active.and_then(|ix| self.tabs.get(ix))
+    }
+
+    /// Every open tab's file path — the relink skip list: those buffers
+    /// retarget their own `[[links]]` instead of being rewritten on disk.
+    pub(crate) fn tab_paths(&self) -> Vec<PathBuf> {
+        self.tabs.iter().map(NoteTab::path).collect()
     }
 }
 
@@ -406,6 +469,19 @@ impl Render for AbstractApp {
             .on_action(cx.listener(|this, _: &ZoomIn, window, cx| this.zoom_in(window, cx)))
             .on_action(cx.listener(|this, _: &ZoomOut, window, cx| this.zoom_out(window, cx)))
             .on_action(cx.listener(|this, _: &ZoomReset, window, cx| this.zoom_reset(window, cx)))
+            .on_action(cx.listener(|this, _: &CloseTab, window, cx| this.close_active(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &NextTab, window, cx| this.cycle_tab(true, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &PrevTab, window, cx| this.cycle_tab(false, window, cx)),
+            )
+            .on_action(cx.listener(|this, ev: &GoToTab, window, cx| {
+                this.goto_tab(ev.ix, ev.last, window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &ReopenClosedTab, window, cx| this.reopen_closed(window, cx)),
+            )
             .child(self.render_sidebar(window, cx))
             .child(self.render_main(window, cx))
             .child(self.render_settings(window, cx))
@@ -445,7 +521,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = note(dir.join("Sem título.md"));
         let lock = Arc::new(Mutex::new(()));
-        assert!(write_note(&lock, &file, true, "# Hello", None).unwrap());
+        assert!(write_note(&lock, &file, true, "# Hello", None, &[]).unwrap());
         let expected = dir.join(format!("{}.md", vault::stem_for_title("Hello")));
         assert!(expected.exists());
         assert_eq!(file.lock().unwrap().path, expected);
@@ -463,7 +539,7 @@ mod tests {
         std::fs::write(dir.join("other.md"), "see [[Projeto]]").unwrap();
         let file = note(path);
         let lock = Arc::new(Mutex::new(()));
-        assert!(write_note(&lock, &file, true, "# Plano", Some(&dir)).unwrap());
+        assert!(write_note(&lock, &file, true, "# Plano", Some(&dir), &[]).unwrap());
         assert_eq!(
             std::fs::read_to_string(dir.join("other.md")).unwrap(),
             "see [[Plano]]"
@@ -480,7 +556,7 @@ mod tests {
         std::fs::write(&path, "old").unwrap();
         let file = note(path.clone());
         let lock = Arc::new(Mutex::new(()));
-        assert!(!write_note(&lock, &file, false, "# Hello", None).unwrap());
+        assert!(!write_note(&lock, &file, false, "# Hello", None, &[]).unwrap());
         assert_eq!(file.lock().unwrap().path, path);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "# Hello");
         std::fs::remove_dir_all(&dir).unwrap();
@@ -497,7 +573,7 @@ mod tests {
             deleted: true,
         }));
         let lock = Arc::new(Mutex::new(()));
-        assert!(!write_note(&lock, &file, true, "# Hello", None).unwrap());
+        assert!(!write_note(&lock, &file, true, "# Hello", None, &[]).unwrap());
         assert!(!dir.join("gone.md").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -519,7 +595,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = note(dir.join("x.md"));
         let lock = Arc::new(Mutex::new(()));
-        assert!(write_note(&lock, &file, true, "   \n", None).unwrap());
+        assert!(write_note(&lock, &file, true, "   \n", None, &[]).unwrap());
         assert_eq!(file.lock().unwrap().path, dir.join("Sem título.md"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -536,7 +612,7 @@ mod tests {
         std::fs::write(&path, "old").unwrap();
         let file = note(path.clone());
         let lock = Arc::new(Mutex::new(()));
-        assert!(write_note(&lock, &file, true, "# Hello", None).unwrap());
+        assert!(write_note(&lock, &file, true, "# Hello", None, &[]).unwrap());
         let new_path = file.lock().unwrap().path.clone();
         assert_ne!(new_path, dir.join("Hello.md"));
         assert!(new_path.exists());

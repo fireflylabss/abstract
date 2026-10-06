@@ -4,12 +4,12 @@ use crate::attach::{self, Incoming};
 impl AbstractApp {
     /// Tell the editor where relative image sources resolve.
     pub(crate) fn sync_editor_dirs(&mut self, cx: &mut Context<Self>) {
-        let dir = self
-            .current
-            .as_ref()
-            .and_then(|c| c.path().parent().map(Path::to_path_buf));
         let root = self.dir.clone();
-        self.editor.update(cx, |ed, cx| ed.set_dirs(dir, root, cx));
+        for tab in &self.tabs {
+            let dir = tab.path().parent().map(Path::to_path_buf);
+            tab.editor
+                .update(cx, |ed, cx| ed.set_dirs(dir, root.clone(), cx));
+        }
     }
 
     /// Store pasted/dropped items off-thread, then reference them at the

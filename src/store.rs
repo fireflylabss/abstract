@@ -303,6 +303,7 @@ impl Session {
         }
     }
 
+    #[cfg(test)]
     pub fn notes(&self) -> Vec<SessionNote> {
         self.kv
             .lines
@@ -345,6 +346,80 @@ impl Session {
             self.kv
                 .lines
                 .push(format!("note = {space}\t{rel}\t{}\t{}", n.cursor, n.scroll));
+        }
+    }
+
+    /// `tab` lines: every open note of each space, in tab order. `note`
+    /// lines from a pre-tab version parse the same way, so a space with no
+    /// `tab` lines still restores one note.
+    pub fn tabs(&self) -> Vec<SessionNote> {
+        let parse = |l: &String| {
+            let (k, v) = l.split_once('=')?;
+            let k = k.trim();
+            if k != "tab" && k != "note" {
+                return None;
+            }
+            let mut parts = v.split('\t');
+            let note = SessionNote {
+                space: PathBuf::from(parts.next()?.trim()),
+                rel: PathBuf::from(parts.next()?.trim()),
+                cursor: parts.next()?.trim().parse().ok()?,
+                scroll: parts.next()?.trim().parse().ok()?,
+            };
+            (parts.next().is_none() && !note.rel.as_os_str().is_empty())
+                .then_some((k == "tab", note))
+        };
+        let (tabs, notes): (Vec<_>, Vec<_>) = self
+            .kv
+            .lines
+            .iter()
+            .filter_map(parse)
+            .partition(|(is_tab, _)| *is_tab);
+        let mut out: Vec<SessionNote> = tabs.into_iter().map(|(_, n)| n).collect();
+        // Legacy `note` lines fill in spaces that have no `tab` lines.
+        for (_, n) in notes {
+            if !out.iter().any(|t| t.space == n.space) {
+                out.push(n);
+            }
+        }
+        out
+    }
+
+    /// `tab_active = <space>\t<rel>` — which tab was front-most.
+    pub fn active_tab(&self) -> Option<(PathBuf, PathBuf)> {
+        let v = self.kv.get("tab_active")?;
+        let (space, rel) = v.split_once('\t')?;
+        if rel.trim().is_empty() {
+            return None;
+        }
+        Some((PathBuf::from(space.trim()), PathBuf::from(rel.trim())))
+    }
+
+    /// Paths containing a tab or newline can't be represented and are skipped.
+    pub fn set_tabs(&mut self, notes: &[SessionNote]) {
+        self.kv.remove("tab");
+        for n in notes {
+            let (space, rel) = (n.space.to_string_lossy(), n.rel.to_string_lossy());
+            if space.contains(['\t', '\n']) || rel.contains(['\t', '\n']) {
+                continue;
+            }
+            self.kv
+                .lines
+                .push(format!("tab = {space}\t{rel}\t{}\t{}", n.cursor, n.scroll));
+        }
+    }
+
+    pub fn set_active_tab(&mut self, active: Option<(&Path, &Path)>) {
+        match active {
+            Some((space, rel)) => {
+                let (space, rel) = (space.to_string_lossy(), rel.to_string_lossy());
+                if space.contains(['\t', '\n']) || rel.contains(['\t', '\n']) {
+                    self.kv.remove("tab_active");
+                } else {
+                    self.kv.set("tab_active", &format!("{space}\t{rel}"));
+                }
+            }
+            None => self.kv.remove("tab_active"),
         }
     }
 
@@ -461,6 +536,54 @@ mod tests {
         assert_eq!(s.window(), None);
         assert_eq!(s.sidebar_open(), None);
         assert!(s.notes().is_empty());
+    }
+
+    #[test]
+    fn session_tabs_roundtrip_and_note_fallback() {
+        let space = PathBuf::from("/s");
+        let notes = vec![
+            SessionNote {
+                space: space.clone(),
+                rel: PathBuf::from("a.md"),
+                cursor: 1,
+                scroll: 0.5,
+            },
+            SessionNote {
+                space: space.clone(),
+                rel: PathBuf::from("b.md"),
+                cursor: 0,
+                scroll: 0.,
+            },
+        ];
+        let mut s = Session::default();
+        s.set_tabs(&notes);
+        s.set_active_tab(Some((&space, Path::new("b.md"))));
+        let again = Session {
+            kv: KeyVals::parse(&s.kv.serialize()),
+        };
+        assert_eq!(again.tabs(), notes);
+        assert_eq!(again.active_tab(), Some((space.clone(), "b.md".into())));
+        // Pre-tab `note` lines restore as a single-tab space.
+        let legacy = Session {
+            kv: KeyVals::parse("note = /s\tc.md\t3\t1.0\n"),
+        };
+        let tabs = legacy.tabs();
+        assert_eq!(tabs.len(), 1);
+        assert_eq!(tabs[0].rel, PathBuf::from("c.md"));
+        assert_eq!(tabs[0].cursor, 3);
+        // A `tab` line wins over `note` lines for the same space.
+        let mixed = Session {
+            kv: KeyVals::parse("note = /s\told.md\t0\t0\ntab = /s\tnew.md\t0\t0\n"),
+        };
+        let tabs = mixed.tabs();
+        assert_eq!(tabs.len(), 1);
+        assert_eq!(tabs[0].rel, PathBuf::from("new.md"));
+        // `tab_active` is removed when nothing is open.
+        s.set_active_tab(None);
+        let again = Session {
+            kv: KeyVals::parse(&s.kv.serialize()),
+        };
+        assert_eq!(again.active_tab(), None);
     }
 
     #[test]
