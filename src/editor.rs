@@ -1969,12 +1969,20 @@ fn run(
     let mut f = font(if code {
         style.fonts.mono.clone()
     } else if math {
-        // A serif keeps math readable next to the prose face; the platform
-        // substitutes when Georgia is missing.
+        // A serif keeps math readable next to the prose face; fallbacks cover
+        // platforms without Georgia (Arch ships DejaVu/Noto, not Times).
         SharedString::from("Georgia")
     } else {
         style.fonts.sans.clone()
     });
+    if math {
+        f.fallbacks = Some(FontFallbacks::from_fonts(vec![
+            "Times New Roman".into(),
+            "DejaVu Serif".into(),
+            "Liberation Serif".into(),
+            "Noto Serif".into(),
+        ]));
+    }
     if heading {
         f.weight = if matches!(kind, Kind::Heading(1 | 2)) {
             FontWeight::BOLD
