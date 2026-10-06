@@ -1851,7 +1851,7 @@ impl RunStyle<'_> {
     /// then the glass text alpha.
     fn text(&self, c: u32) -> Hsla {
         let c = if self.text_contrast {
-            glass::mix_u32(c, self.pal.fg, 0.4)
+            glass::contrast_u32(c, self.pal.fg, self.pal.bg)
         } else {
             c
         };
