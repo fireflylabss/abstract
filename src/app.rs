@@ -274,7 +274,8 @@ impl AbstractApp {
         let editor = cx.new(LiveEditor::new);
         editor.update(cx, |ed, cx| ed.set_raw_tables(settings.raw_tables(), cx));
         editor.update(cx, |ed, cx| {
-            ed.set_spell(settings.spellcheck(), settings.spell_lang(), cx)
+            ed.set_spell(settings.spellcheck(), settings.spell_lang(), cx);
+            ed.set_smart_quotes(settings.smart_quotes(), cx);
         });
         let on_quit = cx.on_app_quit(|this, cx| {
             this.flush_blocking(cx);

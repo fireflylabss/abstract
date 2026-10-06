@@ -23,6 +23,7 @@ mod pdf;
 #[cfg(test)]
 mod perf;
 mod search;
+mod smart;
 mod spaces;
 mod spell;
 mod store;

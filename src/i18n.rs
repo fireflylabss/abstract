@@ -283,6 +283,9 @@ pub enum Key {
     TextWidthNarrow,
     TextWidthMedium,
     TextWidthWide,
+    // Typographic substitution
+    SmartQuotes,
+    SmartQuotesHint,
 }
 
 impl Key {
@@ -481,6 +484,8 @@ impl Key {
         Key::TextWidthNarrow,
         Key::TextWidthMedium,
         Key::TextWidthWide,
+        Key::SmartQuotes,
+        Key::SmartQuotesHint,
     ];
 }
 
@@ -695,6 +700,8 @@ fn en(k: Key) -> &'static str {
         Key::TextWidthNarrow => "Narrow",
         Key::TextWidthMedium => "Medium",
         Key::TextWidthWide => "Wide",
+        Key::SmartQuotes => "Smart quotes",
+        Key::SmartQuotesHint => "Typographic “quotes” and — dashes while you type.",
     }
 }
 
@@ -913,6 +920,8 @@ fn pt(k: Key) -> &'static str {
         Key::TextWidthNarrow => "Estreita",
         Key::TextWidthMedium => "Média",
         Key::TextWidthWide => "Larga",
+        Key::SmartQuotes => "Aspas tipográficas",
+        Key::SmartQuotesHint => "Aspas “curvas” e travessões — ao digitar.",
     }
 }
 

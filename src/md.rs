@@ -203,6 +203,8 @@ pub struct Analysis {
     pub marks: Vec<MarkSpan>,
     /// `$…$`/`$$…$$` math spans, in buffer order.
     pub maths: Vec<MathSpan>,
+    /// YAML (`---`) / TOML (`+++`) frontmatter ranges, in buffer order.
+    pub metadata: Vec<Range<usize>>,
 }
 
 pub struct Analyzer {
@@ -248,6 +250,7 @@ impl Analyzer {
             tables: Vec::new(),
             marks: Vec::new(),
             maths: Vec::new(),
+            metadata: Vec::new(),
         };
         if len == 0 {
             return out;
@@ -454,11 +457,12 @@ impl Analyzer {
                     out.tables.push(first..last + 1);
                     true
                 }
-                "html_block"
-                | "minus_metadata"
-                | "plus_metadata"
-                | "link_reference_definition"
-                | "pipe_table_delimiter_row" => {
+                "minus_metadata" | "plus_metadata" => {
+                    out.metadata.push(range.clone());
+                    out.mark(range, MUTED);
+                    false
+                }
+                "html_block" | "link_reference_definition" | "pipe_table_delimiter_row" => {
                     out.mark(range, MUTED);
                     false
                 }

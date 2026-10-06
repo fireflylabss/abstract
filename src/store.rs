@@ -234,6 +234,15 @@ impl Settings {
         self.kv.set("zoom", &format!("{factor:.2}"));
     }
 
+    /// `smart_quotes = off` keeps `"`/`'`/`--` exactly as typed.
+    pub fn smart_quotes(&self) -> bool {
+        self.kv.get("smart_quotes") != Some("off")
+    }
+
+    pub fn set_smart_quotes(&mut self, on: bool) {
+        self.kv.set("smart_quotes", if on { "on" } else { "off" });
+    }
+
     /// Blocking.
     pub fn save(&self) {
         let file = settings_file();

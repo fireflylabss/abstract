@@ -64,6 +64,12 @@ All notable changes to abstract are documented here. The format follows
   lines, `Ctrl`/`Cmd`+`Shift+D` duplicates them below and `Ctrl`/`Cmd`+`D`
   selects the word under the caret or jumps to the next occurrence.
 
+### Added
+- Typographic substitution while typing (smart quotes): `"`/`'` become
+  curly by context, `--` folds into an em dash, and Backspace right after
+  a substitution restores the straight characters. Code and frontmatter
+  stay literal; toggle in Settings → Editor (on by default).
+
 ## [0.1.4] - 2026-10-02
 
 ### Added
