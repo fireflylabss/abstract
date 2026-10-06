@@ -63,6 +63,21 @@ impl AbstractApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Snapshot the incoming space's session state before the flush below
+        // rewrites it — `tab`/`tab_active` lines for this space would
+        // otherwise be replaced by whatever is open right now.
+        let new_dir = spaces.current().to_path_buf();
+        let saved: Vec<(PathBuf, usize, f32)> = self
+            .session_notes
+            .iter()
+            .filter(|n| n.space == new_dir)
+            .map(|n| (new_dir.join(&n.rel), n.cursor, n.scroll))
+            .collect();
+        let active = self
+            .session
+            .active_tab()
+            .filter(|(s, _)| *s == new_dir)
+            .map(|(_, r)| new_dir.join(r));
         self.save_session(cx);
         self.flush_all(cx);
         self.editing = None;
@@ -78,6 +93,7 @@ impl AbstractApp {
         self.tabs.clear();
         self.active = None;
         self.closed_tabs.clear();
+        self.trash_undo = None;
         self._scratch_subs = None;
         self.current = None;
         self.editor = self.scratch_editor(cx);
@@ -90,19 +106,6 @@ impl AbstractApp {
         self.loading = true;
         let dir = self.dir.clone();
         let snapshot = self.spaces.clone();
-        // This space's open tabs from the session file (`note` lines from a
-        // pre-tab version count as one).
-        let saved: Vec<(PathBuf, usize, f32)> = self
-            .session_notes
-            .iter()
-            .filter(|n| n.space == dir)
-            .map(|n| (dir.join(&n.rel), n.cursor, n.scroll))
-            .collect();
-        let active = self
-            .session
-            .active_tab()
-            .filter(|(s, _)| *s == dir)
-            .map(|(_, r)| dir.join(r));
         self._io_task = Some(cx.spawn_in(window, async move |this, cx| {
             let read = cx
                 .background_executor()

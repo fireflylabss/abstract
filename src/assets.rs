@@ -23,7 +23,7 @@ pub(crate) const FONTS: &[&[u8]] = &[
 ];
 /// Embedded Hugeicons (stroke-rounded, MIT). Anything else falls through to
 /// the component library's default icon set.
-const ICONS: [(&str, &[u8]); 17] = [
+const ICONS: [(&str, &[u8]); 18] = [
     (
         "icons/add.svg",
         include_bytes!("../assets/icons/add-01.svg"),
@@ -88,6 +88,10 @@ const ICONS: [(&str, &[u8]); 17] = [
     (
         "icons/sidebar.svg",
         include_bytes!("../assets/icons/view-sidebar-left.svg"),
+    ),
+    (
+        "icons/focus.svg",
+        include_bytes!("../assets/icons/focus.svg"),
     ),
 ];
 pub(crate) struct AppAssets;

@@ -193,12 +193,12 @@ impl AbstractApp {
         if let Some(w) = self.window_state {
             self.session.set_window(&w);
         }
+        let active = self.active_rel();
+        let active = active.as_ref().map(|(s, r)| (s.as_path(), r.as_path()));
         self.session.set_tabs(&self.session_notes);
         self.session
-            .set_notes(&latest_per_space(&self.session_notes));
-        let active = self.active_rel();
-        self.session
-            .set_active_tab(active.as_ref().map(|(s, r)| (s.as_path(), r.as_path())));
+            .set_notes(&latest_per_space(&self.session_notes, active));
+        self.session.set_active_tab(active);
         self.session.save();
     }
 
@@ -214,17 +214,15 @@ impl AbstractApp {
             .map(|r| (self.dir.clone(), r.to_path_buf()))
     }
 
-    /// Rebuild this space's `session_notes` from the live tabs, active last
-    /// so the legacy `note` fallback reopens the right note.
+    /// Rebuild this space's `session_notes` from the live tabs in strip
+    /// order; `tab_active` separately records which one is front-most.
     pub(crate) fn record_tabs(&mut self, cx: &App) {
         if self.dir.as_os_str().is_empty() {
             return;
         }
         let dir = self.dir.clone();
         self.session_notes.retain(|n| n.space != dir);
-        let active = self.active.unwrap_or(usize::MAX);
-        let mut entries = Vec::new();
-        for (i, tab) in self.tabs.iter().enumerate() {
+        for tab in self.tabs.iter() {
             let path = tab.path();
             if tab.pending && !path.exists() {
                 continue;
@@ -236,33 +234,27 @@ impl AbstractApp {
                 continue;
             }
             let (cursor, scroll) = tab.editor.read(cx).view_state();
-            entries.push((
-                i,
-                SessionNote {
-                    space: dir.clone(),
-                    rel: rel.to_path_buf(),
-                    cursor,
-                    scroll,
-                },
-            ));
+            self.session_notes.push(SessionNote {
+                space: dir.clone(),
+                rel: rel.to_path_buf(),
+                cursor,
+                scroll,
+            });
         }
-        entries.sort_by_key(|(i, _)| *i == active);
-        self.session_notes
-            .extend(entries.into_iter().map(|(_, n)| n));
     }
 
     pub(crate) fn save_session(&mut self, cx: &mut Context<Self>) {
         self.record_tabs(cx);
         let active = self.active_rel();
+        let active = active.as_ref().map(|(s, r)| (s.as_path(), r.as_path()));
         self.session.set_sidebar(self.sidebar_open);
         if let Some(w) = self.window_state {
             self.session.set_window(&w);
         }
         self.session.set_tabs(&self.session_notes);
         self.session
-            .set_notes(&latest_per_space(&self.session_notes));
-        self.session
-            .set_active_tab(active.as_ref().map(|(s, r)| (s.as_path(), r.as_path())));
+            .set_notes(&latest_per_space(&self.session_notes, active));
+        self.session.set_active_tab(active);
         let session = self.session.clone();
         cx.background_spawn(async move { session.save() }).detach();
     }
@@ -481,8 +473,9 @@ impl AbstractApp {
 }
 
 /// Last entry per space — written as `note` lines so pre-tab versions
-/// restore their most recent note.
-fn latest_per_space(notes: &[SessionNote]) -> Vec<SessionNote> {
+/// restore their most recent note. `active` (`space`, `rel` pair) wins over
+/// raw list order so the fallback also reopens the front tab.
+fn latest_per_space(notes: &[SessionNote], active: Option<(&Path, &Path)>) -> Vec<SessionNote> {
     let mut latest: Vec<SessionNote> = Vec::new();
     for n in notes {
         if let Some(prev) = latest.iter_mut().find(|p| p.space == n.space) {
@@ -491,5 +484,68 @@ fn latest_per_space(notes: &[SessionNote]) -> Vec<SessionNote> {
             latest.push(n.clone());
         }
     }
+    if let Some((space, rel)) = active
+        && let Some(prev) = latest.iter_mut().find(|p| p.space.as_path() == space)
+        && let Some(n) = notes
+            .iter()
+            .find(|n| n.space.as_path() == space && n.rel.as_path() == rel)
+    {
+        *prev = n.clone();
+    }
     latest
+}
+
+#[cfg(test)]
+mod tests {
+    // No `use super::*`: the parent's globs re-export gpui's `test`
+    // attribute, which would shadow the built-in `#[test]`.
+    use super::latest_per_space;
+    use crate::store::SessionNote;
+    use std::path::{Path, PathBuf};
+
+    fn note(space: &str, rel: &str) -> SessionNote {
+        SessionNote {
+            space: PathBuf::from(space),
+            rel: PathBuf::from(rel),
+            cursor: 0,
+            scroll: 0.,
+        }
+    }
+
+    #[test]
+    fn latest_per_space_keeps_strip_order_and_prefers_active() {
+        // `tab` lines carry strip order; the `note` fallback must name the
+        // active tab even when it isn't the last one.
+        let notes = vec![
+            note("/s", "a.md"),
+            note("/s", "b.md"),
+            note("/s", "c.md"),
+            note("/t", "x.md"),
+            note("/t", "y.md"),
+        ];
+        let active = Some((Path::new("/s"), Path::new("b.md")));
+        let out = latest_per_space(&notes, active);
+        assert_eq!(
+            out.iter().map(|n| n.rel.as_path()).collect::<Vec<_>>(),
+            vec![Path::new("b.md"), Path::new("y.md")]
+        );
+        assert_eq!(out[0].space, PathBuf::from("/s"));
+        assert_eq!(out[1].space, PathBuf::from("/t"));
+    }
+
+    #[test]
+    fn latest_per_space_without_active_falls_back_to_last() {
+        let notes = vec![note("/s", "a.md"), note("/s", "b.md"), note("/t", "x.md")];
+        let out = latest_per_space(&notes, None);
+        assert_eq!(
+            out.iter().map(|n| n.rel.as_path()).collect::<Vec<_>>(),
+            vec![Path::new("b.md"), Path::new("x.md")]
+        );
+        // An `active` for a space not in the list changes nothing.
+        let active = Some((Path::new("/gone"), Path::new("z.md")));
+        assert_eq!(latest_per_space(&notes, active), out);
+        // An `active` rel the space doesn't list also changes nothing.
+        let active = Some((Path::new("/s"), Path::new("z.md")));
+        assert_eq!(latest_per_space(&notes, active), out);
+    }
 }

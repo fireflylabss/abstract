@@ -8,11 +8,16 @@ impl AbstractApp {
     ) -> impl IntoElement {
         let pal = cx.palette();
         let has_note = self.current.is_some();
-        let status: SharedString = self.notice.clone().unwrap_or_else(|| match self.save {
-            SaveState::Pending => t(Key::Saving).into(),
-            SaveState::Failed => t(Key::SaveFailed).into(),
-            SaveState::Saved => tf(Key::Words, &[("n", &self.words.to_string())]).into(),
-        });
+        // A trashed note's undo window owns the chip while it lasts.
+        let status: SharedString = if self.trash_undo.is_some() {
+            t(Key::NoteTrashedUndo).into()
+        } else {
+            self.notice.clone().unwrap_or_else(|| match self.save {
+                SaveState::Pending => t(Key::Saving).into(),
+                SaveState::Failed => t(Key::SaveFailed).into(),
+                SaveState::Saved => tf(Key::Words, &[("n", &self.words.to_string())]).into(),
+            })
+        };
         let theme_tip = SharedString::from(tf(
             Key::Theme,
             &[(
@@ -83,7 +88,11 @@ impl AbstractApp {
                             .role(Role::Button)
                             .aria_label(t(Key::NoteStatus))
                             .debug_selector(|| "status".into())
-                            .w(z(140.))
+                            .w(z(if self.trash_undo.is_some() {
+                                240.
+                            } else {
+                                140.
+                            }))
                             .h(z(28.))
                             .flex()
                             .items_center()
@@ -93,9 +102,13 @@ impl AbstractApp {
                             .cursor_pointer()
                             .active(|s| s.bg(rgb(pal.active)))
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.status_open = !this.status_open;
-                                cx.notify();
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                if this.trash_undo.is_some() {
+                                    this.undo_trash(window, cx);
+                                } else {
+                                    this.status_open = !this.status_open;
+                                    cx.notify();
+                                }
                             }))
                             .text_size(z(12.))
                             .text_color(rgb(if self.save == SaveState::Failed {
@@ -120,7 +133,8 @@ impl AbstractApp {
                 ),
                 (
                     "status",
-                    self.save as usize * 2 + self.notice.is_some() as usize,
+                    self.save as usize * 2
+                        + (self.notice.is_some() || self.trash_undo.is_some()) as usize,
                 ),
                 220,
                 0.,
