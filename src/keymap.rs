@@ -33,6 +33,7 @@ actions!(
         ZoomIn,
         ZoomOut,
         ZoomReset,
+        ExportPdf,
     ]
 );
 

@@ -6,6 +6,13 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Export a note as PDF via "Export as PDF…" next to the HTML export —
+  pure-Rust rendering with the bundled Noto fonts embedded: A4 pages,
+  headings, styled text and highlights, lists and task checkboxes, quotes,
+  callouts, code blocks, tables, images, footnotes and page numbers.
+  Generation runs on a background thread with an in-progress notice.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added

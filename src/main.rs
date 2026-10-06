@@ -17,6 +17,7 @@ mod i18n;
 mod keymap;
 mod links;
 mod md;
+mod pdf;
 #[cfg(test)]
 mod perf;
 mod search;

@@ -24,7 +24,8 @@ pub(crate) struct Context<'a> {
     pub tree: Option<&'a [vault::Node]>,
 }
 
-const STYLE: u16 = md::BOLD | md::ITALIC | md::UNDERLINE | md::STRIKE | md::HIGHLIGHT | md::CODE;
+pub(crate) const STYLE: u16 =
+    md::BOLD | md::ITALIC | md::UNDERLINE | md::STRIKE | md::HIGHLIGHT | md::CODE;
 
 /// A whole `.html` document: embedded CSS, `<title>` from the note.
 pub(crate) fn export(text: &str, title: &str, ctx: &Context) -> String {
@@ -86,17 +87,17 @@ pub(crate) fn plain(text: &str, a: &Analysis, range: Range<usize>) -> String {
 
 /// `%%…%%` comment spans in `text`, skipped inside code — same scan the
 /// analyzer runs for its MUTED|ITALIC marking.
-fn comments(text: &str, a: &Analysis) -> Vec<Range<usize>> {
+pub(crate) fn comments(text: &str, a: &Analysis) -> Vec<Range<usize>> {
     md::comment_spans(text, &|o| {
         a.flags[o] & md::CODE != 0 || a.lines[a.line_of(o)].1 == md::Kind::Code
     })
 }
 
-fn clip(r: Range<usize>, sel: &Range<usize>) -> Range<usize> {
+pub(crate) fn clip(r: Range<usize>, sel: &Range<usize>) -> Range<usize> {
     r.start.max(sel.start)..r.end.min(sel.end)
 }
 
-fn trim(text: &str, mut r: Range<usize>) -> Range<usize> {
+pub(crate) fn trim(text: &str, mut r: Range<usize>) -> Range<usize> {
     let ws = |i: usize| text.as_bytes()[i].is_ascii_whitespace();
     while r.start < r.end && ws(r.start) {
         r.start += 1;
@@ -835,7 +836,7 @@ impl<'a> Emitter<'a> {
 }
 
 /// Entry with `range().start == i` in a sorted vec.
-fn at<T>(v: &[T], i: usize, r: impl Fn(&T) -> &Range<usize>) -> Option<&T> {
+pub(crate) fn at<T>(v: &[T], i: usize, r: impl Fn(&T) -> &Range<usize>) -> Option<&T> {
     let idx = v.partition_point(|x| r(x).start < i);
     match v.get(idx) {
         Some(x) if r(x).start == i => Some(x),
@@ -844,7 +845,7 @@ fn at<T>(v: &[T], i: usize, r: impl Fn(&T) -> &Range<usize>) -> Option<&T> {
 }
 
 /// `http://x`, `www.x` or `name@host` — the uri/email autolink cases.
-fn autolink(inner: &str) -> Option<String> {
+pub(crate) fn autolink(inner: &str) -> Option<String> {
     let s = inner.trim();
     let s = s
         .strip_prefix('<')
@@ -859,7 +860,7 @@ fn autolink(inner: &str) -> Option<String> {
     }
 }
 
-fn heading_level(heading: Node) -> u8 {
+pub(crate) fn heading_level(heading: Node) -> u8 {
     let mut cursor = heading.walk();
     heading
         .children(&mut cursor)

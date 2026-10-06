@@ -8,6 +8,17 @@ ignore = [
     "RUSTSEC-2025-0134", # rustls-pemfile
     "RUSTSEC-2026-0192", # ttf-parser
     "RUSTSEC-2026-0206", # rustybuzz
+    # Unmaintained crates pulled in transitively via pinned genpdf/printpdf
+    # versions (= pins); no upgrade is available until upstream updates.
+    "RUSTSEC-2020-0020", # stb_truetype
+    "RUSTSEC-2020-0056", # stdweb
+    "RUSTSEC-2020-0144", # lzw
+    "RUSTSEC-2021-0140", # rusttype
+    "RUSTSEC-2021-0153", # encoding
+    "RUSTSEC-2025-0056", # adler
+    # lopdf 0.26 (pinned by genpdf/printpdf): the flaw is in `load_mem` et al.
+    # (parsing untrusted PDFs); abstract only ever *writes* PDFs, never parses.
+    "RUSTSEC-2026-0187", # lopdf
 ]
 
 [licenses]

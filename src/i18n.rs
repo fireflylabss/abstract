@@ -264,6 +264,8 @@ pub enum Key {
     TableInsertColumnRight,
     TableDeleteRow,
     TableDeleteColumn,
+    ExportAsPdf,
+    ExportingPdf,
 }
 
 impl Key {
@@ -446,6 +448,8 @@ impl Key {
         Key::TableInsertColumnRight,
         Key::TableDeleteRow,
         Key::TableDeleteColumn,
+        Key::ExportAsPdf,
+        Key::ExportingPdf,
     ];
 }
 
@@ -644,6 +648,8 @@ fn en(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Insert column to the right",
         Key::TableDeleteRow => "Delete row",
         Key::TableDeleteColumn => "Delete column",
+        Key::ExportAsPdf => "Export as PDF…",
+        Key::ExportingPdf => "Exporting PDF…",
     }
 }
 
@@ -846,6 +852,8 @@ fn pt(k: Key) -> &'static str {
         Key::TableInsertColumnRight => "Inserir coluna à direita",
         Key::TableDeleteRow => "Apagar linha",
         Key::TableDeleteColumn => "Apagar coluna",
+        Key::ExportAsPdf => "Exportar como PDF…",
+        Key::ExportingPdf => "Exportando PDF…",
     }
 }
 
