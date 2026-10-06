@@ -78,7 +78,10 @@ All notable changes to abstract are documented here. The format follows
   an overall intensity slider, an optional custom tint and editor text
   opacity / high-contrast text options under an Advanced disclosure. When
   glass is off every surface renders byte-identical opaque colours; all
-  changes apply live and persist in settings.
+  changes apply live and persist in settings. Custom tints mix in RGB so
+  the chosen hue stays true, menus never drop below 88% opacity (there is
+  no backdrop blur behind them), and high-contrast text pushes every text
+  colour toward black or white.
 
 ### Changed
 - Motion polish across the 0.1.5 features: the tab strip collapses and
