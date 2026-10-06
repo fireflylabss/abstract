@@ -12,6 +12,7 @@ mod editor;
 mod find;
 mod fonts;
 mod footnote;
+mod glass;
 mod html;
 mod i18n;
 mod keymap;
@@ -91,6 +92,7 @@ fn main() {
                 cx.open_window(
                     WindowOptions {
                         window_bounds,
+                        window_background: glass::Glass::from_settings(&settings).appearance(),
                         titlebar: Some(TitlebarOptions {
                             title: Some("abstract".into()),
                             appears_transparent: true,
@@ -110,6 +112,7 @@ fn main() {
                     },
                     |window, cx| {
                         theme::apply(&settings, window.appearance(), cx);
+                        glass::apply(&settings, cx);
                         zoom::apply(Some(window), settings.zoom(), cx);
                         let view = cx.new(|cx| {
                             let mut app =

@@ -58,6 +58,7 @@ impl AbstractApp {
             .gap(z(2.))
             .px(z(6.))
             .overflow_hidden()
+            .bg(glass::bg(pal.bg, Surface::Tabs, cx))
             .border_b_1()
             .border_color(rgb(pal.line))
             .child(strip);

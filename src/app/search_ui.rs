@@ -248,7 +248,7 @@ impl AbstractApp {
             .left_1_2()
             .ml(z(-280.))
             .w(z(560.))
-            .bg(rgb(pal.menu_bg))
+            .bg(glass::bg(pal.menu_bg, Surface::Menus, cx))
             .border_1()
             .border_color(rgb(pal.menu_border))
             .rounded(z(8.))

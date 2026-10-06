@@ -103,7 +103,11 @@ pub fn bubble<V: TourHost>(
             ],
         ))
         .w(z(280.))
-        .bg(rgb(p.menu_bg))
+        .bg(crate::glass::bg(
+            p.menu_bg,
+            crate::glass::Surface::Menus,
+            cx,
+        ))
         .border_1()
         .border_color(rgb(p.menu_border))
         .rounded(z(8.))

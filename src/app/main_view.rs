@@ -46,6 +46,7 @@ impl AbstractApp {
             .gap(z(2.))
             .pl(px(chrome_left_pad(!self.sidebar_visible())))
             .pr(z(9.))
+            .bg(glass::bg(pal.bg, Surface::Toolbar, cx))
             .child(
                 self.ring(
                     5,
@@ -205,6 +206,7 @@ impl AbstractApp {
                         .min_w_0()
                         .min_h_0()
                         .h_full()
+                        .bg(glass::bg(pal.bg, Surface::Editor, cx))
                         .flex()
                         .flex_col()
                         .when(has_note, |s| {
@@ -295,7 +297,7 @@ impl AbstractApp {
                 .flex()
                 .flex_col()
                 .gap(z(6.))
-                .bg(rgb(pal.menu_bg))
+                .bg(glass::bg(pal.menu_bg, Surface::Menus, cx))
                 .border_1()
                 .border_color(rgb(pal.menu_border))
                 .rounded(z(8.))
@@ -447,7 +449,7 @@ impl AbstractApp {
             .flex()
             .flex_col()
             .gap(z(2.))
-            .bg(rgb(pal.menu_bg))
+            .bg(glass::bg(pal.menu_bg, Surface::Menus, cx))
             .border_1()
             .border_color(rgb(pal.menu_border))
             .rounded(z(8.))

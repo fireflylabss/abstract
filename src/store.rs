@@ -286,6 +286,117 @@ impl Settings {
     pub fn set_text_width(&mut self, width: TextWidth) {
         self.kv.set("text_width", width.as_str());
     }
+
+    /// `glass = on|off` — translucent window surfaces; missing → the OS
+    /// default (on where the compositor can blur, off on GNOME).
+    pub fn glass(&self) -> bool {
+        self.kv
+            .get("glass")
+            .map_or_else(crate::glass::default_enabled, |v| v == "on")
+    }
+
+    pub fn set_glass(&mut self, on: bool) {
+        self.kv.set("glass", if on { "on" } else { "off" });
+    }
+
+    /// `glass_material = blur|acrylic|mica|mica-alt|compositor`; missing or
+    /// from-another-OS values resolve to this OS's default.
+    pub fn glass_material(&self) -> crate::glass::Material {
+        self.kv.get("glass_material").map_or_else(
+            crate::glass::Material::default_for_os,
+            crate::glass::Material::parse,
+        )
+    }
+
+    pub fn set_glass_material(&mut self, m: crate::glass::Material) {
+        self.kv.set("glass_material", m.as_str());
+    }
+
+    /// `glass_intensity = 0-100` overall opacity multiplier.
+    pub fn glass_intensity(&self) -> u8 {
+        pct(self.kv.get("glass_intensity"), 100)
+    }
+
+    pub fn set_glass_intensity(&mut self, v: u8) {
+        self.kv.set("glass_intensity", &v.min(100).to_string());
+    }
+
+    /// `glass_<surface> = off|0-100` per-surface opacity; missing → the
+    /// surface default (sidebar/tab strip 75, others solid).
+    pub fn glass_surface(&self, s: crate::glass::Surface) -> Option<u8> {
+        match self.kv.get(s.key()) {
+            None => s.default_percent(),
+            Some("off") => None,
+            Some(v) => v
+                .parse::<u8>()
+                .ok()
+                .map(|p| p.min(100))
+                .or_else(|| s.default_percent()),
+        }
+    }
+
+    pub fn set_glass_surface(&mut self, s: crate::glass::Surface, v: Option<u8>) {
+        let v = v.map_or_else(|| "off".to_string(), |p| p.min(100).to_string());
+        self.kv.set(s.key(), &v);
+    }
+
+    /// `glass_tint = theme|custom`; custom reads `glass_tint_color = RRGGBB`.
+    pub fn glass_tint(&self) -> bool {
+        self.kv.get("glass_tint") == Some("custom")
+    }
+
+    pub fn set_glass_tint(&mut self, custom: bool) {
+        self.kv
+            .set("glass_tint", if custom { "custom" } else { "theme" });
+    }
+
+    pub fn glass_tint_color(&self) -> u32 {
+        self.kv
+            .get("glass_tint_color")
+            .and_then(|v| u32::from_str_radix(v.trim_start_matches('#'), 16).ok())
+            .filter(|c| *c <= 0xff_ff_ff)
+            .unwrap_or(crate::glass::DEFAULT_TINT_COLOR)
+    }
+
+    pub fn set_glass_tint_color(&mut self, c: u32) {
+        self.kv.set("glass_tint_color", &format!("{c:06x}"));
+    }
+
+    /// `glass_tint_strength = 0-100`.
+    pub fn glass_tint_strength(&self) -> u8 {
+        pct(self.kv.get("glass_tint_strength"), 50)
+    }
+
+    pub fn set_glass_tint_strength(&mut self, v: u8) {
+        self.kv.set("glass_tint_strength", &v.min(100).to_string());
+    }
+
+    /// `glass_text_opacity = 0-100`.
+    pub fn glass_text_opacity(&self) -> u8 {
+        pct(self.kv.get("glass_text_opacity"), 100)
+    }
+
+    pub fn set_glass_text_opacity(&mut self, v: u8) {
+        self.kv.set("glass_text_opacity", &v.min(100).to_string());
+    }
+
+    /// `glass_text_contrast = on|off` nudges editor text toward the
+    /// foreground colour for legibility over busy wallpapers.
+    pub fn glass_text_contrast(&self) -> bool {
+        self.kv.get("glass_text_contrast") == Some("on")
+    }
+
+    pub fn set_glass_text_contrast(&mut self, on: bool) {
+        self.kv
+            .set("glass_text_contrast", if on { "on" } else { "off" });
+    }
+}
+
+/// Parse a `0-100` percentage, `default` when missing or malformed.
+fn pct(v: Option<&str>, default: u8) -> u8 {
+    v.and_then(|v| v.parse::<u8>().ok())
+        .unwrap_or(default)
+        .min(100)
 }
 
 /// `window = maximized|windowed <x> <y> <w> <h>` in logical pixels.
@@ -704,5 +815,71 @@ mod tests {
             PathBuf::from("/tmp/abstract-xdg-wins")
         );
         unsafe { std::env::remove_var(VAR) };
+    }
+
+    #[test]
+    fn glass_defaults_and_roundtrip() {
+        let mut s = Settings::default();
+        // Missing keys read as the per-OS default material, full strength,
+        // sidebar+tabs at 75%, everything else opaque, theme tint.
+        assert_eq!(s.glass(), crate::glass::default_enabled());
+        assert_eq!(s.glass_material(), crate::glass::Material::default_for_os());
+        assert_eq!(s.glass_intensity(), 100);
+        assert_eq!(s.glass_surface(crate::glass::Surface::Sidebar), Some(75));
+        assert_eq!(s.glass_surface(crate::glass::Surface::Tabs), Some(75));
+        for surf in crate::glass::Surface::ALL {
+            let want = surf.default_percent();
+            assert_eq!(s.glass_surface(surf), want, "{surf:?}");
+        }
+        assert!(!s.glass_tint());
+        assert_eq!(s.glass_tint_color(), crate::glass::DEFAULT_TINT_COLOR);
+        assert_eq!(s.glass_tint_strength(), 50);
+        assert_eq!(s.glass_text_opacity(), 100);
+        assert!(!s.glass_text_contrast());
+
+        // Round-trip through serialization.
+        s.set_glass(false);
+        s.set_glass_material(crate::glass::Material::default_for_os());
+        s.set_glass_intensity(42);
+        s.set_glass_surface(crate::glass::Surface::Sidebar, Some(60));
+        s.set_glass_surface(crate::glass::Surface::Menus, None);
+        s.set_glass_tint(true);
+        s.set_glass_tint_color(0xff8800);
+        s.set_glass_tint_strength(25);
+        s.set_glass_text_opacity(80);
+        s.set_glass_text_contrast(true);
+        let again = Settings {
+            kv: KeyVals::parse(&s.kv.serialize()),
+        };
+        assert!(!again.glass());
+        assert_eq!(again.glass_intensity(), 42);
+        assert_eq!(
+            again.glass_surface(crate::glass::Surface::Sidebar),
+            Some(60)
+        );
+        assert_eq!(again.glass_surface(crate::glass::Surface::Menus), None);
+        assert_eq!(again.kv.get("glass_menus"), Some("off"));
+        assert!(again.glass_tint());
+        assert_eq!(again.glass_tint_color(), 0xff8800);
+        assert_eq!(again.kv.get("glass_tint_color"), Some("ff8800"));
+        assert_eq!(again.glass_tint_strength(), 25);
+        assert_eq!(again.glass_text_opacity(), 80);
+        assert!(again.glass_text_contrast());
+
+        // Garbage and out-of-range values fall back to defaults/clamps.
+        let bad = Settings {
+            kv: KeyVals::parse(
+                "glass_intensity = banana\nglass_tint_color = ffffff00\nglass_sidebar = 300\n",
+            ),
+        };
+        assert_eq!(bad.glass_intensity(), 100);
+        assert_eq!(bad.glass_tint_color(), crate::glass::DEFAULT_TINT_COLOR);
+        // Out-of-range is unparseable, so the surface default wins.
+        assert_eq!(bad.glass_surface(crate::glass::Surface::Sidebar), Some(75));
+        // A material saved on another OS parses to one valid here.
+        let foreign = Settings {
+            kv: KeyVals::parse("glass_material = mica\n"),
+        };
+        assert!(crate::glass::Material::options().contains(&foreign.glass_material()));
     }
 }
