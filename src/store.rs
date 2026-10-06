@@ -5,6 +5,7 @@
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use crate::editor::TextWidth;
 use crate::i18n::LangPref;
 use crate::spell::SpellLang;
 use crate::theme::ThemePref;
@@ -263,6 +264,18 @@ impl Settings {
 
     pub fn set_spell_lang(&mut self, lang: SpellLang) {
         self.kv.set("spell_lang", lang.as_str());
+    }
+
+    /// `text_width = narrow|medium|wide` caps the text column; missing or
+    /// unknown reads as `Medium` (the old fixed 700pt column).
+    pub fn text_width(&self) -> TextWidth {
+        self.kv
+            .get("text_width")
+            .map_or(TextWidth::Medium, TextWidth::parse)
+    }
+
+    pub fn set_text_width(&mut self, width: TextWidth) {
+        self.kv.set("text_width", width.as_str());
     }
 }
 
@@ -618,6 +631,26 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "two");
         assert!(!dir.join("nested").join(".out.txt.abstract-tmp").exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn text_width_setting_defaults_and_roundtrip() {
+        let mut s = Settings::default();
+        // Missing reads as medium.
+        assert_eq!(s.text_width(), TextWidth::Medium);
+        for w in TextWidth::ALL {
+            s.set_text_width(w);
+            let again = Settings {
+                kv: KeyVals::parse(&s.kv.serialize()),
+            };
+            assert_eq!(again.text_width(), w);
+            assert_eq!(again.kv.get("text_width"), Some(w.as_str()));
+        }
+        // Garbage also reads as medium.
+        let bad = Settings {
+            kv: KeyVals::parse("text_width = banana\n"),
+        };
+        assert_eq!(bad.text_width(), TextWidth::Medium);
     }
 
     #[test]

@@ -55,6 +55,10 @@ All notable changes to abstract are documented here. The format follows
   only over the visible area with a per-line cache so typing stays fast on
   large notes.
 
+### Added
+- Text width setting in Settings → Editor: narrow (580), medium (700, the
+  previous fixed width) or wide (880) column, applied instantly.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added

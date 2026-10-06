@@ -24,7 +24,6 @@ use crate::table::{self as pipe, Align};
 use crate::theme::Palette;
 use crate::zoom::{factor, z};
 
-const MAX_COL: f32 = 700.;
 const PAD_X: f32 = 48.;
 const PAD_TOP: f32 = 28.;
 const GRID_FS: f32 = 15.;
@@ -32,6 +31,46 @@ const GRID_LH: f32 = 22.;
 const GRID_PAD_X: f32 = 12.;
 const GRID_PAD_Y: f32 = 7.;
 const GRID_MIN_COL: f32 = 56.;
+
+/// `text_width` setting: caps the text column at `max_col` points (before
+/// zoom). `Medium` is the historical fixed width.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextWidth {
+    Narrow,
+    #[default]
+    Medium,
+    Wide,
+}
+
+impl TextWidth {
+    pub const ALL: [Self; 3] = [Self::Narrow, Self::Medium, Self::Wide];
+
+    /// Missing or unknown values read as `Medium`.
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "narrow" => Self::Narrow,
+            "wide" => Self::Wide,
+            _ => Self::Medium,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Narrow => "narrow",
+            Self::Medium => "medium",
+            Self::Wide => "wide",
+        }
+    }
+
+    /// Column cap in points, before the zoom factor.
+    pub fn max_col(&self) -> f32 {
+        match self {
+            Self::Narrow => 580.,
+            Self::Medium => 700.,
+            Self::Wide => 880.,
+        }
+    }
+}
 
 actions!(
     live_editor,
@@ -242,6 +281,9 @@ pub struct LiveEditor {
     spell_cache: RefCell<HashMap<u64, Arc<Vec<Range<usize>>>>>,
     /// Last `changed()` timestamp; fresh scans wait out `spell::DEBOUNCE`.
     last_edit: Option<Instant>,
+    /// Text column cap in points, before zoom; set from the `text_width`
+    /// setting.
+    max_col: f32,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
@@ -281,6 +323,7 @@ impl LiveEditor {
             spell_lang: SpellLang::Auto,
             spell_cache: RefCell::new(HashMap::new()),
             last_edit: None,
+            max_col: TextWidth::Medium.max_col(),
         };
         // Dictionaries inflate + parse off the UI thread; underlines appear
         // when the engine lands (a repaint on `cx.notify`).
@@ -353,6 +396,14 @@ impl LiveEditor {
     pub fn set_raw_tables(&mut self, on: bool, cx: &mut Context<Self>) {
         if self.raw_tables != on {
             self.raw_tables = on;
+            cx.notify();
+        }
+    }
+
+    /// Column cap the text wraps to, in points before zoom.
+    pub fn set_max_col(&mut self, col: f32, cx: &mut Context<Self>) {
+        if self.max_col != col {
+            self.max_col = col;
             cx.notify();
         }
     }
@@ -2262,7 +2313,7 @@ impl Element for EditorElement {
         };
         let width = f32::from(bounds.size.width);
         let view_h = f32::from(bounds.size.height);
-        let col_w = (width - PAD_X * zf * 2.).clamp(120. * zf, MAX_COL * zf);
+        let col_w = (width - PAD_X * zf * 2.).clamp(120. * zf, ed.max_col * zf);
         let col_x = ((width - col_w) / 2.).max(0.);
         // Unfocused: everything renders; focused: the selection reveals syntax.
         let reveal = if ed.focus.is_focused(window) {

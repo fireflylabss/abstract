@@ -278,6 +278,11 @@ pub enum Key {
     SpellLang,
     SpellLangAuto,
     SpellLangBoth,
+    // Text width setting
+    TextWidth,
+    TextWidthNarrow,
+    TextWidthMedium,
+    TextWidthWide,
 }
 
 impl Key {
@@ -472,6 +477,10 @@ impl Key {
         Key::SpellLang,
         Key::SpellLangAuto,
         Key::SpellLangBoth,
+        Key::TextWidth,
+        Key::TextWidthNarrow,
+        Key::TextWidthMedium,
+        Key::TextWidthWide,
     ];
 }
 
@@ -682,6 +691,10 @@ fn en(k: Key) -> &'static str {
         Key::SpellLang => "Spellcheck language",
         Key::SpellLangAuto => "Automatic",
         Key::SpellLangBoth => "Both",
+        Key::TextWidth => "Text width",
+        Key::TextWidthNarrow => "Narrow",
+        Key::TextWidthMedium => "Medium",
+        Key::TextWidthWide => "Wide",
     }
 }
 
@@ -896,6 +909,10 @@ fn pt(k: Key) -> &'static str {
         Key::SpellLang => "Idioma da ortografia",
         Key::SpellLangAuto => "Automático",
         Key::SpellLangBoth => "Ambos",
+        Key::TextWidth => "Largura do texto",
+        Key::TextWidthNarrow => "Estreita",
+        Key::TextWidthMedium => "Média",
+        Key::TextWidthWide => "Larga",
     }
 }
 

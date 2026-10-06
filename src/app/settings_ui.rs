@@ -408,6 +408,43 @@ impl AbstractApp {
                         cx,
                     )
                 }));
+        let widths = div()
+            .flex()
+            .gap(z(4.))
+            .children(TextWidth::ALL.map(|width| {
+                let on = self.settings.text_width() == width;
+                hover_bg(
+                    div()
+                        .id(SharedString::from(format!("text-width-{}", width.as_str())))
+                        .role(Role::RadioButton)
+                        .aria_selected(on)
+                        .flex_1()
+                        .h(z(30.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(z(6.))
+                        .border_1()
+                        .border_color(rgb(if on { pal.fg } else { pal.line }))
+                        .cursor_pointer()
+                        .text_size(z(12.))
+                        .text_color(rgb(if on { pal.fg } else { pal.body }))
+                        .active(|s| s.bg(rgb(pal.active)))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.set_text_width(width, window, cx)
+                        }))
+                        .child(t(match width {
+                            TextWidth::Narrow => Key::TextWidthNarrow,
+                            TextWidth::Medium => Key::TextWidthMedium,
+                            TextWidth::Wide => Key::TextWidthWide,
+                        })),
+                    SharedString::from(format!("text-width-{}", width.as_str())),
+                    on.then_some(pal.active),
+                    pal.hover,
+                    window,
+                    cx,
+                )
+            }));
         let discord = self.settings.discord();
         let spell_on = self.settings.spellcheck();
         let body = div()
@@ -437,6 +474,8 @@ impl AbstractApp {
                     cx.listener(move |this, _, window, cx| this.set_raw_tables(!raw, window, cx)),
                 ),
             )
+            .child(sub(t(Key::TextWidth)))
+            .child(widths)
             .child(section(t(Key::General)))
             .child(hover_bg(
                 div()
@@ -728,5 +767,20 @@ impl AbstractApp {
             crate::spell::SpellLang::PtBr => "Português (Brasil)",
             crate::spell::SpellLang::Both => t(Key::SpellLangBoth),
         }
+    }
+
+    /// `text_width` picker in Editor: applies the column cap live, then
+    /// persists it.
+    fn set_text_width(&mut self, width: TextWidth, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.set_text_width(width);
+        self.apply_text_width(&self.editor.clone(), cx);
+        self.save_settings(window, cx);
+    }
+
+    /// Pushes the `text_width` column cap onto one `LiveEditor` — called at
+    /// startup and whenever the setting changes; each new editor needs it.
+    pub(crate) fn apply_text_width(&self, editor: &Entity<LiveEditor>, cx: &mut App) {
+        let col = self.settings.text_width().max_col();
+        editor.update(cx, |ed, cx| ed.set_max_col(col, cx));
     }
 }
