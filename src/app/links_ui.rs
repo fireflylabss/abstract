@@ -13,7 +13,7 @@ impl AbstractApp {
     /// with a `# target` heading when nothing resolves.
     pub(crate) fn open_link(&mut self, target: &str, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(path) = crate::links::resolve(&self.tree, target) {
-            self.open_path(path, None, window, cx);
+            self.open_path_tab(path, None, window, cx);
             return;
         }
         let stem = vault::stem_for_title(target);
@@ -26,7 +26,7 @@ impl AbstractApp {
         }
         self.expand_to(&path);
         self.rescan_tree(cx);
-        self.open_path(path, None, window, cx);
+        self.open_path_tab(path, None, window, cx);
     }
 
     /// Recompute the `[[…]]` completion on every buffer change.

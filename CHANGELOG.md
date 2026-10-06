@@ -6,6 +6,20 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Note tabs: several notes open at once under a compact tab strip above the
+  editor — each tab shows the note title, an unsaved dot and a close button
+  on hover, and scrolls sideways when it overflows. Clicking a note reuses
+  the active tab; `Cmd/Ctrl`+click, middle-click and "Open in new tab" in
+  the sidebar context menu open a new tab, as does `Cmd`+clicking a
+  [[wiki-link]].
+- Tab shortcuts: `Cmd/Ctrl`+`W` closes the tab, `Ctrl`+`Tab` /
+  `Ctrl`+`Shift`+`Tab` cycle, `Cmd/Ctrl`+`1`..`9` jumps to a tab (`9` = last),
+  `Cmd/Ctrl`+`Shift`+`T` reopens the last closed tab.
+- Open tabs, the active one and each tab's cursor/scroll are restored when
+  the app or a space is reopened; every tab keeps its own autosave and
+  word count.
+
 ## [0.1.4] - 2026-10-02
 
 ### Added

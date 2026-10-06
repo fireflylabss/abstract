@@ -218,16 +218,17 @@ pub(crate) fn retarget_file(path: &Path, old: &str, new: &str) -> std::io::Resul
 }
 
 /// Rewrites `[[old]]` links to the stem of `renamed` in every note under
-/// `root`, `renamed` included, except `open` (the editor buffer, retargeted
-/// by the caller). Returns `None`, writing nothing, when another note carries
-/// either stem; otherwise the number of notes that could not be rewritten.
+/// `root`, `renamed` included, except `open` (open tab paths — their buffers
+/// are retargeted by the caller instead). Returns `None`, writing nothing,
+/// when another note carries either stem; otherwise the number of notes that
+/// could not be rewritten.
 /// `strict` (automatic renames while typing a title) also refuses when a link
 /// already targets the new stem.
 pub(crate) fn relink(
     root: &Path,
     renamed: &Path,
     old: &str,
-    open: Option<&Path>,
+    open: &[PathBuf],
     strict: bool,
 ) -> Option<usize> {
     let new = renamed
@@ -266,7 +267,7 @@ pub(crate) fn relink(
         {
             return None;
         }
-        if Some(path.as_path()) == open {
+        if open.contains(&path) {
             continue;
         }
         let e = retarget(&text, &links, old, &new);
@@ -441,7 +442,7 @@ mod tests {
         std::fs::write(dir.join("sub/b.md"), "[[Projeto|p]] and [[Other]]\n").unwrap();
         std::fs::write(dir.join("open.md"), "[[Projeto]]\n").unwrap();
         assert_eq!(
-            relink(&dir, &new, "Projeto", Some(&dir.join("open.md")), false),
+            relink(&dir, &new, "Projeto", &[dir.join("open.md")], false),
             Some(0)
         );
         let read = |p: &str| std::fs::read_to_string(dir.join(p)).unwrap();
@@ -462,7 +463,7 @@ mod tests {
         std::fs::write(&new, "").unwrap();
         std::fs::write(dir.join("sub/Projeto.md"), "").unwrap();
         std::fs::write(dir.join("a.md"), "[[Projeto]]\n").unwrap();
-        assert_eq!(relink(&dir, &new, "Projeto", None, false), None);
+        assert_eq!(relink(&dir, &new, "Projeto", &[], false), None);
         assert_eq!(
             std::fs::read_to_string(dir.join("a.md")).unwrap(),
             "[[Projeto]]\n"
@@ -470,12 +471,12 @@ mod tests {
 
         std::fs::remove_file(dir.join("sub/Projeto.md")).unwrap();
         std::fs::write(dir.join("b.md"), "[[plano]] dangling\n").unwrap();
-        assert_eq!(relink(&dir, &new, "Projeto", None, true), None);
+        assert_eq!(relink(&dir, &new, "Projeto", &[], true), None);
         assert_eq!(
             std::fs::read_to_string(dir.join("a.md")).unwrap(),
             "[[Projeto]]\n"
         );
-        assert_eq!(relink(&dir, &new, "Projeto", None, false), Some(0));
+        assert_eq!(relink(&dir, &new, "Projeto", &[], false), Some(0));
         assert_eq!(
             std::fs::read_to_string(dir.join("a.md")).unwrap(),
             "[[Plano]]\n"

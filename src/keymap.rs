@@ -33,8 +33,22 @@ actions!(
         ZoomIn,
         ZoomOut,
         ZoomReset,
+        CloseTab,
+        NextTab,
+        PrevTab,
+        ReopenClosedTab,
     ]
 );
+
+/// `Cmd/Ctrl+1..9` jumps to a tab; `last` (the `9` key) goes to the final
+/// one, however many are open.
+#[derive(Clone, PartialEq, gpui_kit::Action)]
+#[action(namespace = abstract_app, no_json)]
+pub struct GoToTab {
+    /// 0-based index into the tab strip.
+    pub ix: usize,
+    pub last: bool,
+}
 
 pub(crate) fn bind_keys(cx: &mut App) {
     let c = Some("AbstractApp");
@@ -80,5 +94,29 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd--", ZoomOut, c),
         KeyBinding::new("ctrl-0", ZoomReset, c),
         KeyBinding::new("cmd-0", ZoomReset, c),
+        KeyBinding::new("ctrl-w", CloseTab, c),
+        KeyBinding::new("cmd-w", CloseTab, c),
+        KeyBinding::new("ctrl-tab", NextTab, c),
+        KeyBinding::new("ctrl-shift-tab", PrevTab, c),
+        KeyBinding::new("ctrl-shift-t", ReopenClosedTab, c),
+        KeyBinding::new("cmd-shift-t", ReopenClosedTab, c),
+        KeyBinding::new("ctrl-1", GoToTab { ix: 0, last: false }, c),
+        KeyBinding::new("cmd-1", GoToTab { ix: 0, last: false }, c),
+        KeyBinding::new("ctrl-2", GoToTab { ix: 1, last: false }, c),
+        KeyBinding::new("cmd-2", GoToTab { ix: 1, last: false }, c),
+        KeyBinding::new("ctrl-3", GoToTab { ix: 2, last: false }, c),
+        KeyBinding::new("cmd-3", GoToTab { ix: 2, last: false }, c),
+        KeyBinding::new("ctrl-4", GoToTab { ix: 3, last: false }, c),
+        KeyBinding::new("cmd-4", GoToTab { ix: 3, last: false }, c),
+        KeyBinding::new("ctrl-5", GoToTab { ix: 4, last: false }, c),
+        KeyBinding::new("cmd-5", GoToTab { ix: 4, last: false }, c),
+        KeyBinding::new("ctrl-6", GoToTab { ix: 5, last: false }, c),
+        KeyBinding::new("cmd-6", GoToTab { ix: 5, last: false }, c),
+        KeyBinding::new("ctrl-7", GoToTab { ix: 6, last: false }, c),
+        KeyBinding::new("cmd-7", GoToTab { ix: 6, last: false }, c),
+        KeyBinding::new("ctrl-8", GoToTab { ix: 7, last: false }, c),
+        KeyBinding::new("cmd-8", GoToTab { ix: 7, last: false }, c),
+        KeyBinding::new("ctrl-9", GoToTab { ix: 0, last: true }, c),
+        KeyBinding::new("cmd-9", GoToTab { ix: 0, last: true }, c),
     ]);
 }
