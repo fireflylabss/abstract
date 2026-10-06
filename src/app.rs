@@ -136,6 +136,18 @@ enum SaveState {
     Pending,
     Failed,
 }
+
+/// What a trashed note needs to come back: its text, where it lived and
+/// where its tab sat. Held in memory while the undo notice is up; the
+/// OS-trash copy stays untouched.
+struct PendingUndo {
+    path: PathBuf,
+    text: String,
+    /// Strip index to restore the tab at (`None`: it was not open).
+    tab_ix: Option<usize>,
+    /// Cursor + scroll it had while open.
+    view: Option<(usize, f32)>,
+}
 /// One serialized on-disk update: rename to the title stem when synced, then
 /// write. A rename also relinks `[[old stem]]` in the other notes of `space`.
 /// Returns whether the visible tree changed (created or renamed).
@@ -258,8 +270,9 @@ pub(crate) struct AbstractApp {
     tabs: Vec<NoteTab>,
     /// Index into `tabs`; `None` shows the empty state.
     active: Option<usize>,
-    /// Recently closed note paths, most recent last (`Cmd+Shift+T` reopens).
-    closed_tabs: Vec<PathBuf>,
+    /// Recently closed note paths + their strip index, most recent last
+    /// (`Cmd+Shift+T` reopens at the old slot).
+    closed_tabs: Vec<(PathBuf, usize)>,
     /// Subscriptions of the blank editor shown when every tab is closed.
     _scratch_subs: Option<Vec<Subscription>>,
     next_tab_id: u64,
@@ -267,6 +280,10 @@ pub(crate) struct AbstractApp {
     /// Focus mode hides chrome and dims everything but the caret's block;
     /// deliberately not part of the saved session.
     focus_mode: bool,
+    /// Last trashed note while its 5s "Undo" notice is up.
+    trash_undo: Option<PendingUndo>,
+    /// Bumped per trash/undo so the notice's auto-dismiss fires once.
+    trash_undo_gen: usize,
 }
 impl AbstractApp {
     pub(crate) fn new(
@@ -348,6 +365,8 @@ impl AbstractApp {
             next_tab_id: 0,
             empty_focus: cx.focus_handle(),
             focus_mode: false,
+            trash_undo: None,
+            trash_undo_gen: 0,
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
         app._io_task = Some(cx.spawn_in(window, async move |this, cx| {

@@ -631,6 +631,37 @@ mod tests {
     }
 
     #[test]
+    fn session_tabs_keep_strip_order_with_active_in_the_middle() {
+        let space = PathBuf::from("/s");
+        let n = |rel: &str| SessionNote {
+            space: space.clone(),
+            rel: PathBuf::from(rel),
+            cursor: 0,
+            scroll: 0.,
+        };
+        let notes = vec![n("a.md"), n("b.md"), n("c.md")];
+        let mut s = Session::default();
+        s.set_tabs(&notes);
+        s.set_active_tab(Some((&space, Path::new("b.md"))));
+        // The serialized `tab` lines keep strip order — active stays put.
+        let tab_lines: Vec<&str> =
+            s.kv.lines
+                .iter()
+                .filter(|l| l.starts_with("tab "))
+                .map(String::as_str)
+                .collect();
+        assert_eq!(tab_lines.len(), 3);
+        assert!(tab_lines[0].contains("\ta.md\t"));
+        assert!(tab_lines[1].contains("\tb.md\t"));
+        assert!(tab_lines[2].contains("\tc.md\t"));
+        let again = Session {
+            kv: KeyVals::parse(&s.kv.serialize()),
+        };
+        assert_eq!(again.tabs(), notes);
+        assert_eq!(again.active_tab(), Some((space, "b.md".into())));
+    }
+
+    #[test]
     fn write_atomic_writes_and_overwrites() {
         let dir = std::env::temp_dir().join(format!("abstract-store-test-{}", std::process::id()));
         let file = dir.join("nested").join("out.txt");

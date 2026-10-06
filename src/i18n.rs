@@ -288,6 +288,8 @@ pub enum Key {
     SmartQuotesHint,
     // Focus mode
     FocusMode,
+    // Trash undo notice
+    NoteTrashedUndo,
 }
 
 impl Key {
@@ -489,6 +491,7 @@ impl Key {
         Key::SmartQuotes,
         Key::SmartQuotesHint,
         Key::FocusMode,
+        Key::NoteTrashedUndo,
     ];
 }
 
@@ -706,6 +709,7 @@ fn en(k: Key) -> &'static str {
         Key::SmartQuotes => "Smart quotes",
         Key::SmartQuotesHint => "Typographic “quotes” and — dashes while you type.",
         Key::FocusMode => "Focus mode ({MOD}+Shift+Enter)",
+        Key::NoteTrashedUndo => "Note moved to trash · Undo",
     }
 }
 
@@ -927,6 +931,7 @@ fn pt(k: Key) -> &'static str {
         Key::SmartQuotes => "Aspas tipográficas",
         Key::SmartQuotesHint => "Aspas “curvas” e travessões — ao digitar.",
         Key::FocusMode => "Modo foco ({MOD}+Shift+Enter)",
+        Key::NoteTrashedUndo => "Nota movida para a lixeira · Desfazer",
     }
 }
 

@@ -219,8 +219,8 @@ impl AbstractApp {
         if let Some(tab) = self.tabs.get(ix) {
             let path = tab.path();
             if path.exists() {
-                self.closed_tabs.retain(|p| *p != path);
-                self.closed_tabs.push(path);
+                self.closed_tabs.retain(|(p, _)| *p != path);
+                self.closed_tabs.push((path, ix));
                 if self.closed_tabs.len() > 20 {
                     self.closed_tabs.remove(0);
                 }
@@ -230,11 +230,12 @@ impl AbstractApp {
         self.remove_tab(ix, window, cx);
     }
 
-    /// Cmd/Ctrl+Shift+T: reopen the most recently closed note, as a new tab.
+    /// Cmd/Ctrl+Shift+T: reopen the most recently closed note at the strip
+    /// slot it left.
     pub(crate) fn reopen_closed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        while let Some(path) = self.closed_tabs.pop() {
+        while let Some((path, ix)) = self.closed_tabs.pop() {
             if path.exists() {
-                self.open_path_tab(path, None, window, cx);
+                self.open(path, None, true, Some(ix), window, cx);
                 return;
             }
         }
@@ -285,7 +286,7 @@ impl AbstractApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.open(path, restore, false, window, cx);
+        self.open(path, restore, false, None, window, cx);
     }
 
     /// Open `path` in its own tab (Cmd+click, middle-click, menu item).
@@ -296,14 +297,17 @@ impl AbstractApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.open(path, restore, true, window, cx);
+        self.open(path, restore, true, None, window, cx);
     }
 
+    /// `at` only applies to a fresh tab: insert at that strip slot instead
+    /// of appending (clamped to the end).
     fn open(
         &mut self,
         path: PathBuf,
         restore: Option<(usize, f32)>,
         new_tab: bool,
+        at: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -357,7 +361,22 @@ impl AbstractApp {
                         ix
                     }
                     // The tab meant for reuse was closed meanwhile.
-                    None => this.push_tab(file, synced, read.0, restore, false, cx),
+                    None => {
+                        let ix = this.push_tab(file, synced, read.0, restore, false, cx);
+                        match at {
+                            Some(at) if at < ix => {
+                                let tab = this.tabs.remove(ix);
+                                this.tabs.insert(at, tab);
+                                if let Some(a) = this.active
+                                    && a >= at
+                                {
+                                    this.active = Some(a + 1);
+                                }
+                                at
+                            }
+                            _ => ix,
+                        }
+                    }
                 };
                 this.activate(ix, window, cx);
             })
@@ -413,6 +432,7 @@ impl AbstractApp {
     }
 
     /// Send a path to the trash off-thread; failure only shows a notice.
+    /// Folder deletes route here; notes go through `trash_note` for undo.
     pub(crate) fn trash_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let ok = cx
@@ -437,6 +457,107 @@ impl AbstractApp {
         .detach();
     }
 
+    /// Trash a note, keeping its text + slot in memory so the notice's Undo
+    /// can bring it back. `text` of `None` reads the file first (row delete
+    /// of a note that isn't open).
+    fn trash_note(
+        &mut self,
+        path: PathBuf,
+        tab_ix: Option<usize>,
+        view: Option<(usize, f32)>,
+        text: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |this, cx| {
+            let ok = cx
+                .background_executor()
+                .spawn({
+                    let p = path.clone();
+                    async move {
+                        let text = match text {
+                            Some(t) => Some(t),
+                            None => std::fs::read_to_string(&p).ok(),
+                        }?;
+                        trash::delete(&p)
+                            .map_err(|e| eprintln!("abstract: cannot trash {}: {e}", p.display()))
+                            .ok()?;
+                        Some(text)
+                    }
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                match ok {
+                    Some(text) => {
+                        this.trash_undo = Some(PendingUndo {
+                            path,
+                            text,
+                            tab_ix,
+                            view,
+                        });
+                        this.arm_undo_notice(cx);
+                    }
+                    None => this.notice = Some(t(Key::TrashFailed).into()),
+                }
+                this.rescan_tree(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// The 5s "moved to trash · Undo" notice on the status chip.
+    fn arm_undo_notice(&mut self, cx: &mut Context<Self>) {
+        self.trash_undo_gen += 1;
+        let seq = self.trash_undo_gen;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_secs(5)).await;
+            this.update(cx, |this, cx| {
+                if this.trash_undo_gen == seq {
+                    this.trash_undo = None;
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// The notice's Undo: rewrite the note's file and reopen its tab at the
+    /// old slot with its cursor back.
+    pub(crate) fn undo_trash(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(undo) = self.trash_undo.take() else {
+            return;
+        };
+        self.trash_undo_gen += 1;
+        self.status_open = false;
+        cx.spawn_in(window, async move |this, cx| {
+            let ok = cx
+                .background_executor()
+                .spawn({
+                    let p = undo.path.clone();
+                    async move {
+                        if let Some(d) = p.parent() {
+                            let _ = std::fs::create_dir_all(d);
+                        }
+                        store::write_atomic(&p, undo.text.as_bytes()).is_ok()
+                    }
+                })
+                .await;
+            this.update_in(cx, |this, window, cx| {
+                if ok {
+                    this.rescan_tree(cx);
+                    this.open(undo.path, undo.view, true, undo.tab_ix, window, cx);
+                } else {
+                    this.notice = Some(t(Key::TrashFailed).into());
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     pub(crate) fn delete_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(ix) = self.active else {
             return;
@@ -454,6 +575,7 @@ impl AbstractApp {
         let file = tab.file.clone();
         let synced = tab.synced;
         let text = tab.editor.read(cx).text().to_string();
+        let view = tab.editor.read(cx).view_state();
         let lock = self.write_lock.clone();
         let space = self.dir.clone();
         let open = self.tab_paths();
@@ -461,19 +583,33 @@ impl AbstractApp {
         cx.spawn(async move |this, cx| {
             let gone = cx
                 .background_executor()
-                .spawn(async move {
-                    if pending {
-                        let _ = write_note(&lock, &file, synced, &text, Some(&space), &open);
+                .spawn({
+                    let text = text.clone();
+                    async move {
+                        if pending {
+                            let _ = write_note(&lock, &file, synced, &text, Some(&space), &open);
+                        }
+                        let mut f = guard(&file);
+                        f.deleted = true;
+                        let p = f.path.clone();
+                        (p.clone(), p.exists())
                     }
-                    let mut f = guard(&file);
-                    f.deleted = true;
-                    let p = f.path.clone();
-                    p.exists().then_some(p)
                 })
                 .await;
             this.update(cx, |this, cx| match gone {
-                Some(p) => this.trash_path(p, cx),
-                None => this.rescan_tree(cx),
+                (p, true) => this.trash_note(p, Some(ix), Some(view), Some(text), cx),
+                // Never hit the disk (untouched pending note): still offer
+                // Undo — it just writes the buffer back.
+                (path, false) => {
+                    this.trash_undo = Some(PendingUndo {
+                        path,
+                        text,
+                        tab_ix: Some(ix),
+                        view: Some(view),
+                    });
+                    this.arm_undo_notice(cx);
+                    this.rescan_tree(cx);
+                }
             })
             .ok();
         })
@@ -502,7 +638,7 @@ impl AbstractApp {
                 if let Some(ix) = self.tabs.iter().position(|t| t.path() == path) {
                     self.delete_tab(ix, window, cx);
                 } else {
-                    self.trash_path(path, cx);
+                    self.trash_note(path, None, None, None, cx);
                 }
             }
             NodeKind::Folder => self.delete_folder(path, window, cx),

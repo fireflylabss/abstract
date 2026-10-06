@@ -84,6 +84,18 @@ All notable changes to abstract are documented here. The format follows
   source, printed monospace so they read as source rather than broken
   glyphs; money like `R$ 10` stays literal.
 
+### Fixed
+- Deleting a note (toolbar trash, `Cmd/Ctrl`+`Shift`+`Backspace` or the
+  sidebar row's delete) is no longer silently final: the status chip shows
+  "Note moved to trash · Undo" for 5 seconds, and clicking it rewrites the
+  file, reopens the tab at its old slot and restores the cursor. Folders
+  keep the confirmation prompt.
+- Open tabs now restore in strip order on relaunch — the active tab keeps
+  its position instead of moving to the end (`tab_active` records it, and
+  sessions saved by older versions still load). `Cmd/Ctrl`+`Shift`+`T`
+  reopens a closed tab at its former index instead of the end of the strip.
+- The focus-mode toolbar button renders its icon (it was blank).
+
 ## [0.1.4] - 2026-10-02
 
 ### Added
