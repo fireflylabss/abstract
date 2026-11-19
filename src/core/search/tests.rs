@@ -1,5 +1,38 @@
 use super::*;
 
+#[test]
+fn open_buffers_override_disk_and_include_unsaved_notes() {
+    let dir = space("buffers");
+    let path = write(&dir, "note.md", "old disk text", 0);
+    let buffers = HashMap::from([
+        (path.clone(), "unsaved Straße".into()),
+        (dir.join("new.md"), "another Straße".into()),
+    ]);
+    let hits = search_with(&dir, "strasse", &buffers);
+    assert_eq!(hits.len(), 2);
+    for hit in hits {
+        assert_eq!(&buffers[&hit.path][hit.range], "Straße");
+    }
+    assert!(search_with(&dir, "old disk", &buffers).is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn expanding_case_matches_point_into_original_text() {
+    let dir = space("unicode-ranges");
+    let source = "# Note\r\nİ before STRAẞE and Straße\r\n";
+    write(&dir, "note.md", source, 0);
+    for (query, expected) in [("i̇", "İ"), ("strasse", "STRAẞE"), ("before", "before")] {
+        let hits = search(&dir, query);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(&source[hits[0].range.clone()], expected);
+        assert_eq!(hits[0].line, 2);
+    }
+    assert!(search(&dir, "absent").is_empty());
+    assert!(search(&dir.join("missing"), "note").is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 fn space(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "abstract-search-test-{name}-{}",

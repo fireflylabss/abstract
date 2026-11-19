@@ -24,6 +24,11 @@ fn ranges_index_the_original_text() {
     // 'İ' lowercases to two chars; a match can't split it.
     assert_eq!(found("İi", "i", false), ["i"]);
     assert_eq!(found("İi", "i̇", false), ["İ"]);
+    assert_eq!(
+        found("Straße STRAẞE", "strasse", false),
+        ["Straße", "STRAẞE"]
+    );
+    assert!(matches("ß", "s", false).is_empty());
 }
 
 #[test]

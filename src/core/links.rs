@@ -7,6 +7,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+pub mod follow;
+
 use crate::core::vault::{self, NodeKind};
 
 pub(crate) struct WikiLink {

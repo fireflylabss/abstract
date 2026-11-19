@@ -20,10 +20,14 @@ pub fn matches(text: &str, query: &str, case: bool) -> Vec<Range<usize>> {
     let mut origin = Vec::with_capacity(text.len());
     for (i, c) in text.char_indices() {
         let before = lower.len();
-        lower.extend(c.to_lowercase());
+        if matches!(c, 'ß' | 'ẞ') {
+            lower.push_str("ss");
+        } else {
+            lower.extend(c.to_lowercase());
+        }
         origin.resize(origin.len() + lower.len() - before, i);
     }
-    let q: String = query.chars().flat_map(char::to_lowercase).collect();
+    let q = query.replace(['ß', 'ẞ'], "ss").to_lowercase();
     let start_of = |b: usize| b == 0 || origin[b - 1] != origin[b];
     let end_of = |b: usize| b == lower.len() || origin[b - 1] != origin[b];
     let orig_end = |b: usize| origin.get(b).copied().unwrap_or(text.len());
