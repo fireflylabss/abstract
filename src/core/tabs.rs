@@ -71,6 +71,12 @@ impl Tabs {
             }
         });
     }
+
+    pub fn relocate(&mut self, from: &Path, to: &Path) {
+        for path in &mut self.paths {
+            *path = crate::core::vault::relocated(path, from, to);
+        }
+    }
 }
 
 #[cfg(test)]

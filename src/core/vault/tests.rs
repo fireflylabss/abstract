@@ -1,4 +1,19 @@
 use super::*;
+
+#[test]
+fn windows_reserved_names_are_safe_on_every_platform() {
+    for name in [
+        "CON", "con.txt", "PRN", "AUX", "NUL", "COM1", "com9.md", "LPT1", "lpt9.txt",
+    ] {
+        assert!(stem_for_title(name).starts_with('_'), "{name}");
+    }
+    assert_eq!(stem_for_title(" name. "), "name");
+    assert_eq!(stem_for_title("a<>:\"/\\|?*b"), "ab");
+    assert_eq!(stem_for_title("COM10"), "COM10");
+    assert_eq!(stem_for_title("lpt0"), "lpt0");
+    assert!(!stem_for_title("... ").is_empty());
+    assert!(stem_for_title(&"🎉".repeat(90)).len() <= 200);
+}
 use std::fs;
 
 struct Tree(PathBuf);

@@ -23,6 +23,8 @@ sys-locale = "0.3"
 tree-sitter-md = "=0.5.3"
 unicode-segmentation = "1"
 unicode-width = "0.2"
+notify = "8.2.0"
+trash = "5"
 
 [build-dependencies]
 winresource = "=0.1.31"

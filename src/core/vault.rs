@@ -9,6 +9,16 @@ use std::time::SystemTime;
 
 const MAX_DEPTH: usize = 16;
 
+pub fn relocated(path: &Path, from: &Path, to: &Path) -> PathBuf {
+    if path == from {
+        to.to_owned()
+    } else {
+        path.strip_prefix(from)
+            .map(|rel| to.join(rel))
+            .unwrap_or_else(|_| path.to_owned())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeKind {
     Folder,
@@ -153,7 +163,30 @@ pub fn stem_for_title(title: &str) -> String {
         })
         .collect();
     let trimmed = cleaned.trim().trim_matches('.').trim();
-    let stem: String = trimmed.chars().take(80).collect();
+    let mut bytes = 0;
+    let stem: String = trimmed
+        .chars()
+        .take(80)
+        .take_while(|c| {
+            bytes += c.len_utf8();
+            bytes <= 200
+        })
+        .collect();
+    let stem = stem.trim_end_matches(['.', ' ']).to_owned();
+    let base = stem
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(' ')
+        .to_ascii_uppercase();
+    let reserved = matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ["COM", "LPT"].iter().any(|prefix| {
+            base.strip_prefix(prefix)
+                .is_some_and(|n| n.len() == 1 && matches!(n.as_bytes()[0], b'1'..=b'9'))
+        });
+    if reserved {
+        return format!("_{stem}");
+    }
     if stem.is_empty() {
         crate::core::i18n::t(crate::core::i18n::Key::Untitled).to_string()
     } else {
