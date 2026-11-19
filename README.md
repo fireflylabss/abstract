@@ -193,7 +193,7 @@ shaping, without a browser or the retired genpdf/printpdf dependency stack.
   Wiki aliases are supported. Pointer-following is not wired because the pinned
   Rune text input has no cheap pointer-to-source-offset callback.
 
-Inline editor images and the command palette are not yet available. Settings/session/spaces file formats
+Inline editor images are not yet available. The command palette is documented above. Settings/session/spaces file formats
 remain compatible; window geometry restoration remains deferred.
 
 ## Phase 4c spellcheck and local diagnostics
