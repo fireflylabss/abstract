@@ -303,23 +303,8 @@ pub fn surface(el: El, settings: &Settings, surface: Surface, color: u32) -> El 
     let Some(percent) = settings.glass_surface(surface).filter(|_| settings.glass()) else {
         return el.fill(rgb(color));
     };
-    let mut alpha = percent as f32 / 100. * settings.glass_intensity() as f32 / 100.;
-    if surface == Surface::Menus {
-        alpha = alpha.max(0.88);
-    }
-    let color = if settings.glass_tint() {
-        let t = settings.glass_tint_strength() as f32 / 100.;
-        let custom = settings.glass_tint_color();
-        let channel = |shift: u32| {
-            ((((color >> shift) & 255u32) as f32 * (1. - t)
-                + ((custom >> shift) & 255u32) as f32 * t) as u32)
-                << shift
-        };
-        channel(16) | channel(8) | channel(0)
-    } else {
-        color
-    };
-    let el = el.fill(rgb(color).alpha(alpha));
+    let fill = glass_fill(settings, surface, color, percent);
+    let el = el.fill(fill);
     #[cfg(target_os = "macos")]
     {
         let wrapper = match surface {
@@ -335,6 +320,40 @@ pub fn surface(el: El, settings: &Settings, surface: Surface, color: u32) -> El 
     }
     #[cfg(not(target_os = "macos"))]
     el.fill(rgb(color))
+}
+
+pub(in crate::ui) fn dark_sidebar(settings: &Settings, color: u32) -> bool {
+    settings.glass()
+        && settings.glass_surface(Surface::Sidebar).is_some()
+        && theme::DARKS.iter().any(|p| p.palette.panel == color)
+}
+
+pub(super) fn glass_fill(
+    settings: &Settings,
+    surface: Surface,
+    color: u32,
+    percent: u8,
+) -> rune::Color {
+    let mut alpha = percent as f32 / 100. * settings.glass_intensity() as f32 / 100.;
+    if surface == Surface::Sidebar && dark_sidebar(settings, color) {
+        alpha = alpha.max(0.995);
+    }
+    if surface == Surface::Menus {
+        alpha = alpha.max(0.88);
+    }
+    let color = if settings.glass_tint() {
+        let t = settings.glass_tint_strength() as f32 / 100.;
+        let custom = settings.glass_tint_color();
+        let channel = |shift: u32| {
+            ((((color >> shift) & 255u32) as f32 * (1. - t)
+                + ((custom >> shift) & 255u32) as f32 * t) as u32)
+                << shift
+        };
+        channel(16) | channel(8) | channel(0)
+    } else {
+        color
+    };
+    rgb(color).alpha(alpha)
 }
 
 pub fn caret(s: &State, cx: &Cx<State>, p: theme::Palette) -> Option<El> {

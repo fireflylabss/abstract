@@ -1,6 +1,58 @@
 use super::*;
 
 #[test]
+fn expanded_folders_roundtrip_relative_paths_per_space() {
+    let mut session = Session::default();
+    let space = Path::new("/space");
+    let other = Path::new("/other");
+    assert!(session.expanded(space).is_empty());
+    session.set_expanded(other, &["kept".into()]);
+    session.set_expanded(
+        space,
+        &["folder/nested".into(), "folder".into(), "folder".into()],
+    );
+    let mut restored = Session {
+        kv: KeyVals::parse(&session.snapshot().1),
+    };
+    assert_eq!(
+        restored.expanded(space),
+        [PathBuf::from("folder"), "folder/nested".into()]
+    );
+    assert_eq!(restored.expanded(other), [PathBuf::from("kept")]);
+    restored.set_expanded(space, &[]);
+    assert!(restored.expanded(space).is_empty());
+    assert_eq!(restored.expanded(other), [PathBuf::from("kept")]);
+}
+
+#[test]
+fn expanded_folders_reject_unsafe_and_unrepresentable_paths() {
+    let space = Path::new("/space");
+    let mut session = Session {
+        kv: KeyVals::parse(
+            "sidebar = open\nexpanded = /space\t../outside\nexpanded = /space\t/absolute\nexpanded = /space\t\nexpanded = malformed\nexpanded = /space\tgood\textra\n",
+        ),
+    };
+    assert!(session.expanded(space).is_empty());
+    session.set_expanded(
+        space,
+        &[
+            "".into(),
+            "..".into(),
+            "../outside".into(),
+            "/absolute".into(),
+            "folder\nname".into(),
+            "folder\tname".into(),
+        ],
+    );
+    assert!(session.expanded(space).is_empty());
+    let old = Session {
+        kv: KeyVals::parse("sidebar = closed\ntab = /space\tnote.md\t0\t0\n"),
+    };
+    assert!(old.expanded(space).is_empty());
+    assert_eq!(old.tabs().len(), 1);
+}
+
+#[test]
 fn settings_roundtrip_preserves_unknown_keys() {
     let mut s = Settings {
         kv: KeyVals::parse("theme = dark\nfuture-key = 1 2\ntour = done\n"),

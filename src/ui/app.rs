@@ -382,6 +382,7 @@ impl State {
             match reply.result {
                 Ok(tree) => {
                     self.tree = tree;
+                    self.restore_expanded();
                     if !self.restore_started {
                         self.restore_started = true;
                         if self.active.is_none() && self.files_pending == 0 {

@@ -13,6 +13,11 @@ use super::{
 };
 
 pub fn view(state: &State, p: Palette, inset: f32) -> El {
+    let inactive = if super::app::settings::dark_sidebar(&state.settings, p.panel) {
+        rgb(p.dim).mix(rgb(p.fg), 0.15)
+    } else {
+        rgb(p.dim)
+    };
     let mut tree = col()
         .key("tree")
         .role("tree")
@@ -77,13 +82,11 @@ pub fn view(state: &State, p: Palette, inset: f32) -> El {
                         .truncate()
                         .min_w(0.)
                         .font(TextStyle::new(12., 400.))
-                        .color(rgb(if selected { p.fg } else { p.dim })),
+                        .color(if selected { rgb(p.fg) } else { inactive }),
                 )
                 .on_press_tx(move |s: &mut State, tx| {
                     if folder {
-                        if !s.expanded.remove(&path) {
-                            s.expanded.insert(path.clone());
-                        }
+                        s.toggle_folder(path.clone(), tx);
                     } else {
                         s.open(path.clone(), tx);
                     }

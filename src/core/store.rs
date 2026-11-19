@@ -490,6 +490,45 @@ impl Session {
         }
     }
 
+    pub fn expanded(&self, space: &Path) -> Vec<PathBuf> {
+        self.kv
+            .lines
+            .iter()
+            .filter_map(|line| {
+                let (key, value) = line.split_once('=')?;
+                let (root, rel) = value.trim().split_once('\t')?;
+                let rel = PathBuf::from(rel);
+                (key.trim() == "expanded" && Path::new(root) == space && folder_relative(&rel))
+                    .then_some(rel)
+            })
+            .collect()
+    }
+
+    pub fn set_expanded(&mut self, space: &Path, paths: &[PathBuf]) {
+        self.kv.lines.retain(|line| {
+            let Some((key, value)) = line.split_once('=') else {
+                return true;
+            };
+            key.trim() != "expanded"
+                || value
+                    .trim()
+                    .split_once('\t')
+                    .is_none_or(|(root, _)| Path::new(root) != space)
+        });
+        let root = space.to_string_lossy();
+        if root.contains(['\t', '\n', '\r']) {
+            return;
+        }
+        let mut paths = paths.to_vec();
+        paths.sort();
+        paths.dedup();
+        for path in paths.iter().filter(|path| folder_relative(path)) {
+            self.kv
+                .lines
+                .push(format!("expanded = {root}\t{}", path.display()));
+        }
+    }
+
     #[cfg(test)]
     pub fn notes(&self) -> Vec<SessionNote> {
         self.kv
@@ -620,6 +659,14 @@ impl Session {
             );
         }
     }
+}
+
+fn folder_relative(path: &Path) -> bool {
+    !path.as_os_str().is_empty()
+        && path
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+        && !path.to_string_lossy().contains(['\t', '\n', '\r'])
 }
 
 #[cfg(test)]

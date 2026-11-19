@@ -1,6 +1,76 @@
 use super::*;
 
 #[test]
+fn folder_toggles_do_not_discard_tabs_waiting_for_restoration() {
+    let fixture = Fixture::new();
+    let mut rt = fixture.runtime();
+    rt.state.restore_started = true;
+    rt.state.session.set_tabs(&[SessionNote {
+        space: fixture.0.clone(),
+        rel: "Note.md".into(),
+        cursor: 0,
+        scroll: 0.,
+    }]);
+    rt.state
+        .toggle_folder(fixture.0.join("Folder"), &mut Tx::default());
+    assert_eq!(rt.state.session.tabs().len(), 1);
+    assert_eq!(
+        rt.state.session.expanded(&fixture.0),
+        [PathBuf::from("Folder")]
+    );
+    rt.state.writer.flush().unwrap();
+}
+
+#[test]
+fn expanded_folders_restore_after_shutdown_and_prune_missing_directories() {
+    let fixture = Fixture::new();
+    let folder = fixture.0.join("Folder");
+    let nested = folder.join("Nested");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::create_dir(fixture.0.join("Removed")).unwrap();
+    std::fs::write(fixture.0.join("Note.md"), "text").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.restore_started && !s.scanning);
+    rt.update(|s, tx| {
+        s.toggle_folder(folder.clone(), tx);
+        s.toggle_folder(nested.clone(), tx);
+        s.toggle_folder(fixture.0.join("Removed"), tx);
+    });
+    until(&mut rt, |s| s.settings_pending == 0);
+    let saved = std::fs::read_to_string(fixture.0.join("session")).unwrap();
+    assert!(saved.contains("\tFolder/Nested"));
+    assert!(!saved.contains(nested.to_str().unwrap()));
+    rt.state.shutdown();
+    std::fs::remove_dir(fixture.0.join("Removed")).unwrap();
+    let mut restored = fixture.runtime();
+    restored.state.session = rt.state.session.clone();
+    restored.state.session.set_expanded(
+        &fixture.0,
+        &[
+            "Folder".into(),
+            "Folder/Nested".into(),
+            "Removed".into(),
+            "Note.md".into(),
+        ],
+    );
+    until(&mut restored, |s| s.restore_started && !s.scanning);
+    assert_eq!(
+        restored.state.expanded,
+        HashSet::from([folder.clone(), nested.clone()])
+    );
+    restored.update(|s, tx| s.toggle_folder(folder.clone(), tx));
+    restored.state.shutdown();
+    assert_eq!(
+        restored.state.session.expanded(&fixture.0),
+        [PathBuf::from("Folder/Nested")]
+    );
+    let mut again = fixture.runtime();
+    again.state.session = restored.state.session.clone();
+    until(&mut again, |s| s.restore_started && !s.scanning);
+    assert_eq!(again.state.expanded, HashSet::from([nested]));
+}
+
+#[test]
 fn reopened_saved_tabs_write_new_edits_via_autosave_and_quit() {
     for quit in [false, true] {
         let fixture = Fixture::new();

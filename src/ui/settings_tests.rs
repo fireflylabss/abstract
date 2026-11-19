@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn dark_sidebar_glass_keeps_inactive_text_contrast_even_over_white() {
+    use crate::core::prefs::Surface;
+    let mut settings = Settings::default();
+    settings.set_glass(true);
+    let luminance = |c: rune::Color| 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    for named in theme::DARKS {
+        let p = named.palette;
+        let fill = settings::glass_fill(&settings, Surface::Sidebar, p.panel, 75);
+        let background = rune::Color::WHITE.mix(fill.alpha(1.), fill.a);
+        let text = rgb(p.dim).mix(rgb(p.fg), 0.15);
+        let contrast = (luminance(text) + 0.05) / (luminance(background) + 0.05);
+        let glass_off = (luminance(rgb(p.dim)) + 0.05) / (luminance(rgb(p.panel)) + 0.05);
+        assert!(
+            contrast >= glass_off,
+            "{}: {contrast} < {glass_off}",
+            named.id
+        );
+        assert!(fill.a >= 0.995);
+    }
+    for named in theme::LIGHTS {
+        let p = named.palette;
+        assert!(!settings::dark_sidebar(&settings, p.panel));
+        assert_eq!(
+            settings::glass_fill(&settings, Surface::Sidebar, p.panel, 75),
+            rgb(p.panel).alpha(0.75)
+        );
+    }
+    settings.set_glass(false);
+    assert!(!settings::dark_sidebar(&settings, theme::DARK.panel));
+    settings.set_glass(true);
+    settings.set_glass_surface(Surface::Sidebar, None);
+    assert!(!settings::dark_sidebar(&settings, theme::DARK.panel));
+}
+
+#[test]
 fn legacy_font_controls_step_from_effective_font() {
     let fixture = Fixture::new();
     let mut rt = fixture.runtime();

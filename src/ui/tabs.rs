@@ -2,6 +2,34 @@ use super::*;
 use crate::ui::theme::Palette;
 
 impl State {
+    pub fn toggle_folder(&mut self, path: PathBuf, tx: &mut Tx) {
+        if !self.expanded.remove(&path) {
+            self.expanded.insert(path);
+        }
+        self.snapshot_expanded();
+        self.persist_session(tx);
+    }
+
+    pub(super) fn restore_expanded(&mut self) {
+        if !self.restore_started {
+            self.expanded.extend(
+                self.session
+                    .expanded(&self.root)
+                    .into_iter()
+                    .map(|rel| self.root.join(rel)),
+            );
+        }
+        let mut folders = HashSet::new();
+        let mut stack: Vec<_> = self.tree.iter().collect();
+        while let Some(node) = stack.pop() {
+            if node.is_folder() {
+                folders.insert(node.path.clone());
+                stack.extend(&node.children);
+            }
+        }
+        self.expanded.retain(|path| folders.contains(path));
+    }
+
     pub fn focus_tab(&mut self, tx: &mut Tx) {
         self.active = self.tabs.active().map(std::path::Path::to_owned);
         self.refresh_find(false, tx);
@@ -55,7 +83,19 @@ impl State {
         self.focus_tab(tx);
     }
 
+    fn snapshot_expanded(&mut self) {
+        if self.restore_started {
+            let relative: Vec<_> = self
+                .expanded
+                .iter()
+                .filter_map(|path| path.strip_prefix(&self.root).ok().map(PathBuf::from))
+                .collect();
+            self.session.set_expanded(&self.root, &relative);
+        }
+    }
+
     pub(super) fn snapshot_tabs(&mut self) {
+        self.snapshot_expanded();
         let mut notes: Vec<_> = self
             .session
             .tabs()
@@ -90,6 +130,10 @@ impl State {
 
     pub(super) fn persist_tabs(&mut self, tx: &mut Tx) {
         self.snapshot_tabs();
+        self.persist_session(tx);
+    }
+
+    fn persist_session(&mut self, tx: &mut Tx) {
         let (_, text) = self.session.snapshot();
         match self.writer.submit(Snapshot {
             path: self.session_path.clone(),
