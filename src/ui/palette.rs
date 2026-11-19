@@ -157,6 +157,7 @@ impl State {
                         (open.selected + len - 1) % len
                     };
                 }
+                tx.scroll_into_view(format!("palette-row-{}", open.selected));
                 tx.instant();
             }
             RuneKey::Enter => {
@@ -210,6 +211,7 @@ pub(super) fn overlay(s: &State, cx: &Cx<State>, p: theme::Palette) -> Option<El
                 .on_edit(|s: &mut State| &mut s.palette.open.as_mut().unwrap().query)
                 .on_input_change(|s: &mut State, tx| {
                     s.palette.open.as_mut().unwrap().selected = 0;
+                    tx.scroll_to_y("palette-results", 0.);
                     tx.instant();
                 })
                 .on_input_key(|s: &mut State, key, tx| {
@@ -223,43 +225,59 @@ pub(super) fn overlay(s: &State, cx: &Cx<State>, p: theme::Palette) -> Option<El
     if list.is_empty() {
         panel = panel.child(text(t(Key::PaletteEmpty)).padding(12.).color(rgb(p.dim)));
     }
-    let start = open.selected.saturating_sub(7);
-    for (index, entry) in list.into_iter().enumerate().skip(start).take(8) {
-        let target = entry.target;
-        panel = panel.child(
-            row()
-                .key(format!("palette-row-{index}"))
-                .w_full()
-                .h(36.)
-                .padding(8.)
-                .items_center()
-                .gap(12.)
-                .justify_between()
-                .fill(rgb(if index == open.selected {
-                    p.active
-                } else {
-                    p.panel
-                }))
-                .hover(rgb(p.hover))
-                .disabled(!entry.enabled)
-                .child(
-                    text(entry.title)
-                        .truncate()
-                        .min_w(0.)
-                        .grow(1.)
-                        .font(TextStyle::new(13., 400.))
-                        .color(rgb(if entry.enabled { p.fg } else { p.dim })),
-                )
-                .child(
-                    text(entry.detail)
-                        .truncate_middle()
-                        .max_w(panel_width * 0.45)
-                        .font(TextStyle::new(11., 400.))
-                        .color(rgb(p.dim)),
-                )
-                .on_press_tx(move |s: &mut State, tx| s.activate_palette(target.clone(), tx)),
+    let selected = open.selected;
+    let height = cx.layout_size("app").map_or(760., |size| size[1]);
+    let count = list.len();
+    let rows = col()
+        .key("palette-rows")
+        .w_full()
+        .growth(rune::GrowthSpec::default())
+        .virtual_rows(
+            count,
+            36.,
+            |_: &State, index| format!("palette-row-{index}").into(),
+            move |_: &State, index| {
+                let entry = &list[index];
+                let target = entry.target.clone();
+                row()
+                    .key(format!("palette-row-{index}"))
+                    .w_full()
+                    .h(36.)
+                    .padding(8.)
+                    .items_center()
+                    .gap(12.)
+                    .justify_between()
+                    .fill(rgb(if index == selected { p.active } else { p.panel }))
+                    .hover(rgb(p.hover))
+                    .disabled(!entry.enabled)
+                    .child(
+                        text(entry.title.clone())
+                            .truncate()
+                            .min_w(0.)
+                            .grow(1.)
+                            .font(TextStyle::new(13., 400.))
+                            .color(rgb(if entry.enabled { p.fg } else { p.dim })),
+                    )
+                    .child(
+                        text(entry.detail.clone())
+                            .truncate_middle()
+                            .max_w(panel_width * 0.45)
+                            .font(TextStyle::new(11., 400.))
+                            .color(rgb(p.dim)),
+                    )
+                    .on_press_tx(move |s: &mut State, tx| s.activate_palette(target.clone(), tx))
+            },
         );
-    }
+    panel = panel.child(
+        col()
+            .key("palette-results")
+            .w_full()
+            .max_h((height - 176.).clamp(36., 288.))
+            .scroll(ScrollSpec {
+                stick_bottom: false,
+            })
+            .child(rows),
+    );
     let transition = if cx.system_reduced_motion() {
         Transition::none()
     } else {

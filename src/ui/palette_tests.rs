@@ -11,6 +11,78 @@ fn note_runtime(fixture: &Fixture) -> Runtime<State> {
 }
 
 #[test]
+fn pointer_can_scroll_and_open_notes_beyond_the_first_page() {
+    let fixture = Fixture::new();
+    let target = fixture.0.join("Note 20.md");
+    std::fs::write(&target, "Note 20").unwrap();
+    let mut rt = note_runtime(&fixture);
+    until(&mut rt, |s| !s.scanning);
+    rt.update(|s, tx| {
+        s.tree.clear();
+        for i in 0..80 {
+            let name = format!("Note {i:02}");
+            let path = fixture.0.join(format!("{name}.md"));
+            s.tree.push(vault::Node {
+                path,
+                name,
+                kind: vault::NodeKind::Note,
+                modified: std::time::SystemTime::UNIX_EPOCH,
+                children: vec![],
+            });
+        }
+        s.open_palette(false, tx);
+        tx.instant();
+    });
+    rt.frame(1. / 60.);
+    let first = rt.presented("palette-row-0").unwrap().0;
+    rt.set_wheel_glide(false);
+    rt.wheel(first[0] + 8., first[1] + 8., -600.);
+    for _ in 0..30 {
+        rt.frame(1. / 60.);
+    }
+    let later = rt
+        .presented("palette-row-20")
+        .expect("wheel reveals later notes")
+        .0;
+    assert!(later[1] >= first[1] && later[1] + later[3] <= 760.);
+    let (x, y) = (later[0] + later[2] / 2., later[1] + later[3] / 2.);
+    rt.pointer_down(x, y);
+    rt.pointer_up(x, y);
+    rt.frame(1. / 60.);
+    until(&mut rt, |s| s.active.as_ref() == Some(&target));
+    assert!(rt.state.palette.open.is_none());
+    assert_eq!(rt.state.active, Some(target));
+}
+
+#[test]
+fn palette_keyboard_keeps_selection_within_small_viewport() {
+    let fixture = Fixture::new();
+    let mut rt = note_runtime(&fixture);
+    rt.viewport = (700., 240.);
+    rt.frame(1. / 60.);
+    rt.update(|s, tx| {
+        s.open_palette(true, tx);
+        tx.instant();
+    });
+    rt.frame(1. / 60.);
+    let count = palette::entries(&rt.state).len();
+    press(&mut rt, RuneKey::Up, Mods::default());
+    for _ in 0..5 {
+        rt.frame(1. / 60.);
+    }
+    let last = rt
+        .presented(&format!("palette-row-{}", count - 1))
+        .unwrap()
+        .0;
+    let viewport = rt.presented("palette-results").unwrap().0;
+    assert!(viewport[1] + viewport[3] <= 240.);
+    assert!(last[1] >= viewport[1] && last[1] + last[3] <= viewport[1] + viewport[3] + 0.1);
+    press(&mut rt, RuneKey::Down, Mods::default());
+    assert_eq!(rt.state.palette.open.as_ref().unwrap().selected, 0);
+    assert!(rt.presented("palette-row-0").is_some());
+}
+
+#[test]
 fn follow_shortcut_in_replacement_does_not_replace_text() {
     let fixture = Fixture::new();
     let mut rt = note_runtime(&fixture);
