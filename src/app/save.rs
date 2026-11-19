@@ -24,19 +24,19 @@ impl AbstractApp {
             let Ok(payload) = this.update(cx, |this, cx| {
                 this.tabs
                     .iter()
-                    .any(|t| Arc::ptr_eq(&t.file, &file))
-                    .then(|| editor.read(cx).text().to_string())
+                    .find(|t| Arc::ptr_eq(&t.file, &file))
+                    .map(|t| (editor.read(cx).text().to_string(), t.rev))
             }) else {
                 return;
             };
-            let Some(text) = payload else { return };
+            let Some((text, rev)) = payload else { return };
             let done = file.clone();
             let stem = stem_of(&guard(&file).path);
             let result = cx
                 .background_executor()
                 .spawn(async move { write_note(&lock, &file, synced, &text, Some(&space), &open) })
                 .await;
-            this.update(cx, |this, cx| this.finish_save(done, stem, result, cx))
+            this.update(cx, |this, cx| this.finish_save(done, stem, rev, result, cx))
                 .ok();
         });
         if let Some(tab) = self.tabs.get_mut(ix) {
@@ -47,12 +47,13 @@ impl AbstractApp {
     /// Ctrl+S: write now instead of waiting for the debounce.
     pub(crate) fn save_now(&mut self, cx: &mut Context<Self>) {
         let Some(ix) = self.active else { return };
-        let Some((text, file, synced)) = self.tabs.get_mut(ix).map(|tab| {
+        let Some((text, file, synced, rev)) = self.tabs.get_mut(ix).map(|tab| {
             tab._save_task = None;
             (
                 tab.editor.read(cx).text().to_string(),
                 tab.file.clone(),
                 tab.synced,
+                tab.rev,
             )
         }) else {
             return;
@@ -69,7 +70,7 @@ impl AbstractApp {
                 .background_executor()
                 .spawn(async move { write_note(&lock, &file, synced, &text, Some(&space), &open) })
                 .await;
-            this.update(cx, |this, cx| this.finish_save(done, stem, result, cx))
+            this.update(cx, |this, cx| this.finish_save(done, stem, rev, result, cx))
                 .ok();
         })
         .detach();
@@ -79,19 +80,22 @@ impl AbstractApp {
         &mut self,
         file: Arc<Mutex<NoteFile>>,
         stem_before: String,
+        rev: u64,
         result: std::io::Result<bool>,
         cx: &mut Context<Self>,
     ) {
         let ix = self.tabs.iter().position(|t| Arc::ptr_eq(&t.file, &file));
-        let state = match &result {
-            Ok(_) => SaveState::Saved,
-            Err(_) => SaveState::Failed,
-        };
         // `ix` misses when the tab closed while the write was in flight.
         if let Some(ix) = ix {
+            let state = save_outcome(result.is_ok(), self.tabs[ix].rev != rev);
             self.tabs[ix].save = state;
             if self.active == Some(ix) {
                 self.save = state;
+            }
+            // Edits made during the write are not on disk yet. Their own
+            // debounced save is normally queued; queue one if it was dropped.
+            if state == SaveState::Pending && self.tabs[ix]._save_task.is_none() {
+                self.schedule_tab_save(ix, cx);
             }
         }
         match result {
@@ -122,7 +126,7 @@ impl AbstractApp {
 
     /// Hand a pending save of tab `ix` to the background.
     pub(crate) fn flush_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
-        let Some((text, file, synced)) = self.tabs.get_mut(ix).and_then(|tab| {
+        let Some((text, file, synced, rev)) = self.tabs.get_mut(ix).and_then(|tab| {
             (tab.save != SaveState::Saved).then(|| {
                 tab._save_task = None;
                 tab.save = SaveState::Saved;
@@ -130,6 +134,7 @@ impl AbstractApp {
                     tab.editor.read(cx).text().to_string(),
                     tab.file.clone(),
                     tab.synced,
+                    tab.rev,
                 )
             })
         }) else {
@@ -148,7 +153,7 @@ impl AbstractApp {
         });
         cx.spawn(async move |this, cx| {
             let result = write.await;
-            this.update(cx, |this, cx| this.finish_save(done, stem, result, cx))
+            this.update(cx, |this, cx| this.finish_save(done, stem, rev, result, cx))
                 .ok();
         })
         .detach();
@@ -168,17 +173,17 @@ impl AbstractApp {
         }
     }
 
-    /// On quit: write the pending saves inline (the write lock waits for any
-    /// in-flight op), then the session — tab entries included.
+    /// On quit: write every unsaved tab inline — failed saves get one more
+    /// try (the write lock waits for any in-flight op), then the session —
+    /// tab entries included.
     pub(crate) fn flush_blocking(&mut self, cx: &mut Context<Self>) {
         let (lock, space, open) = (self.write_lock.clone(), self.dir.clone(), self.tab_paths());
         for tab in &mut self.tabs {
-            if tab.save != SaveState::Pending {
+            if tab.save == SaveState::Saved {
                 continue;
             }
             tab._save_task = None;
-            tab.save = SaveState::Saved;
-            let _ = write_note(
+            let result = write_note(
                 &lock,
                 &tab.file,
                 tab.synced,
@@ -186,6 +191,10 @@ impl AbstractApp {
                 Some(&space),
                 &open,
             );
+            tab.save = save_outcome(result.is_ok(), false);
+            if let Err(err) = result {
+                eprintln!("abstract: failed to save note on quit: {err}");
+            }
         }
         self.save = SaveState::Saved;
         self.record_tabs(cx);
@@ -221,6 +230,13 @@ impl AbstractApp {
             return;
         }
         let dir = self.dir.clone();
+        let mut folders: Vec<PathBuf> = self
+            .expanded
+            .iter()
+            .filter_map(|p| p.strip_prefix(&dir).ok().map(Path::to_path_buf))
+            .collect();
+        folders.sort();
+        self.session.set_folders(&dir, &folders);
         self.session_notes.retain(|n| n.space != dir);
         for tab in self.tabs.iter() {
             let path = tab.path();
@@ -393,8 +409,12 @@ impl AbstractApp {
                             cx.notify();
                         }
                         Some(m) if recorded != Some(m) => {
-                            // A pending save wins; it will record the new mtime.
-                            if this.tabs[tix].save == SaveState::Pending {
+                            // Unsaved edits win over the outside change, but
+                            // not silently. Recording the mtime warns once.
+                            if this.tabs[tix].save != SaveState::Saved {
+                                guard(&file).mtime = Some(m);
+                                this.notice = Some(t(Key::FileChangedOutside).into());
+                                cx.notify();
                                 return;
                             }
                             this.reload_file(file.clone(), path.clone(), cx);
@@ -416,6 +436,11 @@ impl AbstractApp {
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
+        let rev = self
+            .tabs
+            .iter()
+            .find(|t| Arc::ptr_eq(&t.file, &file))
+            .map(|t| t.rev);
         cx.spawn(async move |this, cx| {
             let read = cx
                 .background_executor()
@@ -433,12 +458,21 @@ impl AbstractApp {
                 let Some(tix) = this.tabs.iter().position(|t| Arc::ptr_eq(&t.file, &file)) else {
                     return;
                 };
+                // Typed while the read was in flight: replacing the buffer
+                // now would drop that edit.
+                let edited =
+                    Some(this.tabs[tix].rev) != rev || this.tabs[tix].save != SaveState::Saved;
                 {
                     let mut f = guard(&file);
                     if f.path != path || f.deleted {
                         return;
                     }
                     f.mtime = read.1;
+                }
+                if edited {
+                    this.notice = Some(t(Key::FileChangedOutside).into());
+                    cx.notify();
+                    return;
                 }
                 let editor = this.tabs[tix].editor.clone();
                 let (cursor, scroll) = editor.read(cx).view_state();
@@ -473,6 +507,16 @@ impl AbstractApp {
     }
 }
 
+/// State of a tab once a write of its text at some revision finished.
+/// `edited`: the buffer changed after that text was captured.
+fn save_outcome(ok: bool, edited: bool) -> SaveState {
+    match (ok, edited) {
+        (_, true) => SaveState::Pending,
+        (true, false) => SaveState::Saved,
+        (false, false) => SaveState::Failed,
+    }
+}
+
 /// Last entry per space — written as `note` lines so pre-tab versions
 /// restore their most recent note. `active` (`space`, `rel` pair) wins over
 /// raw list order so the fallback also reopens the front tab.
@@ -500,7 +544,7 @@ fn latest_per_space(notes: &[SessionNote], active: Option<(&Path, &Path)>) -> Ve
 mod tests {
     // No `use super::*`: the parent's globs re-export gpui's `test`
     // attribute, which would shadow the built-in `#[test]`.
-    use super::latest_per_space;
+    use super::{SaveState, latest_per_space, save_outcome};
     use crate::store::SessionNote;
     use std::path::{Path, PathBuf};
 
@@ -532,6 +576,15 @@ mod tests {
         );
         assert_eq!(out[0].space, PathBuf::from("/s"));
         assert_eq!(out[1].space, PathBuf::from("/t"));
+    }
+
+    #[test]
+    fn save_outcome_never_reports_newer_edits_as_saved() {
+        assert!(save_outcome(true, false) == SaveState::Saved);
+        assert!(save_outcome(false, false) == SaveState::Failed);
+        // Text typed during the write is still only in memory.
+        assert!(save_outcome(true, true) == SaveState::Pending);
+        assert!(save_outcome(false, true) == SaveState::Pending);
     }
 
     #[test]

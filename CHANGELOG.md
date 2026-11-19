@@ -6,6 +6,23 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Folders expanded in the sidebar stay expanded when the app or a space is
+  reopened.
+
+### Fixed
+- A save that finishes after you kept typing no longer marks the note as
+  saved; the newer text stays pending until it is written, so quitting in
+  that window still saves it.
+- Saves that failed are retried once more on quit instead of being skipped.
+- A note changed outside the app while it has unsaved edits (or while you
+  type during the reload) keeps your edits and shows a warning instead of
+  silently replacing one side.
+- Undoing a trash no longer overwrites a note created at the same path in
+  the meantime; the restored note comes back as `Name 2`.
+- Titles that are Windows device names (`CON`, `NUL`, `COM1`…) get a
+  trailing `_` in the file name.
+
 ## [0.1.5] - 2026-10-06
 
 ### Added

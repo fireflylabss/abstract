@@ -110,6 +110,9 @@ pub(crate) struct NoteTab {
     /// Planned path of a note not yet written (first keystroke creates it).
     pending: bool,
     save: SaveState,
+    /// Bumped on every buffer edit; a save or reload that started at an
+    /// older value must not claim the buffer is on disk or replace it.
+    rev: u64,
     pub(crate) editor: Entity<LiveEditor>,
     _save_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -422,6 +425,7 @@ impl AbstractApp {
                 this.update_completion(cx);
                 this.refresh_find(false, None, cx);
             }
+            this.tabs[ix].rev += 1;
             this.schedule_tab_save(ix, cx);
             cx.notify();
         });

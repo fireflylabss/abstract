@@ -76,6 +76,7 @@ impl AbstractApp {
             synced,
             pending,
             save: SaveState::Saved,
+            rev: 0,
             editor,
             _save_task: None,
             _subs: subs,
@@ -552,18 +553,14 @@ impl AbstractApp {
                 .background_executor()
                 .spawn({
                     let p = undo.path.clone();
-                    async move {
-                        if let Some(d) = p.parent() {
-                            let _ = std::fs::create_dir_all(d);
-                        }
-                        store::write_atomic(&p, undo.text.as_bytes()).is_ok()
-                    }
+                    let text = undo.text;
+                    async move { restore_trashed(&p, &text) }
                 })
                 .await;
             this.update_in(cx, |this, window, cx| {
-                if ok {
+                if let Some(path) = ok {
                     this.rescan_tree(cx);
-                    this.open(undo.path, undo.view, true, undo.tab_ix, window, cx);
+                    this.open(path, undo.view, true, undo.tab_ix, window, cx);
                 } else {
                     this.notice = Some(t(Key::TrashFailed).into());
                 }
@@ -707,5 +704,45 @@ impl AbstractApp {
             .ok();
         })
         .detach();
+    }
+}
+
+/// Put a trashed note's text back. A file created at its old path since the
+/// trash is left alone: the note comes back under the next free name.
+/// Returns where it landed. Blocking.
+fn restore_trashed(path: &Path, text: &str) -> Option<PathBuf> {
+    let dir = path.parent()?;
+    std::fs::create_dir_all(dir).ok()?;
+    let target = if path.exists() {
+        vault::unique_path(dir, &stem_of(path), None)
+    } else {
+        path.to_path_buf()
+    };
+    store::write_atomic(&target, text.as_bytes()).ok()?;
+    Some(target)
+}
+
+#[cfg(test)]
+mod tests {
+    // No `use super::*`: the parent's globs re-export gpui's `test`
+    // attribute, which would shadow the built-in `#[test]`.
+    use super::restore_trashed;
+
+    #[test]
+    fn restore_trashed_never_overwrites_a_new_file() {
+        let dir = std::env::temp_dir().join(format!("abstract-undo-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Plano.md");
+        assert_eq!(
+            restore_trashed(&path, "old").as_deref(),
+            Some(path.as_path())
+        );
+        // Same name recreated after the trash: both texts must survive.
+        std::fs::write(&path, "new").unwrap();
+        let back = restore_trashed(&path, "old").unwrap();
+        assert_eq!(back, dir.join("Plano 2.md"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        assert_eq!(std::fs::read_to_string(&back).unwrap(), "old");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

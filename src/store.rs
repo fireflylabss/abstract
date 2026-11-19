@@ -564,6 +564,36 @@ impl Session {
         }
     }
 
+    /// `folder = <space>\t<rel>` lines: the folders expanded in the sidebar.
+    pub fn folders(&self, space: &Path) -> Vec<PathBuf> {
+        self.kv
+            .lines
+            .iter()
+            .filter_map(|l| folder_line(l))
+            .filter(|(s, _)| s == space)
+            .map(|(_, rel)| rel)
+            .collect()
+    }
+
+    /// Replaces `space`'s `folder` lines; other spaces keep theirs. Paths
+    /// containing a tab or newline can't be represented and are skipped.
+    pub fn set_folders(&mut self, space: &Path, rels: &[PathBuf]) {
+        self.kv
+            .lines
+            .retain(|l| folder_line(l).is_none_or(|(s, _)| s != space));
+        let space = space.to_string_lossy();
+        if space.contains(['\t', '\n']) {
+            return;
+        }
+        for rel in rels {
+            let rel = rel.to_string_lossy();
+            if rel.is_empty() || rel.contains(['\t', '\n']) {
+                continue;
+            }
+            self.kv.lines.push(format!("folder = {space}\t{rel}"));
+        }
+    }
+
     pub fn set_active_tab(&mut self, active: Option<(&Path, &Path)>) {
         match active {
             Some((space, rel)) => {
@@ -590,9 +620,46 @@ impl Session {
     }
 }
 
+fn folder_line(line: &str) -> Option<(PathBuf, PathBuf)> {
+    let (k, v) = line.split_once('=')?;
+    if k.trim() != "folder" {
+        return None;
+    }
+    let (space, rel) = v.split_once('\t')?;
+    (!rel.trim().is_empty()).then(|| (PathBuf::from(space.trim()), PathBuf::from(rel.trim())))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_folders_are_per_space() {
+        let mut s = Session {
+            kv: KeyVals::parse("sidebar = open\nfolder = /a\tx\nfolder = /b\ty/z\nfolder = bad\n"),
+        };
+        assert_eq!(s.folders(Path::new("/a")), vec![PathBuf::from("x")]);
+        s.set_folders(
+            Path::new("/a"),
+            &[
+                PathBuf::from("p"),
+                PathBuf::from("q\tr"),
+                PathBuf::from("s/t"),
+            ],
+        );
+        assert_eq!(
+            s.folders(Path::new("/a")),
+            vec![PathBuf::from("p"), PathBuf::from("s/t")]
+        );
+        assert_eq!(s.folders(Path::new("/b")), vec![PathBuf::from("y/z")]);
+        let again = Session {
+            kv: KeyVals::parse(&s.kv.serialize()),
+        };
+        assert_eq!(again.folders(Path::new("/a")).len(), 2);
+        assert_eq!(again.sidebar_open(), Some(true));
+        s.set_folders(Path::new("/a"), &[]);
+        assert!(s.folders(Path::new("/a")).is_empty());
+    }
 
     #[test]
     fn settings_roundtrip_preserves_unknown_keys() {

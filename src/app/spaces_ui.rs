@@ -122,7 +122,12 @@ impl AbstractApp {
         self.dir = self.spaces.current().to_path_buf();
         self.start_watch(cx);
         self.tree.clear();
-        self.expanded.clear();
+        self.expanded = self
+            .session
+            .folders(&self.dir)
+            .into_iter()
+            .map(|rel| self.dir.join(rel))
+            .collect();
         // The old space's tabs die here; the mirrors reset when the new
         // space's tabs are restored (or a note is opened) below.
         self.tabs.clear();
@@ -266,6 +271,7 @@ impl AbstractApp {
             self.expanded.insert(path.clone());
         }
         self.target_folder = Some(path);
+        self.save_session(cx);
         cx.notify();
     }
     pub(crate) fn render_spaces_menu(
