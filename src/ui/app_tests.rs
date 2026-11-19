@@ -11,6 +11,9 @@ mod tabs;
 #[path = "find_links_tests.rs"]
 mod find_links;
 
+#[path = "settings_tests.rs"]
+mod settings_tests;
+
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture(PathBuf);
@@ -30,6 +33,7 @@ impl Fixture {
         let mut scans = Scans::new();
         scans.start(self.0.clone());
         let state = State {
+            customization: settings::Customization::new(&Settings::default()),
             settings: Settings::default(),
             root: self.0.clone(),
             tree: vec![],

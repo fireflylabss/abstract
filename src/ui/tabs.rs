@@ -203,7 +203,11 @@ pub fn view(state: &State, p: Palette) -> El {
             .items_center()
             .gap(6.)
             .padding(5.)
-            .fill(rgb(if active { p.active } else { p.panel }))
+            .fill(if active {
+                rgb(p.active)
+            } else {
+                rgb(p.panel).alpha(0.)
+            })
             .hover(rgb(p.hover))
             .on_hover_change(move |s: &mut State, over, _| {
                 if over {

@@ -26,6 +26,7 @@ impl State {
         }
     }
     pub fn open_find(&mut self, replacing: bool, tx: &mut Tx) {
+        self.customization.open = false;
         let Some(doc) = self.document() else { return };
         let selection = &doc.edit.text
             [doc.edit.anchor.min(doc.edit.focus)..doc.edit.anchor.max(doc.edit.focus)];

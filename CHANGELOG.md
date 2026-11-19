@@ -6,6 +6,8 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+- Add live Rune settings, separate UI/editor fonts, editor customization, resizable sidebar, native macOS glass, and persistent whole-window zoom.
+
 - Add Rune find/replace, Unicode-safe background space search, and Alt+Enter wiki/Markdown link navigation.
 
 - Restore Rune note tabs with independent editing state, background autosave, tab shortcuts, and compatible cursor/scroll session restore.

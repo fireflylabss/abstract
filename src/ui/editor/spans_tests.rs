@@ -1,5 +1,32 @@
 use super::*;
 
+#[test]
+fn customization_keeps_markers_visible_and_scales_headings_and_blank_lines() {
+    let source = "# Heading\n\nbody **bold**\nend";
+    let a = md::Analyzer::new().analyze(source);
+    let mut settings = crate::core::store::Settings::default();
+    for (k, v) in [
+        ("conceal", "off"),
+        ("editor_size", "20"),
+        ("heading_scale", "1.5"),
+        ("paragraph_spacing", "10"),
+    ] {
+        settings.kv.set(k, v);
+    }
+    let spans = decorate_with(
+        source,
+        source.len(),
+        source.len(),
+        &a,
+        crate::ui::theme::LIGHT,
+        &settings,
+    );
+    assert_eq!(size_at(&spans, 0), Some(32. * 20. / 17. * 1.5));
+    assert_eq!(size_at(&spans, 10), Some(30.));
+    assert_eq!(size_at(&spans, source.find("**").unwrap()), Some(20.));
+    assert!(spans.iter().all(|s| s.color.is_none_or(|c| c.a > 0.)));
+}
+
 fn size_at(spans: &[Span], byte: usize) -> Option<f32> {
     spans
         .iter()

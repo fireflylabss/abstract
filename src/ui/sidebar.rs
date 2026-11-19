@@ -1,8 +1,7 @@
 use rune::{El, ScrollSpec, TextStyle, col, row, text};
-use rune_kit::{Button, ButtonVariant, ControlSize, Kit};
 
 use crate::core::{
-    i18n::{Key, t, tf},
+    i18n::{Key, t},
     spaces,
     vault::{self, NodeKind},
 };
@@ -12,8 +11,7 @@ use super::{
     theme::{Palette, rgb},
 };
 
-pub fn view(state: &State, p: Palette, dark: bool) -> El {
-    let kit = Kit::neutral(dark);
+pub fn view(state: &State, p: Palette) -> El {
     let mut tree = col()
         .key("tree")
         .role("tree")
@@ -38,7 +36,11 @@ pub fn view(state: &State, p: Palette, dark: bool) -> El {
                 .focus_selected(selected)
                 .w_full()
                 .padding(7.)
-                .fill(rgb(if selected { p.active } else { p.panel }))
+                .fill(if selected {
+                    rgb(p.active)
+                } else {
+                    rgb(p.panel).alpha(0.)
+                })
                 .hover(rgb(p.hover))
                 .child(row().w(item.depth as f32 * 14.))
                 .child(
@@ -57,26 +59,45 @@ pub fn view(state: &State, p: Palette, dark: bool) -> El {
                 }),
         );
     }
-    col()
+    let content = col()
         .key("sidebar")
-        .w(238.)
+        .w(state.settings.number("sidebar_width"))
         .h_full()
-        .fill(rgb(p.panel))
         .padding(12.)
         .gap(14.)
         .child(
             text(spaces::name_of(&state.root))
+                .key("space-name")
                 .font(TextStyle::new(14., 600.))
                 .color(rgb(p.fg))
                 .padding(6.),
         )
         .child(
-            Button::new(tf(Key::NewNote, &[]))
-                .variant(ButtonVariant::Ghost)
-                .control_size(ControlSize::Regular)
-                .on_press_tx(|s: &mut State, tx| s.new_note(tx))
-                .build(&kit)
-                .key("new-note"),
+            row()
+                .key("new-note")
+                .role("button")
+                .focusable(true)
+                .w_full()
+                .items_center()
+                .justify_between()
+                .padding(7.)
+                .hover(rgb(p.hover))
+                .child(
+                    text(
+                        t(Key::NewNote)
+                            .split(" (")
+                            .next()
+                            .unwrap_or(t(Key::NewNote)),
+                    )
+                    .font(TextStyle::new(13., 400.))
+                    .color(rgb(p.fg)),
+                )
+                .child(
+                    text(format!("{}+N", crate::core::prefs::MOD))
+                        .font(TextStyle::new(11., 400.))
+                        .color(rgb(p.faint)),
+                )
+                .on_press_tx(|s: &mut State, tx| s.new_note(tx)),
         )
         .child(
             col()
@@ -87,5 +108,11 @@ pub fn view(state: &State, p: Palette, dark: bool) -> El {
                     stick_bottom: false,
                 })
                 .child(tree),
-        )
+        );
+    super::app::settings::surface(
+        content,
+        &state.settings,
+        crate::core::prefs::Surface::Sidebar,
+        p.panel,
+    )
 }

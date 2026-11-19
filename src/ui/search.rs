@@ -13,6 +13,7 @@ pub(super) struct SearchBar {
 
 impl State {
     pub fn open_search(&mut self, tx: &mut Tx) {
+        self.customization.open = false;
         self.search.get_or_insert_with(|| SearchBar {
             query: TextEdit::new(""),
             hits: vec![],

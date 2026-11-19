@@ -90,6 +90,7 @@ pub struct State {
     search: Option<search::SearchBar>,
     navigation: crate::io::navigation::Navigation,
     jump: Option<(u64, PathBuf, std::ops::Range<usize>)>,
+    customization: settings::Customization,
 }
 
 impl Default for State {
@@ -120,6 +121,7 @@ impl State {
         let settings_path = settings.snapshot().0;
         let sidebar_open = session.sidebar_open().unwrap_or(true);
         Self {
+            customization: settings::Customization::new(&settings),
             settings,
             root,
             tree: vec![],
@@ -159,6 +161,7 @@ impl State {
     }
 
     pub fn open(&mut self, path: PathBuf, tx: &mut Tx) {
+        self.customization.open = false;
         self.open_with_fallback(path, None, tx);
     }
 
@@ -176,6 +179,7 @@ impl State {
     }
 
     pub fn new_note(&mut self, tx: &mut Tx) {
+        self.customization.open = false;
         self.file_ticket += 1;
         self.files_pending += 1;
         self.files.create(
@@ -187,18 +191,20 @@ impl State {
     }
 
     pub fn edited(&mut self, tx: &mut Tx) {
+        let delay = self.settings.number("autosave_delay") as f64;
         self.edit_revision += 1;
         let revision = self.edit_revision;
         let Some(doc) = self.document_mut() else {
             return;
         };
         doc.revision = revision;
-        let effects = save::step(
+        let effects = save::step_after(
             &mut doc.save,
             Event::Edited {
                 revision: doc.revision,
                 now: tx.clock(),
             },
+            delay,
         );
         doc.analysis.update(&doc.edit.text, doc.revision);
         for effect in effects {
@@ -305,6 +311,7 @@ impl State {
 
     fn poll(&mut self, now: f64, tx: &mut Tx) -> bool {
         let mut changed = self.completions();
+        changed |= self.poll_caret(now, tx);
         while let Ok(reply) = self.scans.replies.try_recv() {
             if !self.scans.generation.accepts(&reply) {
                 continue;
@@ -415,28 +422,29 @@ impl Drop for State {
 
 fn view(state: &State, cx: &mut Cx<State>) -> El {
     cx.zoom(state.settings.zoom());
-    let (palette, dark) = theme::resolve(&state.settings, cx.env().system_dark);
-    let title = state
-        .active
-        .as_ref()
-        .map(|p| {
-            p.file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned()
-        })
-        .unwrap_or_else(|| spaces::name_of(&state.root));
+    let (mut palette, _) = theme::resolve(&state.settings, cx.env().system_dark);
+    let accent = state.settings.preference("accent");
+    let accent = if accent == "system" {
+        let c = cx.accent();
+        let channel = |v| (rune::color::srgb_encode(v) * 255.).round() as u32;
+        Some(channel(c.r) << 16 | channel(c.g) << 8 | channel(c.b))
+    } else {
+        u32::from_str_radix(&accent, 16).ok()
+    };
+    if let Some(accent) = accent {
+        palette.callout[0] = accent;
+        palette.caret = accent;
+        palette.selection = accent << 8 | 0x40;
+    }
+    if state.settings.glass() && state.settings.glass_text_contrast() {
+        palette.body = palette.fg;
+    }
     let mut header = row()
         .w_full()
+        .h(30.)
         .items_center()
-        .justify_between()
-        .padding(14.)
-        .child(
-            text(title)
-                .font(TextStyle::new(13., 500.))
-                .color(rgb(palette.fg))
-                .window_drag(),
-        );
+        .justify_end()
+        .window_drag();
     if let Some(doc) = state.document() {
         let status = match &doc.save {
             SaveState::Clean { .. } => String::new(),
@@ -451,8 +459,13 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
         );
     }
     let mut pane = col().grow(1.).min_w(0.).h_full();
-    if !state.focus_mode {
-        pane = pane.child(header).child(tabs::view(state, palette));
+    if !state.focus_mode && (state.tabs.paths().len() > 1 || state.settings.enabled("single_tab")) {
+        pane = pane.child(settings::surface(
+            tabs::view(state, palette),
+            &state.settings,
+            crate::core::prefs::Surface::Tabs,
+            palette.panel,
+        ));
     }
     if state.find.is_some() {
         pane = pane.child(find::view(state, palette));
@@ -469,45 +482,71 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
         );
     }
     let scroll = state.document().map(|doc| doc.scroll.clone());
-    pane = pane.child(
-        col()
-            .key("editor-scroll")
-            .w_full()
-            .grow(1.)
-            .min_h(0.)
-            .scroll(ScrollSpec {
-                stick_bottom: false,
-            })
-            .on_scroll_offset(move |pos| {
-                if let Some(scroll) = &scroll {
-                    scroll.set(pos.offset[1]);
-                }
-            })
-            .items_center()
-            .padding(28.)
-            .child(
-                col()
-                    .w_full()
-                    .max_w(state.settings.text_width().max_col())
-                    .child(editor::view(state, palette)),
-            ),
-    );
+    if state.settings_open() {
+        pane = pane.child(settings::view(state, palette));
+    } else {
+        pane = pane.child(settings::surface(
+            col()
+                .key("editor-scroll")
+                .w_full()
+                .grow(1.)
+                .min_h(0.)
+                .scroll(ScrollSpec {
+                    stick_bottom: false,
+                })
+                .on_scroll_offset(move |pos| {
+                    if let Some(scroll) = &scroll {
+                        scroll.set(pos.offset[1]);
+                    }
+                })
+                .items_center()
+                .padding(28.)
+                .child(
+                    col()
+                        .w_full()
+                        .max_w(state.settings.text_width().max_col())
+                        .child(editor::view(state, palette)),
+                ),
+            &state.settings,
+            crate::core::prefs::Surface::Editor,
+            palette.bg,
+        ));
+    }
     let mut body = row().w_full().grow(1.).min_h(0.);
     if state.sidebar_open && !state.focus_mode {
-        body = body.child(sidebar::view(state, palette, dark));
+        body = body
+            .child(sidebar::view(state, palette))
+            .child(settings::resize_handle(palette));
     }
-    col()
+    let mut root = col()
         .w_full()
         .h_full()
-        .fill(rgb(palette.bg))
-        .child(row().w_full().h(30.).fill(rgb(palette.panel)).window_drag())
-        .child(body.child(pane))
+        .child(settings::surface(
+            header.child(
+                text(t(Key::Settings))
+                    .key("settings-open")
+                    .role("button")
+                    .focusable(true)
+                    .font(TextStyle::new(12., 400.))
+                    .color(rgb(palette.dim))
+                    .padding(6.)
+                    .on_press_tx(State::toggle_settings),
+            ),
+            &state.settings,
+            crate::core::prefs::Surface::Toolbar,
+            palette.panel,
+        ))
+        .child(body.child(pane));
+    if let Some(caret) = settings::caret(state, cx, palette) {
+        root = root.child(caret);
+    }
+    root
 }
 
 pub fn run() {
     rune::set_app_id("abstract");
     let settings = Settings::load();
-    let family: &'static str = Box::leak(settings.font().to_owned().into_boxed_str());
+    let family: &'static str = Box::leak(settings.preference("ui_font").into_boxed_str());
     let spec = AppSpec {
         fonts: FONTS,
         families: (family, "Noto Sans Mono"),
@@ -516,6 +555,10 @@ pub fn run() {
         ..AppSpec::new("abstract", (1100., 760.), State::default, view)
     };
     App::new(spec)
+        .window_options(rune::WindowOptions {
+            transparent: cfg!(target_os = "macos"),
+            ..Default::default()
+        })
         .init(move || State::new(settings))
         .on_quit(|s, _| s.shutdown())
         .run();
@@ -534,3 +577,6 @@ mod find;
 mod navigation;
 #[path = "search.rs"]
 mod search;
+
+#[path = "settings.rs"]
+pub(super) mod settings;

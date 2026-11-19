@@ -3,11 +3,34 @@ use rune::{Color, Span};
 use crate::core::md::{self, Analysis, Kind};
 use crate::ui::theme::{Palette, rgb, rgba};
 
+#[cfg(test)]
 pub fn decorate(source: &str, anchor: usize, focus: usize, a: &Analysis, p: Palette) -> Vec<Span> {
+    decorate_with(
+        source,
+        anchor,
+        focus,
+        a,
+        p,
+        &crate::core::store::Settings::default(),
+    )
+}
+
+pub fn decorate_with(
+    source: &str,
+    anchor: usize,
+    focus: usize,
+    a: &Analysis,
+    p: Palette,
+    settings: &crate::core::store::Settings,
+) -> Vec<Span> {
     if a.flags.len() != source.len() {
         return vec![];
     }
     let selected = anchor.min(focus)..anchor.max(focus);
+    let conceal = settings.enabled("conceal");
+    let base = settings.number("editor_size") / 17.;
+    let headings = settings.number("heading_scale");
+    let spacing = settings.number("paragraph_spacing");
     let mut concealed = vec![false; source.len()];
     let mut stable = vec![false; source.len()];
     for item in &a.items {
@@ -42,9 +65,28 @@ pub fn decorate(source: &str, anchor: usize, focus: usize, a: &Analysis, p: Pale
             Kind::Heading(_) => 21.,
             _ => 17.,
         };
+        let size = size
+            * base
+            * if matches!(kind, Kind::Heading(_)) {
+                headings
+            } else {
+                1.
+            };
+        let size = if source[line.clone()].trim().is_empty() {
+            size + spacing
+        } else {
+            size
+        };
         let reveal = line.start <= selected.end && selected.start <= line.end;
+        if spacing > 0. && line.is_empty() && source.as_bytes().get(line.end) == Some(&b'\n') {
+            out.push(Span::new(line.end, line.end + 1).size(size));
+        }
         let hide = |i: usize| {
-            !reveal && !matches!(kind, Kind::Code | Kind::Table) && concealed[i] && !stable[i]
+            conceal
+                && !reveal
+                && !matches!(kind, Kind::Code | Kind::Table)
+                && concealed[i]
+                && !stable[i]
         };
         let mut pos = line.start;
         while pos < line.end {

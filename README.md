@@ -8,7 +8,7 @@
 
 The `rune` branch is the staged Rune rewrite. The screenshots and packaged releases
 below show v0.1.5; the Rune build currently provides the Phase 1 skeleton and
-Phase 2a editing behaviours, Phase 2b tabs and Phase 2c find/search/links described here.
+Phase 2a editing behaviours, Phase 2b tabs, Phase 2c find/search/links and Phase 3 settings described here.
 
 ![abstract v0.1.5, light theme](docs/screenshot-light.png)
 
@@ -77,6 +77,30 @@ cheap pointer-to-source-offset callback. Use `Cmd/Ctrl+Enter` instead.
 - Open tab order, active tab, cursors and scroll positions use the existing session
   format. Missing files are skipped during background restore.
 
+## Phase 3 settings and customization
+
+`Cmd/Ctrl+,` opens a keyboard-accessible editor-area settings panel; Escape
+returns to the note without touching its buffer or undo history. Appearance,
+Editor and Files group the live controls. Tab moves between controls; Space
+activates them. Changes use the ordered writer and retain unknown and
+unported settings keys.
+
+Choose palette/accent swatches (including the system accent), independent UI
+and editor font families, editor size/line height, blank-paragraph spacing,
+heading scale, text/sidebar widths, single-tab visibility, syntax concealment,
+caret style/blinking, smart punctuation/pairing and autosave delay. Font presets
+fall back through Rune when unavailable. The legacy `font` still supplies both
+families until separately overridden. Smart pairing is off by default to keep
+the previous editing behavior; it never transforms paste or IME commits.
+Drag the sidebar divider to resize it. Existing zoom shortcuts scale the entire
+window, including text, controls and pointer geometry, and persist their value.
+
+Glass uses Rune's native macOS popover vibrancy behind translucent surface tints,
+with the existing per-surface opacity/intensity and advanced tint/text settings.
+Other platforms keep opaque surfaces where Rune has no native material backend.
+Headless rendering shows the opaque fallback rather than desktop blur. Settings
+for unported tables, tour, exports, spelling, updates and Discord remain hidden.
+
 ## Phase 2c find, search and links
 
 - `Cmd/Ctrl+F` opens the one-row find bar; `Cmd/Ctrl+Alt+F` or `Cmd/Ctrl+H`
@@ -96,7 +120,7 @@ cheap pointer-to-source-offset callback. Use `Cmd/Ctrl+Enter` instead.
   Rune text input has no cheap pointer-to-source-offset callback.
 
 Images,
-external-edit watching, rename/move/trash, exports, settings UI, glass, command
+external-edit watching, rename/move/trash, exports, command
 palette and updater are not yet available. Settings/session/spaces file formats
 remain compatible; window geometry restoration remains deferred.
 

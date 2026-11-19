@@ -11,7 +11,9 @@ pub fn shortcut(key: &KeyEvent, character: char) -> bool {
 
 pub fn handle(state: &mut State, key: &KeyEvent, tx: &mut Tx) -> bool {
     let plain = !key.mods.shift;
-    if key.mods.shift && shortcut(key, 'f') {
+    if (plain && shortcut(key, ',')) || (matches!(key.key, Key::Escape) && state.settings_open()) {
+        state.toggle_settings(tx);
+    } else if key.mods.shift && shortcut(key, 'f') {
         state.open_search(tx);
     } else if plain && shortcut(key, 'f') {
         state.open_find(false, tx);
