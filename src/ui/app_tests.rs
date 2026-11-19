@@ -49,6 +49,7 @@ impl Fixture {
             tabs: Tabs::default(),
             hovered_tab: None,
             restore_started: false,
+            edit_revision: 0,
         };
         let mut rt = Runtime::with_text(
             state,

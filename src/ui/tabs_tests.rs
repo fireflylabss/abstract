@@ -1,5 +1,53 @@
 use super::*;
 
+#[test]
+fn reopened_saved_tabs_write_new_edits_via_autosave_and_quit() {
+    for quit in [false, true] {
+        let fixture = Fixture::new();
+        let path = fixture.0.join("Reopened.md");
+        std::fs::write(&path, "original").unwrap();
+        let mut rt = fixture.runtime();
+        rt.update(|s, tx| s.open(path.clone(), tx));
+        until(&mut rt, |s| s.document().is_some());
+        rt.update(|s, tx| {
+            s.document_mut().unwrap().edit.insert(" first");
+            s.edited(tx);
+            s.document_mut().unwrap().edit.insert(" second");
+            s.edited(tx);
+            s.save_now(tx);
+        });
+        until(&mut rt, |s| {
+            matches!(s.document().unwrap().save, SaveState::Clean { revision: 2 })
+        });
+        rt.update(|s, tx| s.close_tab(&path, tx));
+        until(&mut rt, |s| !s.documents.contains_key(&path));
+        rt.update(|s, tx| s.open(path.clone(), tx));
+        until(&mut rt, |s| s.document().is_some());
+        rt.update(|s, tx| {
+            s.document_mut().unwrap().edit.insert(" reopened");
+            s.edited(tx);
+        });
+        if quit {
+            rt.state.shutdown();
+        } else {
+            for _ in 0..60 {
+                rt.frame(1. / 60.);
+            }
+            rt.state.writer.flush().unwrap();
+            rt.state.completions();
+        }
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "original first second reopened",
+            "quit={quit}"
+        );
+        assert!(matches!(
+            rt.state.document().unwrap().save,
+            SaveState::Clean { .. }
+        ));
+    }
+}
+
 fn three(fixture: &Fixture) -> (Runtime<State>, Vec<PathBuf>) {
     let paths: Vec<_> = ["One.md", "Two.md", "Three.md"]
         .iter()

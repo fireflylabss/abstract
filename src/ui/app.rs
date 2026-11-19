@@ -85,6 +85,7 @@ pub struct State {
     tabs: Tabs,
     hovered_tab: Option<PathBuf>,
     restore_started: bool,
+    edit_revision: u64,
 }
 
 impl Default for State {
@@ -137,6 +138,7 @@ impl State {
             tabs: Tabs::default(),
             hovered_tab: None,
             restore_started: false,
+            edit_revision: 0,
         }
     }
 
@@ -177,10 +179,12 @@ impl State {
     }
 
     pub fn edited(&mut self, tx: &mut Tx) {
+        self.edit_revision += 1;
+        let revision = self.edit_revision;
         let Some(doc) = self.document_mut() else {
             return;
         };
-        doc.revision += 1;
+        doc.revision = revision;
         let effects = save::step(
             &mut doc.save,
             Event::Edited {
