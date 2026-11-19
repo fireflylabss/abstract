@@ -19,11 +19,15 @@ impl Files {
         Self { tx, replies }
     }
 
-    pub fn open(&self, ticket: u64, path: PathBuf) {
+    pub fn open(&self, ticket: u64, path: PathBuf, fallback: Option<PathBuf>) {
         let tx = self.tx.clone();
         std::thread::spawn(move || {
-            let result = fs::read_to_string(&path)
-                .map(|text| (path, text))
+            let read = |path: PathBuf| fs::read_to_string(&path).map(|text| (path, text));
+            let result = read(path)
+                .or_else(|error| match fallback {
+                    Some(path) => read(path),
+                    None => Err(error),
+                })
                 .map_err(|e| e.to_string());
             let _ = tx.send(Reply {
                 ticket,

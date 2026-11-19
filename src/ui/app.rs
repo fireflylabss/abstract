@@ -128,13 +128,17 @@ impl State {
     }
 
     pub fn open(&mut self, path: PathBuf, tx: &mut Tx) {
+        self.open_with_fallback(path, None, tx);
+    }
+
+    fn open_with_fallback(&mut self, path: PathBuf, fallback: Option<PathBuf>, tx: &mut Tx) {
         self.file_ticket += 1;
         if self.documents.contains_key(&path) {
             self.active = Some(path);
             tx.focus("editor", false);
         } else {
             self.files_pending += 1;
-            self.files.open(self.file_ticket, path);
+            self.files.open(self.file_ticket, path, fallback);
             tx.wake_after(Duration::from_millis(16));
         }
         self.error = None;
@@ -246,7 +250,8 @@ impl State {
                         if let Some(path) =
                             restored.or_else(|| vault::newest_note(&self.tree, None))
                         {
-                            self.open(path, tx);
+                            let fallback = vault::newest_note(&self.tree, Some(&path));
+                            self.open_with_fallback(path, fallback, tx);
                         }
                     }
                 }

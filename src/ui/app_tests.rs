@@ -132,6 +132,50 @@ fn failed_open_keeps_current_buffer_and_exposes_error() {
 }
 
 #[test]
+fn startup_falls_back_when_restored_note_is_missing_or_unreadable() {
+    for restored in ["Missing.md", "Invalid.md"] {
+        let fixture = Fixture::new();
+        let fallback = fixture.0.join("Available.md");
+        std::fs::write(&fallback, "fallback content").unwrap();
+        if restored == "Invalid.md" {
+            std::fs::write(fixture.0.join(restored), [0xff]).unwrap();
+        }
+        let mut rt = fixture.runtime();
+        rt.state
+            .session
+            .set_active_tab(Some((&fixture.0, std::path::Path::new(restored))));
+        until(&mut rt, |s| s.document().is_some() || s.error.is_some());
+        assert_eq!(rt.state.active.as_ref(), Some(&fallback), "{restored}");
+        assert_eq!(rt.state.document().unwrap().edit.text, "fallback content");
+        assert!(rt.state.error.is_none());
+    }
+}
+
+#[test]
+fn startup_preserves_valid_restoration_and_handles_empty_space() {
+    let fixture = Fixture::new();
+    let restored = fixture.0.join("Restored.md");
+    std::fs::write(&restored, "restored content").unwrap();
+    std::fs::write(fixture.0.join("Other.md"), "other content").unwrap();
+    let mut rt = fixture.runtime();
+    rt.state
+        .session
+        .set_active_tab(Some((&fixture.0, std::path::Path::new("Restored.md"))));
+    until(&mut rt, |s| s.document().is_some());
+    assert_eq!(rt.state.active.as_ref(), Some(&restored));
+    assert_eq!(rt.state.document().unwrap().edit.text, "restored content");
+
+    let empty = Fixture::new();
+    let mut rt = empty.runtime();
+    rt.state
+        .session
+        .set_active_tab(Some((&empty.0, std::path::Path::new("Missing.md"))));
+    until(&mut rt, |s| s.error.is_some());
+    assert!(rt.state.active.is_none());
+    assert_eq!(rt.state.files_pending, 0);
+}
+
+#[test]
 fn cancelled_quit_does_not_skip_later_edits_or_failed_save_retries() {
     let fixture = Fixture::new();
     let path = fixture.0.join("Note.md");
