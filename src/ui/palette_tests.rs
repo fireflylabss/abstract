@@ -13,14 +13,22 @@ fn note_runtime(fixture: &Fixture) -> Runtime<State> {
 #[test]
 fn spelling_shortcut_preserves_rename_draft() {
     let fixture = Fixture::new();
-    let mut rt = note_runtime(&fixture);
-    rt.update(|s, tx| {
+    std::fs::write(fixture.0.join("Note.md"), "speling").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, _| {
         s.settings.set_spellcheck(true);
         s.settings.kv.set("spell_lang", "en");
-        s.document_mut().unwrap().edit = TextEdit::new("speling");
-        s.edited(tx);
     });
-    until(&mut rt, |s| s.spelling_available());
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !rt.state.spelling_available() {
+        rt.frame(1. / 60.);
+        assert!(
+            Instant::now() < deadline,
+            "dictionary initialization did not finish"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
     rt.update(|s, tx| {
         s.rename_file(s.active.clone().unwrap(), false, false, tx);
         if let file_ops::Mode::Rename { edit, .. } = &mut s.file_ops.mode {
