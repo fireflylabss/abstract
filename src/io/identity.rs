@@ -23,8 +23,29 @@ pub fn relative(path: &Path, root: &Path) -> Option<PathBuf> {
     if let Ok(rel) = path.strip_prefix(root) {
         return Some(rel.to_owned());
     }
+    let root = entry_path(root)?;
     path.ancestors()
-        .find(|ancestor| same_file(ancestor, root))
+        .find(|ancestor| entry_path(ancestor).as_ref() == Some(&root))
         .and_then(|ancestor| path.strip_prefix(ancestor).ok())
         .map(Path::to_owned)
+}
+
+fn entry_path(path: &Path) -> Option<PathBuf> {
+    std::fs::symlink_metadata(path).ok()?;
+    let parent = path.parent()?.canonicalize().ok()?;
+    let name = path.file_name()?;
+    let entries: Vec<_> = std::fs::read_dir(parent)
+        .ok()?
+        .filter_map(Result::ok)
+        .collect();
+    entries
+        .iter()
+        .find(|entry| entry.file_name().as_os_str() == name)
+        .or_else(|| {
+            entries.iter().find(|entry| {
+                entry.file_name().to_string_lossy().to_lowercase()
+                    == name.to_string_lossy().to_lowercase()
+            })
+        })
+        .map(|entry| entry.path())
 }

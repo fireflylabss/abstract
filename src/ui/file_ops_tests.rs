@@ -3,6 +3,24 @@ use crate::io::{operations::Operation, watch::Change};
 
 #[cfg(unix)]
 #[test]
+fn relocation_does_not_follow_final_symlinks_or_hard_links() {
+    use std::fs;
+    let dir = Fixture::new();
+    let target = dir.0.join("Target.md");
+    fs::write(&target, "note").unwrap();
+    let alias = dir.0.join("Alias.md");
+    std::os::unix::fs::symlink(&target, &alias).unwrap();
+    let hard = dir.0.join("Hard.md");
+    fs::hard_link(&target, &hard).unwrap();
+    for other in [&alias, &hard] {
+        assert!(crate::io::identity::same_file(&target, other));
+        assert!(crate::io::identity::relative(&target, other).is_none());
+        assert!(crate::io::identity::relative(other, &target).is_none());
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn symlink_note_saves_through_to_its_regular_target() {
     let fixture = Fixture::new();
     let target = fixture.0.join("Target.md");
