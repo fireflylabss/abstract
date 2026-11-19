@@ -427,7 +427,6 @@ impl State {
             }
         }
         self.completions();
-        self.recover_conflicts();
         self.session.set_sidebar(self.sidebar_open);
         for (path, doc) in &mut self.documents {
             if self.file_ops.conflicts.contains_key(path) {

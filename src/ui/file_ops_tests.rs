@@ -2,6 +2,35 @@ use super::*;
 use crate::io::{operations::Operation, watch::Change};
 
 #[test]
+fn successful_shutdown_retry_does_not_create_a_recovery_copy() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "original").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
+        s.save_now(tx);
+    });
+    assert!(rt.state.writer.flush().is_err());
+    rt.update(|s, _| {
+        s.completions();
+    });
+    assert!(matches!(
+        rt.state.document().unwrap().save,
+        SaveState::Failed { .. }
+    ));
+    std::fs::remove_dir(&path).unwrap();
+    rt.state.shutdown();
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "original local");
+    assert!(!fixture.0.join("Note (conflict).md").exists());
+    assert!(rt.state.file_ops.recovered.is_empty());
+}
+
+#[test]
 fn restored_unchanged_notes_clear_the_deleted_conflict() {
     for dirty in [false, true] {
         let fixture = Fixture::new();
