@@ -1,4 +1,5 @@
 pub mod analysis;
+mod keys;
 mod spans;
 
 use rune::{El, TextStyle, text_input};
@@ -31,10 +32,5 @@ pub fn view(state: &State, palette: Palette) -> El {
         .caret(rgb(palette.caret), rgba(palette.selection))
         .on_edit(|s: &mut State| &mut s.document_mut().expect("mounted editor").edit)
         .on_input_change(|s: &mut State, tx| s.edited(tx))
-        .on_submit(|s: &mut State, tx| {
-            if let Some(doc) = s.document_mut() {
-                doc.edit.insert("\n");
-            }
-            s.edited(tx);
-        })
+        .on_input_key(keys::handle)
 }

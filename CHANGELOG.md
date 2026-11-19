@@ -6,6 +6,7 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+- Add Rune Markdown editing behaviours: list/quote/task continuation, list indentation, task toggling, undoable formatting shortcuts, and sidebar/theme/zoom/focus key bindings.
 - Replace the GPUI shell with the Phase 1 Rune editor: active-space sidebar, live Markdown, compatible settings, and revision-ordered autosave with safe quit flushing and generation-tagged scans.
 
 ## [0.1.5] - 2026-10-06

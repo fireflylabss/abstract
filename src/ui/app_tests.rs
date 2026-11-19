@@ -30,6 +30,8 @@ impl Fixture {
             expanded: HashSet::new(),
             active: None,
             error: None,
+            sidebar_open: true,
+            focus_mode: false,
             documents: HashMap::new(),
             writer: Writer::new(),
             scans,
@@ -39,6 +41,8 @@ impl Fixture {
             files_pending: 0,
             session: Session::default(),
             session_path: self.0.join("session"),
+            settings_path: self.0.join("settings"),
+            settings_pending: 0,
         };
         let mut rt = Runtime::with_text(
             state,
@@ -48,6 +52,7 @@ impl Fixture {
             TextSystem::new(FONTS, ("Noto Sans", "Noto Sans Mono")),
         );
         rt.poll = Some(State::poll);
+        rt.on_key = Some(keymap::handle);
         rt
     }
 }
@@ -68,6 +73,172 @@ fn until(rt: &mut Runtime<State>, condition: impl Fn(&State) -> bool) {
         assert!(Instant::now() < deadline, "background work did not finish");
         std::thread::sleep(Duration::from_millis(1));
     }
+}
+
+fn press(rt: &mut Runtime<State>, key: RuneKey, mods: Mods) {
+    rt.key(KeyEvent { key, mods });
+    rt.frame(1. / 60.);
+}
+
+#[test]
+fn focused_editor_routes_markdown_keys_before_native_editing_and_undoes_once() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "- first").unwrap();
+    let mut rt = fixture.runtime();
+    rt.update(|s, tx| s.open(path.clone(), tx));
+    until(&mut rt, |s| s.document().is_some());
+    press(&mut rt, RuneKey::Enter, Mods::default());
+    assert_eq!(rt.state.document().unwrap().edit.text, "- first\n- ");
+    assert_eq!(rt.state.document().unwrap().revision, 1);
+    press(
+        &mut rt,
+        RuneKey::Command('z'),
+        Mods {
+            cmd: true,
+            ..Mods::default()
+        },
+    );
+    assert_eq!(rt.state.document().unwrap().edit.text, "- first");
+    assert_eq!(rt.state.document().unwrap().edit.focus, 7);
+    press(&mut rt, RuneKey::Tab, Mods::default());
+    assert_eq!(rt.state.document().unwrap().edit.text, "  - first");
+    press(
+        &mut rt,
+        RuneKey::Tab,
+        Mods {
+            shift: true,
+            ..Mods::default()
+        },
+    );
+    assert_eq!(rt.state.document().unwrap().edit.text, "- first");
+}
+
+#[test]
+fn formatting_and_task_commands_accept_command_and_control_forms() {
+    for control in [false, true] {
+        let fixture = Fixture::new();
+        let path = fixture.0.join("Note.md");
+        std::fs::write(&path, "- [ ] café").unwrap();
+        let mut rt = fixture.runtime();
+        rt.update(|s, tx| s.open(path.clone(), tx));
+        until(&mut rt, |s| s.document().is_some());
+        let mods = Mods {
+            cmd: !control,
+            ctrl: control,
+            ..Mods::default()
+        };
+        press(&mut rt, RuneKey::Enter, mods);
+        assert_eq!(rt.state.document().unwrap().edit.text, "- [x] café");
+        for (character, shift, expected) in [
+            ('b', false, "**café**"),
+            ('i', false, "*café*"),
+            ('e', false, "`café`"),
+            ('x', true, "~~café~~"),
+            ('k', false, "[café]()"),
+            ('h', true, "==café=="),
+            ('/', false, "%%café%%"),
+        ] {
+            rt.update(|s, _| s.document_mut().unwrap().edit.set_selection(6, 11));
+            let key = if control {
+                RuneKey::Text(character.to_string())
+            } else {
+                RuneKey::Command(character)
+            };
+            press(&mut rt, key, Mods { shift, ..mods });
+            assert_eq!(
+                rt.state.document().unwrap().edit.text,
+                format!("- [x] {expected}")
+            );
+            let undo = if control {
+                RuneKey::Text("z".into())
+            } else {
+                RuneKey::Command('z')
+            };
+            press(&mut rt, undo, mods);
+            assert_eq!(rt.state.document().unwrap().edit.text, "- [x] café");
+        }
+    }
+}
+
+#[test]
+fn inapplicable_commands_are_handled_without_dirtying_or_undo_history() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "prose").unwrap();
+    let mut rt = fixture.runtime();
+    rt.update(|s, tx| s.open(path.clone(), tx));
+    until(&mut rt, |s| s.document().is_some());
+    press(
+        &mut rt,
+        RuneKey::Enter,
+        Mods {
+            cmd: true,
+            ..Mods::default()
+        },
+    );
+    press(
+        &mut rt,
+        RuneKey::Tab,
+        Mods {
+            shift: true,
+            ..Mods::default()
+        },
+    );
+    assert_eq!(rt.state.document().unwrap().edit.text, "prose");
+    assert_eq!(rt.state.document().unwrap().revision, 0);
+}
+
+#[test]
+fn app_shortcuts_zoom_theme_sidebar_focus_and_persist_preferences() {
+    let fixture = Fixture::new();
+    let mut rt = fixture.runtime();
+    let primary = Mods {
+        cmd: true,
+        ..Mods::default()
+    };
+    press(&mut rt, RuneKey::Command('='), primary);
+    assert!((rt.state.settings.zoom() - 1.1).abs() < 0.001);
+    press(&mut rt, RuneKey::Command('-'), primary);
+    assert!((rt.state.settings.zoom() - 1.).abs() < 0.001);
+    for _ in 0..20 {
+        press(&mut rt, RuneKey::Command('+'), primary);
+    }
+    assert_eq!(rt.state.settings.zoom(), 2.);
+    press(&mut rt, RuneKey::Command('0'), primary);
+    assert_eq!(rt.state.settings.zoom(), 1.);
+    press(
+        &mut rt,
+        RuneKey::Command('l'),
+        Mods {
+            shift: true,
+            ..primary
+        },
+    );
+    assert_eq!(
+        rt.state.settings.theme(),
+        crate::core::prefs::ThemePref::Light
+    );
+    press(&mut rt, RuneKey::Command('\\'), primary);
+    assert!(!rt.state.sidebar_open);
+    press(
+        &mut rt,
+        RuneKey::Enter,
+        Mods {
+            shift: true,
+            ..primary
+        },
+    );
+    assert!(rt.state.focus_mode);
+    press(&mut rt, RuneKey::Escape, Mods::default());
+    assert!(!rt.state.focus_mode);
+    assert!(!rt.state.sidebar_open);
+    rt.state.shutdown();
+    let settings = std::fs::read_to_string(fixture.0.join("settings")).unwrap();
+    assert!(settings.contains("zoom = 1.00"), "{settings}");
+    assert!(settings.contains("theme = light"), "{settings}");
+    let session = std::fs::read_to_string(fixture.0.join("session")).unwrap();
+    assert!(session.contains("sidebar = closed"), "{session}");
 }
 
 #[test]

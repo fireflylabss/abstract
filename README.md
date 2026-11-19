@@ -7,7 +7,8 @@
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 The `rune` branch is the staged Rune rewrite. The screenshots and packaged releases
-below show v0.1.5; Phase 1 currently provides the editing skeleton described here.
+below show v0.1.5; the Rune build currently provides the Phase 1 skeleton and
+Phase 2a editing behaviours described here.
 
 ![abstract v0.1.5, light theme](docs/screenshot-light.png)
 
@@ -44,7 +45,27 @@ watch, updates, crash reporting and Discord sources are retained in `core/` but
 excluded from this build and their dependencies are not pulled in. Spell dictionary
 compression will also need restoring when spell is wired.
 
-Tabs, search/find UI, list continuation, task toggling, following links, images,
+## Phase 2a editing
+
+- **Enter** continues bullets, numbered lists, unchecked tasks and quotes; an empty
+  item exits the list. Fenced code keeps its indentation without continuing markers.
+- **Tab / Shift+Tab** indents/outdents selected list lines by two spaces. Elsewhere,
+  Tab inserts two spaces. `Cmd/Ctrl+Enter` toggles the current task.
+- **Formatting** — `Cmd/Ctrl+B`, `I`, `E`, `Shift+X` and `K` wrap/toggle bold,
+  italic, inline code, strikethrough and a Markdown link. Empty selections insert a
+  pair with the caret inside. `Shift+H` highlights and `/` wraps hidden comments.
+- **Editing** — `Alt+Up/Down` moves lines, `Cmd/Ctrl+Shift+D` duplicates lines,
+  and `Cmd/Ctrl+D` selects the word/next occurrence. Each text command is one undo
+  step; Rune still owns native text navigation, selection, clipboard and IME.
+- **Appearance keys** — `Cmd/Ctrl` with `+`, `-`, `0` zooms in/out/resets;
+  `Shift+L` cycles system/light/dark, `\` toggles the sidebar, `Shift+Enter` toggles
+  focus mode, and Escape leaves focus mode. Theme/zoom persist through the ordered
+  writer; sidebar visibility is restored from the session at startup.
+
+Checkbox clicking is not wired: the pinned Rune text input does not expose a
+cheap pointer-to-source-offset callback. Use `Cmd/Ctrl+Enter` instead.
+
+Tabs, search/find UI, following links, images,
 external-edit watching, rename/move/trash, exports, settings UI, glass, command
 palette and updater are not yet available. Settings/session/spaces file formats
 remain compatible; Phase 1 restores the active note, not window geometry or tabs.

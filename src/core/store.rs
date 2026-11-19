@@ -111,6 +111,10 @@ pub struct Settings {
 }
 
 impl Settings {
+    pub fn snapshot(&self) -> (PathBuf, String) {
+        (settings_file(), self.kv.serialize())
+    }
+
     /// Blocking. Missing/malformed lines fall back to defaults.
     pub fn load() -> Self {
         let kv = std::fs::read_to_string(settings_file())

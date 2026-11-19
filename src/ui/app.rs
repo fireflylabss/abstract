@@ -64,6 +64,8 @@ pub struct State {
     pub expanded: HashSet<PathBuf>,
     pub active: Option<PathBuf>,
     pub error: Option<String>,
+    pub sidebar_open: bool,
+    pub focus_mode: bool,
     documents: HashMap<PathBuf, Document>,
     writer: Writer,
     scans: Scans,
@@ -73,6 +75,8 @@ pub struct State {
     files_pending: usize,
     session: Session,
     session_path: PathBuf,
+    settings_path: PathBuf,
+    settings_pending: usize,
 }
 
 impl Default for State {
@@ -100,6 +104,8 @@ impl State {
         scans.start(root.clone());
         let session = Session::load();
         let session_path = session.snapshot().0;
+        let settings_path = settings.snapshot().0;
+        let sidebar_open = session.sidebar_open().unwrap_or(true);
         Self {
             settings,
             root,
@@ -107,6 +113,8 @@ impl State {
             expanded: HashSet::new(),
             active: None,
             error: None,
+            sidebar_open,
+            focus_mode: false,
             documents: HashMap::new(),
             writer: Writer::new(),
             scans,
@@ -116,6 +124,8 @@ impl State {
             files_pending: 0,
             session,
             session_path,
+            settings_path,
+            settings_pending: 0,
         }
     }
 
@@ -184,6 +194,21 @@ impl State {
         }
     }
 
+    pub fn save_settings(&mut self, tx: &mut Tx) {
+        let (_, text) = self.settings.snapshot();
+        match self.writer.submit(Snapshot {
+            path: self.settings_path.clone(),
+            revision: 0,
+            text,
+        }) {
+            Ok(()) => {
+                self.settings_pending += 1;
+                tx.wake_after(Duration::from_millis(16));
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
+
     fn effects(
         writer: &Writer,
         path: &std::path::Path,
@@ -217,6 +242,14 @@ impl State {
     fn completions(&mut self) -> bool {
         let mut changed = false;
         for completion in self.writer.completions.try_iter() {
+            if completion.path == self.settings_path {
+                self.settings_pending = self.settings_pending.saturating_sub(1);
+                if let Err(error) = completion.result {
+                    self.error = Some(error);
+                }
+                changed = true;
+                continue;
+            }
             if let Some(doc) = self.documents.get_mut(&completion.path) {
                 save::step(
                     &mut doc.save,
@@ -280,7 +313,7 @@ impl State {
             }
             changed = true;
         }
-        let mut working = self.scanning || self.files_pending > 0;
+        let mut working = self.scanning || self.files_pending > 0 || self.settings_pending > 0;
         for (path, doc) in &mut self.documents {
             changed |= doc.analysis.poll(&doc.edit.text, doc.revision);
             let was_pending = matches!(doc.save, SaveState::Pending { .. });
@@ -295,6 +328,7 @@ impl State {
     }
 
     fn shutdown(&mut self) {
+        self.session.set_sidebar(self.sidebar_open);
         for (path, doc) in &mut self.documents {
             for effect in save::step(&mut doc.save, Event::Flush) {
                 if let Effect::Write(revision) = effect
@@ -391,7 +425,10 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
                 .color(rgb(palette.dim)),
         );
     }
-    let mut pane = col().grow(1.).min_w(0.).h_full().child(header);
+    let mut pane = col().grow(1.).min_w(0.).h_full();
+    if !state.focus_mode {
+        pane = pane.child(header);
+    }
     if let Some(error) = &state.error {
         pane = pane.child(
             text(format!("{}: {error}", t(Key::SaveFailed)))
@@ -418,19 +455,16 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
                     .child(editor::view(state, palette)),
             ),
     );
+    let mut body = row().w_full().grow(1.).min_h(0.);
+    if state.sidebar_open && !state.focus_mode {
+        body = body.child(sidebar::view(state, palette, dark));
+    }
     col()
         .w_full()
         .h_full()
         .fill(rgb(palette.bg))
         .child(row().w_full().h(30.).fill(rgb(palette.panel)).window_drag())
-        .child(
-            row()
-                .w_full()
-                .grow(1.)
-                .min_h(0.)
-                .child(sidebar::view(state, palette, dark))
-                .child(pane),
-        )
+        .child(body.child(pane))
 }
 
 pub fn run() {
