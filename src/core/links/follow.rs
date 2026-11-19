@@ -51,6 +51,10 @@ pub fn at(
         .flags
         .get(range.start)
         .is_some_and(|f| f & CODE != 0)
+        || matches!(
+            analysis.lines[analysis.line_of(range.start)].1,
+            crate::core::md::Kind::Code
+        )
     {
         return None;
     }
@@ -146,6 +150,27 @@ pub fn heading_range(source: &str, heading: &str) -> Range<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn indented_code_links_are_not_followable() {
+        for source in [
+            "    [link](Note.md)",
+            "paragraph\n\n    [link](https://example.com)",
+            "    [[Note]]",
+        ] {
+            let analysis = crate::core::md::Analyzer::new().analyze(source);
+            assert!(
+                at(
+                    source,
+                    source.find('[').unwrap() + 2,
+                    &analysis,
+                    Path::new("/notes"),
+                    Path::new("/notes/current.md")
+                )
+                .is_none(),
+                "{source}"
+            );
+        }
+    }
     #[test]
     fn markdown_destinations_unescape_punctuation_before_percent_decoding() {
         let source = r"[note](Note\(1\)%20draft.md#My\!%20heading)";
