@@ -11,13 +11,11 @@ pub fn write(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     fs::create_dir_all(parent)?;
-    let name = path
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing file name"))?
-        .to_string_lossy();
+    path.file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing file name"))?;
     let (temp, mut file) = loop {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let temp = parent.join(format!(".{name}.abstract-{}-{id}.tmp", std::process::id()));
+        let temp = parent.join(format!(".abstract-{}-{id}.tmp", std::process::id()));
         match OpenOptions::new().write(true).create_new(true).open(&temp) {
             Ok(file) => break (temp, file),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,

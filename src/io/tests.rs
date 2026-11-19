@@ -52,6 +52,22 @@ fn b3_ordered_revisioned_writes_do_not_overwrite_newer_text() {
 }
 
 #[test]
+fn atomic_writes_support_250_byte_filenames() {
+    let dir = Dir::new();
+    for name in [
+        format!("{}.md", "a".repeat(247)),
+        format!("{}a.md", "é".repeat(123)),
+    ] {
+        assert_eq!(name.len(), 250);
+        let path = dir.0.join(name);
+        std::fs::write(&path, "original").unwrap();
+        atomic::write(&path, b"updated").unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "updated");
+    }
+    assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 2);
+}
+
+#[test]
 fn atomic_concurrent_writes_have_unique_temps_and_complete_snapshots() {
     let dir = Dir::new();
     let path = dir.0.join("note.md");
