@@ -274,6 +274,10 @@ pub enum Key {
     ImportingImages,
     // Spellcheck
     SpellAddWord,
+    SpellSuggestions,
+    SpellIgnore,
+    SpellNoSuggestions,
+    SpellLoading,
     Spellcheck,
     SpellcheckHint,
     SpellLang,

@@ -495,6 +495,15 @@ pub fn preferences() -> Vec<Preference> {
             Choice(&["narrow", "medium", "wide"]),
         ),
         field("conceal", K::Conceal, 1, "on", Choice(&["on", "off"])),
+        field("spellcheck", K::Spellcheck, 1, "on", Choice(&["on", "off"])),
+        field(
+            "spell_lang",
+            K::SpellLang,
+            1,
+            "auto",
+            Choice(&["auto", "en", "pt-BR", "both"]),
+        ),
+        field("updates", K::CheckUpdates, 2, "on", Choice(&["on", "off"])),
         field(
             "heading_scale",
             K::HeadingScale,

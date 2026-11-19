@@ -16,6 +16,10 @@ const PUBKEY: Option<&str> = Some("RWTskcntw0E+t/qcblSgILGbXMviKrTcyL3tSsMwKOwsm
 const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
 pub(crate) const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
+pub(crate) fn due(enabled: bool, checked: u64, now: u64) -> bool {
+    enabled && now.saturating_sub(checked) >= EVERY.as_secs()
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Release {
     pub version: String,

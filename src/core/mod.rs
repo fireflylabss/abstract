@@ -3,6 +3,7 @@
 pub mod attach;
 pub mod buffer;
 pub mod code;
+pub mod crash;
 pub mod find;
 pub mod footnote;
 pub mod html;
@@ -16,7 +17,9 @@ pub mod prefs;
 pub mod search;
 pub mod smart;
 pub mod spaces;
+pub mod spell;
 pub mod store;
 pub mod table;
 pub mod tabs;
+pub mod update;
 pub mod vault;

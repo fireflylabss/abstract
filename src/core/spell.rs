@@ -14,6 +14,8 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use spellbook::Dictionary;
 
+pub mod cache;
+
 use crate::core::md::{Analysis, Kind};
 
 /// Quiet period after the last edit before a dirty line is re-checked.
@@ -22,7 +24,8 @@ pub const DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(120);
 const MAX_USER_WORDS: usize = 10_000;
 /// Bytes flags that mark a range as not-prose: syntax, code, frontmatter,
 /// math, concealed link destinations.
-const SKIP_FLAGS: u16 = crate::core::md::CODE | crate::core::md::MARK | crate::core::md::MUTED;
+const SKIP_FLAGS: u16 =
+    crate::core::md::CODE | crate::core::md::MARK | crate::core::md::MUTED | crate::core::md::LINK;
 
 /// Bitmask of the dictionaries a word is checked against.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -132,6 +135,10 @@ impl Engine {
     /// Blocking: inflates + parses both dictionaries and reads the personal
     /// dictionary. Call from a background task.
     pub fn load() -> Self {
+        Self::load_from(&user_file())
+    }
+
+    pub fn load_from(path: &std::path::Path) -> Self {
         let en = load_dict(
             include_bytes!(concat!(env!("OUT_DIR"), "/dict/en_US.aff.z")),
             include_bytes!(concat!(env!("OUT_DIR"), "/dict/en_US.dic.z")),
@@ -140,7 +147,7 @@ impl Engine {
             include_bytes!(concat!(env!("OUT_DIR"), "/dict/pt_BR.aff.z")),
             include_bytes!(concat!(env!("OUT_DIR"), "/dict/pt_BR.dic.z")),
         );
-        let user = std::fs::read_to_string(user_file())
+        let user = std::fs::read_to_string(path)
             .map(|s| {
                 s.lines()
                     .map(str::trim)
@@ -233,13 +240,17 @@ impl Engine {
 
     /// Persist the personal dictionary; blocking, call off the UI thread.
     pub fn save_user(&self) {
-        let Ok(user) = self.user.read() else {
-            return;
-        };
-        let body: String = user.iter().map(|w| format!("{w}\n")).collect();
-        if let Err(err) = crate::core::store::write_atomic(&user_file(), body.as_bytes()) {
+        if let Err(err) = self.save_user_to(&user_file()) {
             eprintln!("abstract: failed to save userdict: {err}");
         }
+    }
+
+    pub fn save_user_to(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let Ok(user) = self.user.read() else {
+            return Err(std::io::Error::other("Personal dictionary unavailable"));
+        };
+        let body: String = user.iter().map(|w| format!("{w}\n")).collect();
+        crate::core::store::write_atomic(path, body.as_bytes())
     }
 }
 
@@ -361,7 +372,7 @@ pub fn scan_line(
         let skip = a.flags[abs_s..abs_e].iter().any(|f| f & SKIP_FLAGS != 0)
             || a.wiki_links
                 .iter()
-                .any(|l| l.target.start < abs_e && abs_s < l.target.end)
+                .any(|l| l.range.start < abs_e && abs_s < l.range.end)
             || a.images
                 .iter()
                 .any(|im| im.src.start < abs_e && abs_s < im.src.end);

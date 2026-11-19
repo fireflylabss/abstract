@@ -28,18 +28,14 @@ fn stepping_and_legacy_settings_preserve_hidden_keys() {
         s.kv.set(p.key, &v);
     }
     let text = s.kv.serialize();
-    for line in [
-        "font = Georgia",
-        "discord = off",
-        "unknown = future",
-        "spell_lang = both",
-    ] {
+    for line in ["font = Georgia", "discord = off", "unknown = future"] {
         assert!(text.contains(line));
     }
-    assert!(!preferences().iter().any(|p| matches!(
-        p.key,
-        "spellcheck" | "updates" | "discord" | "raw_tables" | "tour"
-    )));
+    assert!(
+        !preferences()
+            .iter()
+            .any(|p| matches!(p.key, "discord" | "raw_tables" | "tour"))
+    );
 }
 
 #[test]
