@@ -62,6 +62,16 @@ fn split(target: &str) -> (&str, &str) {
 }
 
 pub fn destination_target(target: &str, root: &Path, current: &Path) -> Option<Target> {
+    let mut unescaped = String::with_capacity(target.len());
+    let mut chars = target.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.peek().is_some_and(char::is_ascii_punctuation) {
+            unescaped.push(chars.next()?);
+        } else {
+            unescaped.push(c);
+        }
+    }
+    let target = unescaped.as_str();
     let target = target.trim().trim_start_matches('<').trim_end_matches('>');
     if target.starts_with("https://") || target.starts_with("http://") {
         return Some(Target::External(target.into()));
@@ -136,6 +146,43 @@ pub fn heading_range(source: &str, heading: &str) -> Range<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn markdown_destinations_unescape_punctuation_before_percent_decoding() {
+        let source = r"[note](Note\(1\)%20draft.md#My\!%20heading)";
+        let analysis = crate::core::md::Analyzer::new().analyze(source);
+        assert_eq!(
+            at(
+                source,
+                2,
+                &analysis,
+                Path::new("/notes"),
+                Path::new("/notes/current.md")
+            ),
+            Some(Target::Local {
+                path: "/notes/Note(1) draft.md".into(),
+                heading: "My! heading".into(),
+            })
+        );
+        assert_eq!(
+            destination_target(
+                r"https://example.com/a\(b\)",
+                Path::new("/notes"),
+                Path::new("/notes/current.md")
+            ),
+            Some(Target::External("https://example.com/a(b)".into()))
+        );
+        assert_eq!(
+            destination_target(
+                r"Note%5C(1%5C).md",
+                Path::new("/notes"),
+                Path::new("/notes/current.md")
+            ),
+            Some(Target::Local {
+                path: r"/notes/Note\(1\).md".into(),
+                heading: "".into()
+            })
+        );
+    }
     #[test]
     fn follows_wiki_alias_headings_markdown_and_urls_but_not_code() {
         for (source, caret, expected) in [
