@@ -8,7 +8,7 @@
 
 The `rune` branch is the staged Rune rewrite. The screenshots and packaged releases
 below show v0.1.5; the Rune build currently provides the Phase 1 skeleton and
-Phase 2a editing behaviours, Phase 2b tabs, Phase 2c find/search/links and Phase 3 settings described here.
+Phase 2a editing behaviours, Phase 2b tabs, Phase 2c find/search/links, Phase 3 settings and Phase 4a file operations described here.
 
 ![abstract v0.1.5, light theme](docs/screenshot-light.png)
 
@@ -41,7 +41,7 @@ The pure logic lives in `src/core/`, persistence in `src/io/`, and Rune views in
 `src/ui/`. Buffer, Markdown/code/footnote parsing, find, lines, smart editing, tables,
 vault, search, links, spaces, preferences, store and i18n compile now; later phases
 will wire their additional UI. HTML/PDF export, attachments, math rendering, spell,
-watch, updates, crash reporting and Discord sources are retained in `core/` but
+updates, crash reporting and Discord sources are retained in `core/` but
 excluded from this build and their dependencies are not pulled in. Spell dictionary
 compression will also need restoring when spell is wired.
 
@@ -101,6 +101,29 @@ Other platforms keep opaque surfaces where Rune has no native material backend.
 Headless rendering shows the opaque fallback rather than desktop blur. Settings
 for unported tables, tour, exports, spelling, updates and Discord remain hidden.
 
+## Phase 4a file operations
+
+Right-click a sidebar item for Rename, New folder, Move to… and Move to Trash.
+Folders remain collapsible; the move picker includes collapsed folders. Rename is
+inline: Enter commits and Escape cancels. F2/Enter on a focused sidebar item also
+renames; F2 in the editor renames the current note. Delete/Backspace (with Cmd on
+macOS) asks before trashing. The sidebar's New folder row works in empty spaces.
+Trash Undo restores files and folders without overwriting a recreated path.
+Undo is available until the next trash operation or exit; snapshots are limited
+to 128 MiB/10,000 entries and refuse symbolic links before deleting anything.
+
+File mutations share the ordered writer: pending edits finish before rename,
+move or trash, and open buffers/tabs/session paths follow successful moves.
+Editing pauses during a mutation. Names are sanitized for Windows on every OS.
+Recursive `notify` events are debounced on a worker; own acknowledged writes and
+temporary files are ignored. Clean notes reload; dirty notes retain their buffers,
+pause autosave and offer reload from disk or explicitly keep local edits.
+Closing a conflicted tab requires resolving it first. Quitting with unresolved
+conflicts preserves local buffers in collision-safe `Name (conflict).md` copies,
+without overwriting the externally changed originals.
+Tree scans retain their generation filtering. Optional wiki-link rewriting is not
+included, so links may need updating after a rename or move.
+
 ## Phase 2c find, search and links
 
 - `Cmd/Ctrl+F` opens the one-row find bar; `Cmd/Ctrl+Alt+F` or `Cmd/Ctrl+H`
@@ -120,7 +143,7 @@ for unported tables, tour, exports, spelling, updates and Discord remain hidden.
   Rune text input has no cheap pointer-to-source-offset callback.
 
 Images,
-external-edit watching, rename/move/trash, exports, command
+exports, command
 palette and updater are not yet available. Settings/session/spaces file formats
 remain compatible; window geometry restoration remains deferred.
 

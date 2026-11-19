@@ -6,6 +6,8 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+- Add sidebar file operations, collision-safe Trash undo, portable filenames, and external-change detection with conflict notices.
+
 - Add live Rune settings, separate UI/editor fonts, editor customization, resizable sidebar, native macOS glass, and persistent whole-window zoom.
 
 - Add Rune find/replace, Unicode-safe background space search, and Alt+Enter wiki/Markdown link navigation.
