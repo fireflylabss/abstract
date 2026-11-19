@@ -375,7 +375,8 @@ pub fn scan_line(
                 .any(|l| l.range.start < abs_e && abs_s < l.range.end)
             || a.images
                 .iter()
-                .any(|im| im.src.start < abs_e && abs_s < im.src.end);
+                .any(|im| im.src.start < abs_e && abs_s < im.src.end)
+            || !a.maths_overlapping(&(abs_s..abs_e)).is_empty();
         if !skip && !engine.check(&line[ws..we], langs) {
             bad.push(ws..we);
         }

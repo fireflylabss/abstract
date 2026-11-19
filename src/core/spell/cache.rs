@@ -28,6 +28,7 @@ impl Cache {
                 .iter()
                 .map(|l| &l.range)
                 .chain(analysis.images.iter().map(|i| &i.src))
+                .chain(analysis.maths.iter().map(|m| &m.range))
                 .filter(|r| r.start < range.end && range.start < r.end)
             {
                 (

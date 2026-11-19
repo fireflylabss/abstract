@@ -46,6 +46,19 @@ fn contextual_changes_invalidate_identical_lines_and_skip_all_non_prose() {
     assert_eq!(cache.check("wrng", &engine, Langs::PT), vec![0..4]);
 }
 #[test]
+fn math_is_excluded_and_context_changes_invalidate_cached_lines() {
+    let mut cache = Cache::default();
+    let engine = engine();
+    assert_eq!(cache.check("wrng", &engine, Langs::EN), vec![0..4]);
+    assert!(cache.check("$$\nwrng\n$$", &engine, Langs::EN).is_empty());
+    assert_eq!(
+        cache.check("wrng $badd$ tail", &engine, Langs::EN),
+        vec![0..4, 12..16]
+    );
+    assert_eq!(cache.check("wrng", &engine, Langs::EN), vec![0..4]);
+}
+
+#[test]
 fn cache_is_bounded_by_entries_and_bytes() {
     let text = (0..MAX_LINES + 10)
         .map(|i| format!("word{i}\n"))
