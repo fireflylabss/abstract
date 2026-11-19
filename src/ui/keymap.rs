@@ -10,6 +10,12 @@ pub fn shortcut(key: &KeyEvent, character: char) -> bool {
 }
 
 pub fn handle(state: &mut State, key: &KeyEvent, tx: &mut Tx) -> bool {
+    if state.file_key(key, tx) {
+        return true;
+    }
+    if state.files_busy() && !shortcut(key, 'q') {
+        return true;
+    }
     let plain = !key.mods.shift;
     if (plain && shortcut(key, ',')) || (matches!(key.key, Key::Escape) && state.settings_open()) {
         state.toggle_settings(tx);

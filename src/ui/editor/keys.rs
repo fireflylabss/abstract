@@ -7,6 +7,9 @@ use crate::ui::{
 };
 
 pub fn handle(state: &mut State, key: &KeyEvent, tx: &mut Tx) -> bool {
+    if state.files_busy() {
+        return true;
+    }
     if keymap::handle(state, key, tx) {
         return true;
     }

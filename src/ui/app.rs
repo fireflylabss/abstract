@@ -91,6 +91,7 @@ pub struct State {
     navigation: crate::io::navigation::Navigation,
     jump: Option<(u64, PathBuf, std::ops::Range<usize>)>,
     customization: settings::Customization,
+    file_ops: file_ops::FileOps,
 }
 
 impl Default for State {
@@ -121,6 +122,7 @@ impl State {
         let settings_path = settings.snapshot().0;
         let sidebar_open = session.sidebar_open().unwrap_or(true);
         Self {
+            file_ops: file_ops::FileOps::default(),
             customization: settings::Customization::new(&settings),
             settings,
             root,
@@ -161,6 +163,9 @@ impl State {
     }
 
     pub fn open(&mut self, path: PathBuf, tx: &mut Tx) {
+        if self.files_busy() {
+            return;
+        }
         self.customization.open = false;
         self.open_with_fallback(path, None, tx);
     }
@@ -179,6 +184,9 @@ impl State {
     }
 
     pub fn new_note(&mut self, tx: &mut Tx) {
+        if self.files_busy() {
+            return;
+        }
         self.customization.open = false;
         self.file_ticket += 1;
         self.files_pending += 1;
@@ -222,7 +230,13 @@ impl State {
     }
 
     pub fn save_now(&mut self, tx: &mut Tx) {
+        if self.files_busy() {
+            return;
+        }
         for (path, doc) in &mut self.documents {
+            if self.file_ops.conflicts.contains_key(path) {
+                continue;
+            }
             Self::effects(&self.writer, path, doc, Event::Flush, tx);
         }
     }
@@ -311,6 +325,7 @@ impl State {
 
     fn poll(&mut self, now: f64, tx: &mut Tx) -> bool {
         let mut changed = self.completions();
+        changed |= self.poll_file_ops(tx);
         changed |= self.poll_caret(now, tx);
         while let Ok(reply) = self.scans.replies.try_recv() {
             if !self.scans.generation.accepts(&reply) {
@@ -360,6 +375,7 @@ impl State {
         changed |= self.poll_search();
         self.apply_jump(tx);
         let mut working = self.scanning
+            || self.files_busy()
             || self.files_pending > 0
             || self.settings_pending > 0
             || self.navigation.busy
@@ -367,7 +383,11 @@ impl State {
         for (path, doc) in &mut self.documents {
             changed |= doc.analysis.poll(&doc.edit.text, doc.revision);
             let was_pending = matches!(doc.save, SaveState::Pending { .. });
-            Self::effects(&self.writer, path, doc, Event::Timer(now), tx);
+            if !matches!(self.file_ops.mode, file_ops::Mode::Busy)
+                && !self.file_ops.conflicts.contains_key(path)
+            {
+                Self::effects(&self.writer, path, doc, Event::Timer(now), tx);
+            }
             changed |= was_pending && matches!(doc.save, SaveState::Saving { .. });
             working |= doc.analysis.running() || matches!(doc.save, SaveState::Saving { .. });
         }
@@ -378,8 +398,18 @@ impl State {
     }
 
     fn shutdown(&mut self) {
+        if self.files_busy() {
+            match self.writer.operations.recv() {
+                Ok(result) => self.finish_pending_file_operation(result),
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
+        self.recover_conflicts();
         self.session.set_sidebar(self.sidebar_open);
         for (path, doc) in &mut self.documents {
+            if self.file_ops.conflicts.contains_key(path) {
+                continue;
+            }
             for effect in save::step(&mut doc.save, Event::Flush) {
                 if let Effect::Write(revision) = effect
                     && let Err(error) = self.writer.submit(Snapshot {
@@ -459,6 +489,7 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
         );
     }
     let mut pane = col().grow(1.).min_w(0.).h_full();
+    pane = pane.child(file_ops::notice(state, palette));
     if !state.focus_mode && (state.tabs.paths().len() > 1 || state.settings.enabled("single_tab")) {
         pane = pane.child(settings::surface(
             tabs::view(state, palette),
@@ -540,6 +571,9 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
     if let Some(caret) = settings::caret(state, cx, palette) {
         root = root.child(caret);
     }
+    if let Some(overlay) = file_ops::overlay(state, palette) {
+        root = root.child(overlay);
+    }
     root
 }
 
@@ -580,3 +614,6 @@ mod search;
 
 #[path = "settings.rs"]
 pub(super) mod settings;
+
+#[path = "file_ops.rs"]
+pub(super) mod file_ops;

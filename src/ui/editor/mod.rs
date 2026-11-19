@@ -11,6 +11,12 @@ use crate::ui::{
 };
 
 pub fn view(state: &State, palette: Palette) -> El {
+    if state.files_busy() {
+        return rune::text(t(Key::Saving))
+            .key("file-operation-busy")
+            .color(rgb(palette.dim))
+            .padding(28.);
+    }
     let Some(doc) = state.document() else {
         return rune::text(t(Key::NoNotesFound))
             .color(rgb(palette.dim))

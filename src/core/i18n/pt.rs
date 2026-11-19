@@ -34,6 +34,15 @@ pub(super) fn pt(k: Key) -> &'static str {
         Key::Words => "{n} palavras",
         Key::NewNote => "Nova nota ({MOD}+N)",
         Key::NewFolder => "Nova pasta",
+        Key::MoveFileTo => "Mover para…",
+        Key::FilesTrashedUndo => "Movido para a lixeira · Desfazer",
+        Key::ExternalConflict => "Alterado fora do Abstract. Suas edições foram mantidas.",
+        Key::KeepLocal => "Manter minhas edições",
+        Key::ConflictRecovered => "Conflito não salvo recuperado",
+        Key::ReloadDiscard => "Recarregar (descartar edições)",
+        Key::ResolveFileConflict => {
+            "Aguarde a abertura dos arquivos e resolva as alterações externas primeiro."
+        }
         Key::SwitchSpace => "Trocar de espaço ({MOD}+O)",
         Key::Notes => "NOTAS",
         Key::Rename => "Renomear",

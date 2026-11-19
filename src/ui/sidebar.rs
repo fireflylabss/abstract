@@ -21,6 +21,12 @@ pub fn view(state: &State, p: Palette) -> El {
     for item in vault::flatten(&state.tree, &state.expanded) {
         let path = item.path.clone();
         let folder = item.kind == NodeKind::Folder;
+        if let Some(edit) = super::app::file_ops::rename_view(state, &path, p) {
+            tree = tree.child(edit);
+            continue;
+        }
+        let context = path.clone();
+        let keyboard = path.clone();
         let selected = state.active.as_ref() == Some(&path);
         let prefix = if folder {
             if item.expanded { "▾ " } else { "▸ " }
@@ -33,6 +39,13 @@ pub fn view(state: &State, p: Palette) -> El {
                 .role("treeitem")
                 .label(item.name.clone())
                 .focusable(true)
+                .disabled(state.files_busy())
+                .on_secondary_press(move |s: &mut State, press, tx| {
+                    super::app::file_ops::secondary(s, context.clone(), folder, press, tx)
+                })
+                .on_key(move |s: &mut State, key, tx| {
+                    s.sidebar_file_key(&keyboard, folder, key, tx)
+                })
                 .focus_selected(selected)
                 .w_full()
                 .padding(7.)
@@ -98,6 +111,18 @@ pub fn view(state: &State, p: Palette) -> El {
                         .color(rgb(p.faint)),
                 )
                 .on_press_tx(|s: &mut State, tx| s.new_note(tx)),
+        )
+        .child(
+            text(t(Key::NewFolder))
+                .key("new-folder")
+                .role("button")
+                .focusable(true)
+                .font(TextStyle::new(12., 400.))
+                .color(rgb(p.dim))
+                .padding(7.)
+                .hover(rgb(p.hover))
+                .disabled(state.files_busy())
+                .on_press_tx(|s: &mut State, tx| s.rename_file(s.root.clone(), true, true, tx)),
         )
         .child(
             col()

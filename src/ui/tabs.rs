@@ -23,6 +23,13 @@ impl State {
     }
 
     pub fn close_tab(&mut self, path: &std::path::Path, tx: &mut Tx) {
+        if self.files_busy() {
+            return;
+        }
+        if self.file_ops.conflicts.contains_key(path) {
+            self.error = Some(t(Key::ResolveFileConflict).into());
+            return;
+        }
         if let Some(doc) = self.documents.get_mut(path) {
             Self::effects(&self.writer, path, doc, Event::Flush, tx);
         }

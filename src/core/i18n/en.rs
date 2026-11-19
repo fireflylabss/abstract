@@ -34,6 +34,15 @@ pub(super) fn en(k: Key) -> &'static str {
         Key::Words => "{n} words",
         Key::NewNote => "New note ({MOD}+N)",
         Key::NewFolder => "New folder",
+        Key::MoveFileTo => "Move to…",
+        Key::FilesTrashedUndo => "Moved to Trash · Undo",
+        Key::ExternalConflict => "Changed outside Abstract. Your edits are kept.",
+        Key::KeepLocal => "Keep my edits",
+        Key::ConflictRecovered => "Unsaved conflict recovered",
+        Key::ReloadDiscard => "Reload (discard edits)",
+        Key::ResolveFileConflict => {
+            "Wait for files to finish opening and resolve external changes first."
+        }
         Key::SwitchSpace => "Switch space ({MOD}+O)",
         Key::Notes => "NOTES",
         Key::Rename => "Rename",
