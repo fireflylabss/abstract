@@ -384,10 +384,12 @@ impl State {
     }
 
     pub fn recover_conflicts(&mut self) {
-        for path in self.file_ops.conflicts.keys() {
-            let Some(doc) = self.documents.get(path) else {
+        for (path, doc) in &self.documents {
+            if !self.file_ops.conflicts.contains_key(path)
+                && !matches!(doc.save, SaveState::Failed { .. })
+            {
                 continue;
-            };
+            }
             let hash = crate::io::writer::hash(&doc.edit.text);
             if !doc.save.unacknowledged() || self.file_ops.recovered.get(path) == Some(&hash) {
                 continue;

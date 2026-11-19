@@ -1,6 +1,54 @@
 use super::*;
 use crate::io::{operations::Operation, watch::Change};
 
+#[cfg(unix)]
+#[test]
+fn symlink_note_saves_through_to_its_regular_target() {
+    let fixture = Fixture::new();
+    let target = fixture.0.join("Target.md");
+    let alias = fixture.0.join("Alias.md");
+    std::fs::write(&target, "original").unwrap();
+    std::os::unix::fs::symlink(&target, &alias).unwrap();
+    let mut rt = fixture.runtime();
+    rt.update(|s, tx| s.open(alias.clone(), tx));
+    until(&mut rt, |s| {
+        s.active.as_ref() == Some(&alias) && s.files_pending == 0
+    });
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
+        s.save_now(tx);
+    });
+    assert!(rt.state.writer.flush().is_ok());
+    assert_eq!(std::fs::read_to_string(target).unwrap(), "original local");
+    assert!(
+        std::fs::symlink_metadata(alias)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
+#[test]
+fn shutdown_recovers_a_failed_save_without_a_watcher_conflict() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "original").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
+    });
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    rt.state.shutdown();
+    assert_eq!(
+        std::fs::read_to_string(fixture.0.join("Note (conflict).md")).unwrap(),
+        "original local"
+    );
+}
+
 #[test]
 fn clean_external_reload_rebases_the_next_save() {
     let fixture = Fixture::new();

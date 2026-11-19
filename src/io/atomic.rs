@@ -10,7 +10,12 @@ pub fn write(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 pub fn write_existing(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    write_inner(path, bytes, false)
+    let target = if fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink()) {
+        path.canonicalize()?
+    } else {
+        path.to_owned()
+    };
+    write_inner(&target, bytes, false)
 }
 
 fn write_inner(path: &Path, bytes: &[u8], create_parents: bool) -> io::Result<()> {

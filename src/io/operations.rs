@@ -251,7 +251,7 @@ pub fn execute(operation: Operation) -> Result<Outcome, String> {
 }
 
 pub fn read_regular(path: &Path) -> io::Result<String> {
-    if !fs::symlink_metadata(path)?.is_file() {
+    if !fs::metadata(path)?.is_file() {
         return Err(io::Error::other("Not a regular file"));
     }
     fs::read_to_string(path)
