@@ -95,6 +95,8 @@ pub struct State {
     jump: Option<(u64, PathBuf, std::ops::Range<usize>)>,
     customization: settings::Customization,
     file_ops: file_ops::FileOps,
+    export: export::ExportUi,
+    attachments: attachments::Attachments,
 }
 
 impl Default for State {
@@ -154,6 +156,8 @@ impl State {
             search: None,
             navigation: crate::io::navigation::Navigation::new(),
             jump: None,
+            export: export::ExportUi::new(),
+            attachments: attachments::Attachments::new(),
         }
     }
 
@@ -212,10 +216,17 @@ impl State {
     }
 
     pub fn edited(&mut self, tx: &mut Tx) {
+        let Some(path) = self.active.clone() else {
+            return;
+        };
+        self.edited_path(&path, tx);
+    }
+
+    pub fn edited_path(&mut self, path: &std::path::Path, tx: &mut Tx) {
         let delay = self.settings.number("autosave_delay") as f64;
         self.edit_revision += 1;
         let revision = self.edit_revision;
-        let Some(doc) = self.document_mut() else {
+        let Some(doc) = self.documents.get_mut(path) else {
             return;
         };
         doc.revision = revision;
@@ -349,6 +360,8 @@ impl State {
 
     fn poll(&mut self, now: f64, tx: &mut Tx) -> bool {
         let mut changed = self.completions();
+        changed |= self.poll_export(tx);
+        changed |= self.poll_attachments(tx);
         changed |= self.poll_file_ops(tx);
         changed |= self.poll_caret(now, tx);
         while let Ok(reply) = self.scans.replies.try_recv() {
@@ -420,6 +433,8 @@ impl State {
     }
 
     fn shutdown(&mut self) {
+        self.flush_export();
+        self.flush_attachments();
         if self.files_busy() {
             match self.writer.operations.recv() {
                 Ok(result) => self.finish_pending_file_operation(result),
@@ -516,6 +531,8 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
     }
     let mut pane = col().grow(1.).min_w(0.).h_full();
     pane = pane.child(file_ops::notice(state, palette));
+    pane = pane.child(export::notice(state, palette));
+    pane = pane.child(attachments::notice(state, palette));
     if !state.focus_mode && (state.tabs.paths().len() > 1 || state.settings.enabled("single_tab")) {
         pane = pane.child(settings::surface(
             tabs::view(state, palette),
@@ -643,3 +660,9 @@ pub(super) mod settings;
 
 #[path = "file_ops.rs"]
 pub(super) mod file_ops;
+
+#[path = "export.rs"]
+pub(super) mod export;
+
+#[path = "attachments.rs"]
+pub(super) mod attachments;

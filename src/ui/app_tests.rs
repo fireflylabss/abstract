@@ -17,6 +17,9 @@ mod settings_tests;
 #[path = "file_ops_tests.rs"]
 mod file_ops_tests;
 
+#[path = "export_tests.rs"]
+mod export_tests;
+
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture(PathBuf);
@@ -65,6 +68,8 @@ impl Fixture {
             search: None,
             navigation: crate::io::navigation::Navigation::new(),
             jump: None,
+            export: export::ExportUi::new(),
+            attachments: attachments::Attachments::new(),
         };
         let mut rt = Runtime::with_text(
             state,

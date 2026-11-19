@@ -270,6 +270,8 @@ pub enum Key {
     MathBlock,
     ExportAsPdf,
     ExportingPdf,
+    Exporting,
+    ImportingImages,
     // Spellcheck
     SpellAddWord,
     Spellcheck,

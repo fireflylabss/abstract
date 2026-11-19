@@ -19,6 +19,19 @@ pub fn handle(state: &mut State, key: &KeyEvent, tx: &mut Tx) -> bool {
     let plain = !key.mods.shift;
     if (plain && shortcut(key, ',')) || (matches!(key.key, Key::Escape) && state.settings_open()) {
         state.toggle_settings(tx);
+    } else if key.mods.shift && shortcut(key, 'e') {
+        if let Some(path) = state.active.clone() {
+            state.export_note(path, crate::io::export::Format::Html, tx);
+        }
+    } else if plain
+        && key.mods.alt
+        && (key.mods.cmd || key.mods.ctrl)
+        && (key.is_command('e')
+            || matches!(&key.key, Key::Text(text) if text.eq_ignore_ascii_case("e")))
+    {
+        if let Some(path) = state.active.clone() {
+            state.export_note(path, crate::io::export::Format::Pdf, tx);
+        }
     } else if key.mods.shift && shortcut(key, 'f') {
         state.open_search(tx);
     } else if plain && shortcut(key, 'f') {

@@ -92,6 +92,9 @@ impl State {
     }
 
     pub fn operate(&mut self, operation: Operation, tx: &mut Tx) {
+        if self.attachments.busy() {
+            return;
+        }
         if self.files_busy()
             || self.files_pending > 0
             || self.navigation.busy
@@ -581,7 +584,8 @@ pub(super) fn overlay(s: &State, p: theme::Palette) -> Option<El> {
                                 tx.focus("file-trash-confirm", false);
                             },
                         ),
-                    ),
+                    )
+                    .child(if folder { col() } else { export::menu(path, p) }),
             )
         }
         Mode::Rename {

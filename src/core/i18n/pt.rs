@@ -238,6 +238,8 @@ pub(super) fn pt(k: Key) -> &'static str {
         Key::MathBlock => "Math em bloco",
         Key::ExportAsPdf => "Exportar como PDF…",
         Key::ExportingPdf => "Exportando PDF…",
+        Key::Exporting => "Exportando…",
+        Key::ImportingImages => "Importando imagens…",
         Key::SpellAddWord => "Adicionar ao dicionário",
         Key::Spellcheck => "Ortografia",
         Key::SpellcheckHint => "Sublinhar palavras com erro",

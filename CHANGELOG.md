@@ -6,6 +6,8 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+- Restore HTML/PDF export from live tab buffers with background workers, native save dialogs, progress/error notices and embedded images; add collision-safe clipboard/drop image imports. Replace the legacy PDF writer with krilla and HarfRust.
+
 - Add sidebar file operations, collision-safe Trash undo, portable filenames, and external-change detection with conflict notices.
 
 - Add live Rune settings, separate UI/editor fonts, editor customization, resizable sidebar, native macOS glass, and persistent whole-window zoom.

@@ -71,5 +71,13 @@ pub fn view(state: &State, palette: Palette) -> El {
         )
         .on_edit(|s: &mut State| &mut s.document_mut().expect("mounted editor").edit)
         .on_input_change(|s: &mut State, tx| s.edited(tx))
+        .on_input_paste(State::paste_attachment)
+        .on_drop_files(State::drop_images)
+        .accepts_files(|path| crate::core::md::is_image_path(&path.to_string_lossy()))
+        .on_secondary_press(|s: &mut State, press, tx| {
+            if let Some(path) = s.active.clone() {
+                crate::ui::app::file_ops::secondary(s, path, false, press, tx);
+            }
+        })
         .on_input_key(keys::handle)
 }

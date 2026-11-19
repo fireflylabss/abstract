@@ -234,6 +234,8 @@ pub(super) fn en(k: Key) -> &'static str {
         Key::MathBlock => "Math block",
         Key::ExportAsPdf => "Export as PDF…",
         Key::ExportingPdf => "Exporting PDF…",
+        Key::Exporting => "Exporting…",
+        Key::ImportingImages => "Importing images…",
         Key::SpellAddWord => "Add to dictionary",
         Key::Spellcheck => "Spellcheck",
         Key::SpellcheckHint => "Underline misspelled words",

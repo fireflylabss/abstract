@@ -23,7 +23,7 @@ impl State {
     }
 
     pub fn close_tab(&mut self, path: &std::path::Path, tx: &mut Tx) {
-        if self.files_busy() {
+        if self.files_busy() || self.attachments.pending_for(path) {
             return;
         }
         if self.file_ops.conflicts.contains_key(path) {
@@ -219,6 +219,7 @@ pub fn view(state: &State, p: Palette) -> El {
         let target = path.clone();
         let hover = path.clone();
         let close = path.clone();
+        let context = path.clone();
         let pill = row()
             .key(format!("tab:{}", path.display()))
             .role("tab")
@@ -242,6 +243,9 @@ pub fn view(state: &State, p: Palette) -> El {
                 }
             })
             .on_press_tx(move |s: &mut State, tx| s.open(target.clone(), tx))
+            .on_secondary_press(move |s: &mut State, press, tx| {
+                file_ops::secondary(s, context.clone(), false, press, tx);
+            })
             .child(
                 text(title)
                     .max_w(160.)

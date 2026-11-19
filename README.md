@@ -8,7 +8,8 @@
 
 The `rune` branch is the staged Rune rewrite. The screenshots and packaged releases
 below show v0.1.5; the Rune build currently provides the Phase 1 skeleton and
-Phase 2a editing behaviours, Phase 2b tabs, Phase 2c find/search/links, Phase 3 settings and Phase 4a file operations described here.
+Phase 2a editing behaviours, Phase 2b tabs, Phase 2c find/search/links, Phase 3 settings,
+Phase 4a file operations and Phase 4b export/attachments described here.
 
 ![abstract v0.1.5, light theme](docs/screenshot-light.png)
 
@@ -40,8 +41,7 @@ Your notes are plain `.md` files living in real folders on disk. No accounts, no
 The pure logic lives in `src/core/`, persistence in `src/io/`, and Rune views in
 `src/ui/`. Buffer, Markdown/code/footnote parsing, find, lines, smart editing, tables,
 vault, search, links, spaces, preferences, store and i18n compile now; later phases
-will wire their additional UI. HTML/PDF export, attachments, math rendering, spell,
-updates, crash reporting and Discord sources are retained in `core/` but
+will wire their additional UI. Spell, updates, crash reporting and Discord sources are retained in `core/` but
 excluded from this build and their dependencies are not pulled in. Spell dictionary
 compression will also need restoring when spell is wired.
 
@@ -123,6 +123,25 @@ conflicts preserves local buffers in collision-safe `Name (conflict).md` copies,
 without overwriting the externally changed originals.
 Tree scans retain their generation filtering. Optional wiki-link rewriting is not
 included, so links may need updating after a rename or move.
+
+## Phase 4b export and images
+
+Right-click a tab or the editor for **Export as HTML…** / **Export as PDF…**.
+`Cmd/Ctrl+Shift+E` exports HTML; `Cmd/Ctrl+Alt+E` exports PDF. Rune's native save
+dialog chooses the destination. Export snapshots the selected tab's live buffer,
+including unsaved inactive tabs, then renders and writes on a background worker.
+A compact notice reports progress, completion or failure.
+
+Paste a clipboard image or drop an image file into the editor to insert Markdown.
+External files are copied into `attachments` beside the note, using collision-safe
+names; files already inside the space keep their relative reference. Imports run
+in the background and insert in one undo step. Encoded images are capped at 32 MiB.
+Inline editor image views are not supported by the pinned native text-input API;
+the source remains editable Markdown. HTML embeds local images as data URLs, and
+PDF embeds decoded raster images (PNG/JPEG/GIF/WebP). Missing or unsupported PDF
+images fall back to their alt text. Math exports as MathML in HTML and a Unicode
+approximation in PDF, with bundled fonts. PDF layout uses krilla with HarfRust
+shaping, without a browser or the retired genpdf/printpdf dependency stack.
 
 ## Phase 2c find, search and links
 
