@@ -199,10 +199,10 @@ pub fn view(state: &State, p: Palette) -> El {
         .role("tablist")
         .label(t(Key::GlassTabs))
         .w_full()
-        .h(34.)
+        .h(30.)
         .gap(3.)
         .padding(4.)
-        .fill(rgb(p.panel))
+        .fill(rgb(p.bg))
         .scroll_x();
     for path in state.tabs.paths() {
         let active = state.active.as_ref() == Some(path);
@@ -230,7 +230,7 @@ pub fn view(state: &State, p: Palette) -> El {
             .gap(6.)
             .padding(5.)
             .fill(if active {
-                rgb(p.active)
+                rgb(p.panel)
             } else {
                 rgb(p.panel).alpha(0.)
             })

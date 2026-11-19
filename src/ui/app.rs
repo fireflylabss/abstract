@@ -524,26 +524,13 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
     if state.settings.glass() && state.settings.glass_text_contrast() {
         palette.body = palette.fg;
     }
-    let mut header = row()
-        .w_full()
-        .h(30.)
-        .items_center()
-        .justify_end()
-        .window_drag();
-    if let Some(doc) = state.document() {
-        let status = match &doc.save {
-            SaveState::Clean { .. } => String::new(),
-            SaveState::Failed { error, .. } => format!("{}: {error}", t(Key::SaveFailed)),
-            _ => t(Key::Saving).to_string(),
-        };
-        header = header.child(
-            text(status)
-                .key("save-status")
-                .font(TextStyle::new(11., 400.))
-                .color(rgb(palette.dim)),
-        );
-    }
-    let mut pane = col().grow(1.).min_w(0.).h_full();
+    let inset = cx.titlebar_inset();
+    let mut pane = col().grow(1.).min_w(0.).h_full().child(settings::surface(
+        super::chrome::toolbar(state, palette, inset),
+        &state.settings,
+        crate::core::prefs::Surface::Toolbar,
+        palette.bg,
+    ));
     pane = pane.child(file_ops::notice(state, palette));
     pane = pane.child(export::notice(state, palette));
     pane = pane.child(attachments::notice(state, palette));
@@ -590,12 +577,12 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
                     }
                 })
                 .items_center()
-                .padding(28.)
+                .padding(48.)
                 .child(
                     col()
                         .w_full()
                         .max_w(state.settings.text_width().max_col())
-                        .child(editor::view(state, palette)),
+                        .child(editor::view(state, cx, palette)),
                 ),
             &state.settings,
             crate::core::prefs::Surface::Editor,
@@ -605,29 +592,10 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
     let mut body = row().w_full().grow(1.).min_h(0.);
     if state.sidebar_open && !state.focus_mode {
         body = body
-            .child(sidebar::view(state, palette))
+            .child(sidebar::view(state, palette, inset))
             .child(settings::resize_handle(palette));
     }
-    let mut root = col()
-        .key("app")
-        .w_full()
-        .h_full()
-        .child(settings::surface(
-            header.child(
-                text(t(Key::Settings))
-                    .key("settings-open")
-                    .role("button")
-                    .focusable(true)
-                    .font(TextStyle::new(12., 400.))
-                    .color(rgb(palette.dim))
-                    .padding(6.)
-                    .on_press_tx(State::toggle_settings),
-            ),
-            &state.settings,
-            crate::core::prefs::Surface::Toolbar,
-            palette.panel,
-        ))
-        .child(body.child(pane));
+    let mut root = col().key("app").w_full().h_full().child(body.child(pane));
     if let Some(caret) = settings::caret(state, cx, palette) {
         root = root.child(caret);
     }
@@ -656,7 +624,11 @@ pub fn run() {
         on_key: Some(keymap::handle),
         ..AppSpec::new("abstract", (1100., 760.), State::default, view)
     };
-    let app = App::new(spec);
+    let app = App::new(spec).chrome(rune::Chrome {
+        full_size_content: true,
+        traffic_lights: Some((12., 17.)),
+        drag_regions: true,
+    });
     let handle = app.handle();
     app.window_options(rune::WindowOptions {
         transparent: cfg!(target_os = "macos"),

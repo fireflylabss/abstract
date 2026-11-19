@@ -108,7 +108,12 @@ pub fn decorate_with(
                 span = span.italic();
             }
             if matches!(kind, Kind::Code | Kind::Table) || flag & md::CODE != 0 {
-                span = span.mono().bg(rgb(p.inline_code_bg), 2.);
+                span = span.mono();
+                if *kind != Kind::Code {
+                    span = span.bg(rgb(p.inline_code_bg), 2.);
+                } else {
+                    span = span.size(size * 0.84);
+                }
             }
             if *kind == Kind::Quote {
                 span = span.color(rgb(p.quote));
@@ -137,8 +142,36 @@ pub fn decorate_with(
             if hidden {
                 span = span.color(Color::TRANSPARENT);
             }
+            if conceal && !reveal && *kind == Kind::Quote && flag & md::MARK != 0 {
+                span = span.color(Color::TRANSPARENT);
+            }
             out.push(span);
             pos = end;
+        }
+    }
+    if conceal {
+        let selected = anchor.min(focus)..anchor.max(focus);
+        for decoration in super::blocks::plan(source, a, selected, true) {
+            if let super::blocks::Decoration::Marker(range, _) = decoration {
+                out.push(Span::new(range.start, range.end).color(Color::TRANSPARENT));
+            }
+        }
+    }
+    for task in a.tasks.iter().filter(|task| task.checked) {
+        let end = source[task.marker.end..]
+            .find('\n')
+            .map_or(source.len(), |n| task.marker.end + n);
+        out.push(Span::new(task.marker.end, end).color(rgb(p.muted)));
+    }
+    if conceal {
+        for (line, kind) in &a.lines {
+            let raw = source[line.clone()].trim_start();
+            if *kind == Kind::Code
+                && (raw.starts_with("```") || raw.starts_with("~~~"))
+                && !(line.start <= anchor.max(focus) && anchor.min(focus) <= line.end)
+            {
+                out.push(Span::new(line.start, line.end).color(Color::TRANSPARENT));
+            }
         }
     }
     out

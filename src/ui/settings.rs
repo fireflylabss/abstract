@@ -115,10 +115,10 @@ pub fn resize_handle(p: theme::Palette) -> El {
     row()
         .key("sidebar-resize")
         .label(t(Key::SidebarWidth))
-        .w(4.)
+        .w(7.)
         .h_full()
-        .fill(rgb(p.line))
-        .hover(rgb(p.callout[0]))
+        .fill(rgb(p.bg))
+        .child(row().w(1.).h_full().fill(rgb(p.line)))
         .on_drag(|s: &mut State, drag, tx| match drag.phase {
             rune::Phase::Down => drag.data = s.settings.number("sidebar_width"),
             rune::Phase::Move => {
@@ -324,8 +324,8 @@ pub fn surface(el: El, settings: &Settings, surface: Surface, color: u32) -> El 
     {
         let wrapper = match surface {
             Surface::Sidebar => row().w(settings.number("sidebar_width")).h_full(),
-            Surface::Tabs => row().w_full().h(34.),
-            Surface::Toolbar => row().w_full().h(30.),
+            Surface::Tabs => row().w_full().h(30.),
+            Surface::Toolbar => row().w_full().h(48.),
             _ => row().w_full().grow(1.).min_h(0.),
         };
         wrapper

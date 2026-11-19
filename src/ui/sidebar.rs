@@ -8,10 +8,11 @@ use crate::core::{
 
 use super::{
     app::State,
+    chrome,
     theme::{Palette, rgb},
 };
 
-pub fn view(state: &State, p: Palette) -> El {
+pub fn view(state: &State, p: Palette, inset: f32) -> El {
     let mut tree = col()
         .key("tree")
         .role("tree")
@@ -28,11 +29,6 @@ pub fn view(state: &State, p: Palette) -> El {
         let context = path.clone();
         let keyboard = path.clone();
         let selected = state.active.as_ref() == Some(&path);
-        let prefix = if folder {
-            if item.expanded { "▾ " } else { "▸ " }
-        } else {
-            ""
-        };
         tree = tree.child(
             row()
                 .key(format!("note:{}", item.path.display()))
@@ -48,17 +44,39 @@ pub fn view(state: &State, p: Palette) -> El {
                 })
                 .focus_selected(selected)
                 .w_full()
-                .padding(8.)
+                .h(28.)
+                .padding(6.)
+                .items_center()
+                .gap(6.)
+                .clip_rounded(6.)
                 .fill(if selected {
                     rgb(p.active)
                 } else {
                     rgb(p.panel).alpha(0.)
                 })
                 .hover(rgb(p.hover))
-                .child(row().w(item.depth as f32 * 14.))
+                .child(row().w(12. + item.depth as f32 * 14.))
                 .child(
-                    text(format!("{prefix}{}", item.name))
-                        .font(TextStyle::new(13., 400.))
+                    rune::icon(
+                        if folder {
+                            &chrome::CHEVRON
+                        } else {
+                            &chrome::NOTE
+                        },
+                        14.,
+                    )
+                    .icon_rotation(if folder && item.expanded {
+                        std::f32::consts::FRAC_PI_2
+                    } else {
+                        0.
+                    })
+                    .color(rgb(p.dim)),
+                )
+                .child(
+                    text(item.name)
+                        .truncate()
+                        .min_w(0.)
+                        .font(TextStyle::new(12., 400.))
                         .color(rgb(if selected { p.fg } else { p.dim })),
                 )
                 .on_press_tx(move |s: &mut State, tx| {
@@ -76,53 +94,57 @@ pub fn view(state: &State, p: Palette) -> El {
         .key("sidebar")
         .w(state.settings.number("sidebar_width"))
         .h_full()
-        .padding(12.)
-        .gap(14.)
+        .padding(8.)
+        .gap(4.)
         .child(
-            text(spaces::name_of(&state.root))
-                .key("space-name")
-                .font(TextStyle::new(14., 600.))
-                .color(rgb(p.fg))
-                .padding(6.),
+            row()
+                .h(32.)
+                .w_full()
+                .items_center()
+                .gap(4.)
+                .window_drag()
+                .child(row().w(if inset > 0. { inset + 12. } else { 0. }))
+                .child(rune::icon(&chrome::FOLDER, 15.).color(rgb(p.dim)))
+                .child(
+                    text(spaces::name_of(&state.root))
+                        .key("space-name")
+                        .truncate()
+                        .min_w(0.)
+                        .grow(1.)
+                        .font(TextStyle::new(12., 600.))
+                        .color(rgb(p.fg)),
+                )
+                .child(rune::icon(&chrome::SWITCH, 12.).color(rgb(p.faint)))
+                .child(
+                    chrome::button("new-folder", t(Key::NewFolder), &chrome::FOLDER_ADD, p)
+                        .disabled(state.files_busy())
+                        .on_press_tx(|s: &mut State, tx| {
+                            s.rename_file(s.root.clone(), true, true, tx)
+                        }),
+                )
+                .child(
+                    chrome::button("new-note", t(Key::NewNote), &chrome::ADD, p)
+                        .disabled(state.files_busy())
+                        .on_press_tx(|s: &mut State, tx| s.new_note(tx)),
+                ),
         )
         .child(
             row()
-                .key("new-note")
-                .role("button")
-                .focusable(true)
                 .w_full()
+                .h(24.)
                 .items_center()
                 .justify_between()
-                .padding(7.)
-                .hover(rgb(p.hover))
+                .padding(6.)
                 .child(
-                    text(
-                        t(Key::NewNote)
-                            .split(" (")
-                            .next()
-                            .unwrap_or(t(Key::NewNote)),
-                    )
-                    .font(TextStyle::new(13., 400.))
-                    .color(rgb(p.fg)),
+                    text(t(Key::Notes).to_uppercase())
+                        .font(TextStyle::new(10., 500.))
+                        .color(rgb(p.dim)),
                 )
                 .child(
-                    text(format!("{}+N", crate::core::prefs::MOD))
-                        .font(TextStyle::new(11., 400.))
-                        .color(rgb(p.faint)),
-                )
-                .on_press_tx(|s: &mut State, tx| s.new_note(tx)),
-        )
-        .child(
-            text(t(Key::NewFolder))
-                .key("new-folder")
-                .role("button")
-                .focusable(true)
-                .font(TextStyle::new(12., 400.))
-                .color(rgb(p.dim))
-                .padding(7.)
-                .hover(rgb(p.hover))
-                .disabled(state.files_busy())
-                .on_press_tx(|s: &mut State, tx| s.rename_file(s.root.clone(), true, true, tx)),
+                    text(note_count(&state.tree).to_string())
+                        .font(TextStyle::new(10., 400.))
+                        .color(rgb(p.dim)),
+                ),
         )
         .child(
             col()
@@ -140,4 +162,17 @@ pub fn view(state: &State, p: Palette) -> El {
         crate::core::prefs::Surface::Sidebar,
         p.panel,
     )
+}
+
+fn note_count(nodes: &[vault::Node]) -> usize {
+    nodes
+        .iter()
+        .map(|n| {
+            if n.is_folder() {
+                note_count(&n.children)
+            } else {
+                1
+            }
+        })
+        .sum()
 }

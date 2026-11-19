@@ -367,14 +367,14 @@ pub fn preferences() -> Vec<Preference> {
             "sidebar_width",
             K::SidebarWidth,
             0,
-            "238",
+            "248",
             Number {
                 min: 160.,
                 max: 480.,
                 step: 10.,
             },
         ),
-        field("single_tab", K::SingleTab, 0, "on", Choice(&["on", "off"])),
+        field("single_tab", K::SingleTab, 0, "off", Choice(&["on", "off"])),
         field(
             "glass",
             K::GlassEnable,
@@ -469,7 +469,7 @@ pub fn preferences() -> Vec<Preference> {
             "line_height",
             K::LineHeight,
             1,
-            "1.25",
+            "1.5",
             Number {
                 min: 1.,
                 max: 2.5,
@@ -480,7 +480,7 @@ pub fn preferences() -> Vec<Preference> {
             "paragraph_spacing",
             K::ParagraphSpacing,
             1,
-            "0",
+            "4",
             Number {
                 min: 0.,
                 max: 30.,

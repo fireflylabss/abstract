@@ -1,9 +1,10 @@
 pub mod analysis;
+mod blocks;
 mod keys;
 pub(crate) use keys::{command, restore};
 mod spans;
 
-use rune::{El, text_input};
+use rune::{Cx, El, col, text_input};
 
 use crate::core::i18n::{Key, t};
 use crate::ui::{
@@ -11,7 +12,7 @@ use crate::ui::{
     theme::{Palette, rgb, rgba},
 };
 
-pub fn view(state: &State, palette: Palette) -> El {
+pub fn view(state: &State, cx: &Cx<State>, palette: Palette) -> El {
     if state.files_busy() || state.update_restarting() {
         return rune::text(t(Key::Saving))
             .key("file-operation-busy")
@@ -49,12 +50,17 @@ pub fn view(state: &State, palette: Palette) -> El {
             span.color = Some(color.alpha(color.a * opacity));
         }
     }
-    let highlights = state
-        .current_find()
-        .map(|range| rune::TextHighlight::new(range, rune::Color::TRANSPARENT).key("find-current"))
-        .into_iter()
-        .collect::<Vec<_>>();
-    text_input(&doc.edit, state.editor_style())
+    let (back, front, mut highlights) = blocks::layers(state, cx, palette);
+    highlights.extend(
+        state
+            .current_find()
+            .map(|range| {
+                rune::TextHighlight::new(range, rune::Color::TRANSPARENT).key("find-current")
+            })
+            .into_iter()
+            .collect::<Vec<_>>(),
+    );
+    let mut editor = text_input(&doc.edit, state.editor_style())
         .key("editor")
         .label(t(Key::EditorAria))
         .placeholder(t(Key::EditorPlaceholder), rgb(palette.faint))
@@ -81,5 +87,22 @@ pub fn view(state: &State, palette: Palette) -> El {
                 crate::ui::app::file_ops::secondary(s, path, false, press, tx);
             }
         })
-        .on_input_key(keys::handle)
+        .on_input_key(keys::handle);
+    if let Some(a) = doc.analysis.get(doc.revision) {
+        for task in a.tasks.iter().filter(|task| task.checked) {
+            let end = doc.edit.text[task.marker.end..]
+                .find('\n')
+                .map_or(doc.edit.text.len(), |n| task.marker.end + n);
+            editor = editor.strike(task.marker.end, end, Some(rgb(palette.muted)));
+        }
+    }
+    let mut content = col().w_full();
+    for layer in back {
+        content = content.child(layer);
+    }
+    content = content.child(editor);
+    for layer in front {
+        content = content.child(layer);
+    }
+    content
 }

@@ -95,7 +95,7 @@ fn settings_shortcuts_live_changes_persist_and_restore_editor_without_editing() 
     );
     assert!(!rt.state.settings.enabled("conceal"));
     assert!(
-        !rt.elements()
+        rt.elements()
             .iter()
             .any(|e| e.key.as_deref() == Some("tab-strip"))
     );
