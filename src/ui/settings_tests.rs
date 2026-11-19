@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn legacy_font_controls_step_from_effective_font() {
+    let fixture = Fixture::new();
+    let mut rt = fixture.runtime();
+    rt.update(|s, tx| {
+        s.settings.kv.set("font", "Georgia");
+        for key in ["ui_font", "editor_font"] {
+            assert_eq!(s.settings.preference(key), "Georgia");
+            s.change_preference(key, true, tx);
+            assert_eq!(s.settings.preference(key), "Helvetica");
+        }
+    });
+    until(&mut rt, |s| s.settings_pending == 0);
+    let saved = std::fs::read_to_string(fixture.0.join("settings")).unwrap();
+    assert!(saved.contains("ui_font = Helvetica"));
+    assert!(saved.contains("editor_font = Helvetica"));
+}
+
+#[test]
 fn settings_shortcuts_live_changes_persist_and_restore_editor_without_editing() {
     let fixture = Fixture::new();
     std::fs::write(fixture.0.join("Note.md"), "# Heading\nbody").unwrap();

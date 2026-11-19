@@ -43,7 +43,7 @@ impl State {
         let Some(p) = prefs::preferences().into_iter().find(|p| p.key == key) else {
             return;
         };
-        let value = p.step(self.settings.kv.get(key), forward);
+        let value = p.step(Some(&self.settings.preference(key)), forward);
         self.set_preference(p, &value, tx);
     }
 
