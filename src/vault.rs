@@ -156,9 +156,25 @@ pub fn stem_for_title(title: &str) -> String {
     let stem: String = trimmed.chars().take(80).collect();
     if stem.is_empty() {
         crate::i18n::t(crate::i18n::Key::Untitled).to_string()
+    } else if is_reserved_stem(&stem) {
+        format!("{stem}_")
     } else {
         stem
     }
+}
+
+/// Windows device names (`CON`, `NUL`, `COM1`…): unusable as a file name
+/// there, with or without an extension, in any case.
+pub fn is_reserved_stem(stem: &str) -> bool {
+    let base = stem.split('.').next().unwrap_or(stem).trim_end();
+    let up = base.to_ascii_uppercase();
+    if matches!(up.as_str(), "CON" | "PRN" | "AUX" | "NUL") {
+        return true;
+    }
+    ["COM", "LPT"].iter().any(|p| {
+        up.strip_prefix(p)
+            .is_some_and(|d| matches!(d, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"))
+    })
 }
 
 /// `X.md`, `X 2.md`, … — `exclude` is the file being renamed so renaming to
@@ -300,6 +316,17 @@ mod tests {
         assert_eq!(stem_for_title("a\u{0}b"), "ab");
         assert_eq!(stem_for_title(&"x".repeat(200)).chars().count(), 80);
         assert_eq!(stem_for_title(".ok."), "ok");
+    }
+
+    #[test]
+    fn stem_for_title_avoids_windows_device_names() {
+        assert_eq!(stem_for_title("con"), "con_");
+        assert_eq!(stem_for_title("NUL"), "NUL_");
+        assert_eq!(stem_for_title("Com1"), "Com1_");
+        assert_eq!(stem_for_title("lpt9.notes"), "lpt9.notes_");
+        assert_eq!(stem_for_title("COM0"), "COM0");
+        assert_eq!(stem_for_title("console"), "console");
+        assert_eq!(stem_for_title("Aux cable"), "Aux cable");
     }
 
     #[test]
