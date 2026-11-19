@@ -181,8 +181,16 @@ fn dropped_images_keep_their_target_tab_and_report_import_errors() {
     rt.update(|s, tx| s.open(path.clone(), tx));
     until(&mut rt, |s| s.active.as_ref() == Some(&path));
     let (x, y) = rt.find("editor").unwrap();
+    rt.update(|_, _| {});
     rt.drop_files(vec![image], Some((x, y)));
     rt.frame(0.01);
+    until(&mut rt, |s| {
+        s.attachments.busy()
+            || s.documents[&path]
+                .edit
+                .text
+                .contains("attachments/image.png")
+    });
     rt.update(|s, tx| s.open(second.clone(), tx));
     until(&mut rt, |s| {
         s.active.as_ref() == Some(&second) && !s.attachments.busy()
