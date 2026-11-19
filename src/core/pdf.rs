@@ -1,40 +1,21 @@
-//! Markdown → PDF for "Export as PDF…".
-//!
-//! Rendering is pure Rust: `genpdf` (over `printpdf`) lays out the document —
-//! no browser, no `wkhtmltopdf`, nothing that might be missing on the user's
-//! machine. Blocks come from a fresh tree-sitter parse and inline styling
-//! reuses the editor's `md::Analysis` plus `html.rs`'s helpers, so both
-//! exports walk the same document; the app's bundled Noto fonts are embedded
-//! in the file.
-//!
-//! Anything the format can't express degrades to styled or plain text —
-//! links print colored but aren't clickable, `==highlight==` colors the text
-//! instead of painting a background, and HTML blocks print literally.
-//! Failures return `Err`; the caller writes the file only on success, so a
-//! broken export never leaves a corrupt PDF behind.
-
-use std::ops::Range;
-use std::path::{Path, PathBuf};
-
-use genpdf::elements::{
-    Break, FrameCellDecorator, Image, LinearLayout, PaddedElement, Paragraph, TableLayout, Text,
-};
-use genpdf::error::{Error, ErrorKind};
-use genpdf::fonts::{Font, FontData, FontFamily};
-use genpdf::render::Area;
-use genpdf::style::{Color, Style, StyledString};
-use genpdf::{Alignment, Element, Margins, Mm, PageDecorator, Position, RenderResult, Scale, Size};
-use tree_sitter::{Node, Parser};
+//! Markdown blocks and styled runs for PDF export with shaped text and bundled fonts.
 
 use crate::core::attach;
 use crate::core::html::{Context, STYLE, at, autolink, clip, comments, heading_level, trim};
 use crate::core::md::{self, Analysis, Analyzer};
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use tree_sitter::{Node, Parser};
+mod model;
+mod writer;
+use model::*;
 
 const FONT_SANS: &[u8] = include_bytes!("../../assets/fonts/NotoSans-Regular.ttf");
 const FONT_SANS_BOLD: &[u8] = include_bytes!("../../assets/fonts/NotoSans-Bold.ttf");
 const FONT_SANS_ITALIC: &[u8] = include_bytes!("../../assets/fonts/NotoSans-Italic.ttf");
 // Noto Sans has no bold-italic face — SemiBold Italic is the closest.
-const FONT_SANS_BOLD_ITALIC: &[u8] = include_bytes!("../../assets/fonts/NotoSans-SemiBoldItalic.ttf");
+const FONT_SANS_BOLD_ITALIC: &[u8] =
+    include_bytes!("../../assets/fonts/NotoSans-SemiBoldItalic.ttf");
 const FONT_MONO: &[u8] = include_bytes!("../../assets/fonts/NotoSansMono-Regular.ttf");
 const FONT_MONO_BOLD: &[u8] = include_bytes!("../../assets/fonts/NotoSansMono-Bold.ttf");
 // Noto Sans has no math coverage (∑, ∫, arrows, super-/subscripts come
@@ -81,15 +62,11 @@ const BULLET_SPACE: f64 = 2.0;
 /// Page number position, measured up from the bottom edge.
 const FOOTER_Y: f64 = 12.0;
 
-fn mm(v: f64) -> Mm {
-    Mm::from(v as f32)
-}
-
 fn line_style() -> Style {
     Style::new().with_color(LINE)
 }
 
-/// `==…==` has no background fill in genpdf — tints print as text color.
+/// Highlights print as text color.
 fn tint_color(tint: Option<md::Tint>) -> Color {
     match tint.unwrap_or(md::Tint::Yellow) {
         md::Tint::Red => Color::Rgb(185, 60, 52),
@@ -110,191 +87,13 @@ fn tone_color(tone: md::Tone) -> Color {
     }
 }
 
-/// The whole note as `.pdf` bytes (the caller writes them out).
-pub(crate) fn export(text: &str, title: &str, ctx: &Context) -> Result<Vec<u8>, Error> {
-    let build = || -> Result<Vec<u8>, Error> {
-        let mut doc = genpdf::Document::new(FontFamily {
-            regular: FontData::new(FONT_SANS.to_vec(), None)?,
-            bold: FontData::new(FONT_SANS_BOLD.to_vec(), None)?,
-            italic: FontData::new(FONT_SANS_ITALIC.to_vec(), None)?,
-            bold_italic: FontData::new(FONT_SANS_BOLD_ITALIC.to_vec(), None)?,
-        });
-        doc.set_title(title);
-        doc.set_font_size(BODY_PT);
-        doc.set_line_spacing(1.35);
-        doc.set_paper_size(genpdf::PaperSize::A4);
-        let (mono, math) = add_fonts(&mut doc)?;
-        doc.set_page_decorator(Footer::default());
-        let a = Analyzer::new().analyze(text);
-        let mut body = LinearLayout::vertical();
-        Emitter::new(text, &a, 0..text.len(), ctx, mono, math).render(&mut body);
-        doc.push(body);
-        let mut out = Vec::new();
-        doc.render(&mut out)?;
-        Ok(out)
-    };
-    // Debug builds may still panic (release aborts) — never propagate one.
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(build))
-        .unwrap_or_else(|_| Err(Error::new("PDF export panicked", ErrorKind::Internal)))
+pub(crate) fn export(text: &str, title: &str, ctx: &Context) -> std::io::Result<Vec<u8>> {
+    let a = Analyzer::new().analyze(text);
+    let mut body = LinearLayout::vertical();
+    Emitter::new(text, &a, 0..text.len(), ctx, Family::Mono, Family::Math).render(&mut body);
+    writer::export(body, title)
 }
 
-/// The extra font families an `Emitter` needs: `(mono, math)`.
-fn add_fonts(doc: &mut genpdf::Document) -> Result<(FontFamily<Font>, FontFamily<Font>), Error> {
-    let mono = doc.add_font_family(FontFamily {
-        regular: FontData::new(FONT_MONO.to_vec(), None)?,
-        bold: FontData::new(FONT_MONO_BOLD.to_vec(), None)?,
-        italic: FontData::new(FONT_MONO.to_vec(), None)?,
-        bold_italic: FontData::new(FONT_MONO_BOLD.to_vec(), None)?,
-    });
-    // The math face is always set italic; bold maps reuse the same pair.
-    let math = doc.add_font_family(FontFamily {
-        regular: FontData::new(FONT_MATH.to_vec(), None)?,
-        bold: FontData::new(FONT_MATH_ITALIC.to_vec(), None)?,
-        italic: FontData::new(FONT_MATH_ITALIC.to_vec(), None)?,
-        bold_italic: FontData::new(FONT_MATH_ITALIC.to_vec(), None)?,
-    });
-    Ok((mono, math))
-}
-
-/// Margins plus a centered page number.
-#[derive(Default)]
-struct Footer {
-    page: usize,
-}
-
-impl PageDecorator for Footer {
-    fn decorate_page<'a>(
-        &mut self,
-        context: &genpdf::Context,
-        mut area: Area<'a>,
-        style: Style,
-    ) -> Result<Area<'a>, Error> {
-        self.page += 1;
-        let num = self.page.to_string();
-        let s = style.and(Style::new().with_color(FAINT).with_font_size(8));
-        let w = s.str_width(&context.font_cache, &num);
-        let size = area.size();
-        let _ = area.print_str(
-            &context.font_cache,
-            Position::new((size.width - w) / 2.0, size.height - mm(FOOTER_Y)),
-            s,
-            num,
-        )?;
-        area.add_margins(Margins::trbl(18., 22., 20., 22.));
-        Ok(area)
-    }
-}
-
-/// Full-width rule (`---` and the footnote separator).
-struct Rule;
-
-impl Element for Rule {
-    fn render(
-        &mut self,
-        _context: &genpdf::Context,
-        area: Area<'_>,
-        style: Style,
-    ) -> Result<RenderResult, Error> {
-        let w = area.size().width;
-        area.draw_line(
-            vec![Position::new(mm(0.0), mm(0.5)), Position::new(w, mm(0.5))],
-            style,
-        );
-        Ok(RenderResult {
-            size: Size::new(w, mm(1.0)),
-            has_more: false,
-        })
-    }
-}
-
-/// Children with a colored bar on the left — block quotes and callouts.
-struct Bar<E: Element> {
-    inner: E,
-}
-
-impl<E: Element> Bar<E> {
-    fn new(inner: E) -> Self {
-        Self { inner }
-    }
-}
-
-impl<E: Element> Element for Bar<E> {
-    fn render(
-        &mut self,
-        context: &genpdf::Context,
-        area: Area<'_>,
-        style: Style,
-    ) -> Result<RenderResult, Error> {
-        let width = area.size().width;
-        let mut inner_area = area.clone();
-        inner_area.add_offset(Position::new(mm(INDENT), mm(0.0)));
-        let mut result = self.inner.render(context, inner_area, style)?;
-        if result.size.height > mm(0.0) {
-            area.draw_line(
-                vec![
-                    Position::new(mm(1.2), mm(0.0)),
-                    Position::new(mm(1.2), result.size.height),
-                ],
-                style,
-            );
-        }
-        result.size.width = width;
-        Ok(result)
-    }
-}
-
-/// A list row: `bullet` drawn left of `inner` in `bullet_style` (the ☐/■
-/// task glyphs only exist in the monospace face).
-struct Bullet<E: Element> {
-    inner: E,
-    bullet: String,
-    bullet_style: Style,
-    rendered: bool,
-}
-
-impl<E: Element> Bullet<E> {
-    fn new(inner: E, bullet: String, bullet_style: Style) -> Self {
-        Self {
-            inner,
-            bullet,
-            bullet_style,
-            rendered: false,
-        }
-    }
-}
-
-impl<E: Element> Element for Bullet<E> {
-    fn render(
-        &mut self,
-        context: &genpdf::Context,
-        area: Area<'_>,
-        style: Style,
-    ) -> Result<RenderResult, Error> {
-        let mut inner_area = area.clone();
-        inner_area.add_offset(Position::new(mm(INDENT), mm(0.0)));
-        let mut result = self.inner.render(context, inner_area, style)?;
-        result.size.width += mm(INDENT);
-        if !self.rendered {
-            let bullet_width = self
-                .bullet_style
-                .str_width(&context.font_cache, &self.bullet);
-            let x = (mm(INDENT) - bullet_width - mm(BULLET_SPACE)).max(mm(0.0));
-            area.print_str(
-                &context.font_cache,
-                Position::new(x, mm(0.0)),
-                self.bullet_style,
-                self.bullet.as_str(),
-            )?;
-            self.rendered = true;
-        }
-        Ok(result)
-    }
-}
-
-/// Styled text accumulated for one wrapping unit (paragraph, heading, table
-/// cell). Images can't live inside a paragraph: a block-level `flow` flushes
-/// `runs` into a `Paragraph` and pushes the image into `layout`; contexts
-/// without one degrade the image to its alt text.
 struct Flow<'x> {
     runs: Vec<StyledString>,
     layout: Option<&'x mut LinearLayout>,
@@ -310,8 +109,7 @@ impl Flow<'_> {
     }
 
     fn run(&mut self, mut s: StyledString) {
-        // Soft line breaks stay literal in the source clip and genpdf draws
-        // them as missing-glyph boxes — swap them for a space, like HTML.
+        // Soft line breaks in a paragraph render as spaces, like HTML.
         if s.s.contains('\n') {
             s.s = s.s.replace('\n', " ");
         }
@@ -329,7 +127,7 @@ impl Flow<'_> {
         }
     }
 
-    fn element(&mut self, el: impl Element + 'static) {
+    fn element(&mut self, el: impl Into<Block>) {
         self.flush();
         if let Some(layout) = self.layout.as_mut() {
             layout.push(el);
@@ -337,7 +135,7 @@ impl Flow<'_> {
     }
 }
 
-/// The same walk `html.rs` does — blocks to `genpdf` elements, inline flags
+/// The same walk `html.rs` does — blocks to writer-independent elements, inline flags
 /// to `StyledString` runs.
 struct Emitter<'a> {
     text: &'a str,
@@ -351,9 +149,9 @@ struct Emitter<'a> {
     /// `[label]: dest` definitions for reference-style links.
     link_defs: Vec<(String, String)>,
     /// Monospace face for `code` and task bullets.
-    mono: FontFamily<Font>,
+    mono: Family,
     /// DejaVu face for `$…$`/`$$…$$` math (the Noto faces lack the glyphs).
-    math: FontFamily<Font>,
+    math: Family,
     /// Body text color — gray inside plain block quotes.
     ink: Color,
     /// Inside a link run (links print colored; they aren't clickable).

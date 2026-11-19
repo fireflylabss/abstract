@@ -189,6 +189,7 @@ struct Emitter<'a> {
     link_defs: Option<Vec<(String, String)>>,
 }
 
+mod assets;
 mod emitter;
 
 /// LaTeX `src` → MathML via pulldown-latex: real math in the export with

@@ -10,6 +10,12 @@ use super::{
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
+#[path = "export_tests.rs"]
+mod export;
+
+#[path = "attachments_tests.rs"]
+mod attachments;
+
 struct Dir(PathBuf);
 
 impl Dir {

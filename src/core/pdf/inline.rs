@@ -184,7 +184,13 @@ impl Emitter<'_> {
 
     /// `![alt](src)` / `![[src]]` — scaled to the text column, or `[alt]`
     /// when the file can't be loaded (or the context can't hold an image).
-    pub(super) fn image(&mut self, flow: &mut Flow, range: Range<usize>, src: Range<usize>, embed: bool) {
+    pub(super) fn image(
+        &mut self,
+        flow: &mut Flow,
+        range: Range<usize>,
+        src: Range<usize>,
+        embed: bool,
+    ) {
         let raw = self.text.get(src.clone()).unwrap_or_default();
         let bare = raw
             .strip_prefix('<')
@@ -218,10 +224,7 @@ impl Emitter<'_> {
     pub(super) fn image_el(&self, bare: &str, embed: bool) -> Option<Image> {
         let p = self.image_path(bare, embed)?;
         let mut img = Image::from_path(&p).ok()?;
-        let (w, h) = image::image_dimensions(&p).ok()?;
-        // genpdf draws at 300 dpi by default — px→mm is px * 25.4/300.
-        let to_mm = |px: u32| px as f64 * 25.4 / 300.0;
-        let s = (TEXT_W / to_mm(w)).min(MAX_IMG_H / to_mm(h)).min(1.0);
+        let s = (TEXT_W / img.width).min(MAX_IMG_H / img.height).min(1.0);
         if s < 1.0 {
             img.set_scale(Scale::new(s, s));
         }
@@ -254,7 +257,12 @@ impl Emitter<'_> {
     }
 
     /// `[[target]]` / `[[target|alias]]` — colored when it resolves.
-    pub(super) fn wiki(&mut self, flow: &mut Flow, target: Range<usize>, alias: Option<Range<usize>>) {
+    pub(super) fn wiki(
+        &mut self,
+        flow: &mut Flow,
+        target: Range<usize>,
+        alias: Option<Range<usize>>,
+    ) {
         let visible = alias.unwrap_or_else(|| target.clone());
         let resolved = self
             .ctx

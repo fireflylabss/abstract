@@ -3,6 +3,7 @@
 //! pure path ↔ markdown helpers.
 
 use std::io;
+use std::io::Write;
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 
@@ -10,6 +11,7 @@ use crate::core::md::ImageRef;
 
 /// Folder next to the note that receives pasted/dropped images.
 pub const DIR: &str = "attachments";
+pub const MAX_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Clone)]
 pub enum Incoming {
@@ -34,8 +36,12 @@ pub fn import(
             Incoming::Image { bytes, ext } => {
                 let dir = note_dir.join(DIR);
                 std::fs::create_dir_all(&dir)?;
-                let path = unique_file(&dir, &format!("image-{stamp}"), ext);
-                crate::core::store::write_atomic(&path, &bytes)?;
+                if bytes.len() > MAX_BYTES {
+                    return Err(io::Error::other("Image exceeds 32 MiB"));
+                }
+                let path = write_unique(&dir, &format!("image-{stamp}"), ext, |file| {
+                    file.write_all(&bytes)
+                })?;
                 format!("![]({})", encode(&relative(note_dir, &path)))
             }
             Incoming::Path(path) => reference(&path, note_dir, root)?,
@@ -45,6 +51,7 @@ pub fn import(
 }
 
 fn reference(path: &Path, note_dir: &Path, root: &Path) -> io::Result<String> {
+    let metadata = path.metadata()?;
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -54,7 +61,7 @@ fn reference(path: &Path, note_dir: &Path, root: &Path) -> io::Result<String> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let inside = path.starts_with(root);
-    let is_file = path.is_file();
+    let is_file = metadata.is_file();
     if is_file && crate::core::md::is_image_path(&name) {
         let target = if inside {
             path.to_path_buf()
@@ -62,9 +69,21 @@ fn reference(path: &Path, note_dir: &Path, root: &Path) -> io::Result<String> {
             let dir = note_dir.join(DIR);
             std::fs::create_dir_all(&dir)?;
             let ext = path.extension().map(|x| x.to_string_lossy().into_owned());
-            let copy = unique_file(&dir, &stem, ext.as_deref().unwrap_or("png"));
-            std::fs::copy(path, &copy)?;
-            copy
+            let mut input = std::fs::File::open(path)?;
+            if input.metadata()?.len() > MAX_BYTES as u64 {
+                return Err(io::Error::other("Image exceeds 32 MiB"));
+            }
+            write_unique(&dir, &stem, ext.as_deref().unwrap_or("png"), |output| {
+                use std::io::Read;
+                let copied = std::io::copy(
+                    &mut Read::by_ref(&mut input).take(MAX_BYTES as u64 + 1),
+                    output,
+                )?;
+                if copied > MAX_BYTES as u64 {
+                    return Err(io::Error::other("Image exceeds 32 MiB"));
+                }
+                Ok(())
+            })?
         };
         return Ok(format!(
             "![{}]({})",
@@ -85,6 +104,40 @@ fn reference(path: &Path, note_dir: &Path, root: &Path) -> io::Result<String> {
 
 fn escape_alt(s: &str) -> String {
     s.replace('[', "\\[").replace(']', "\\]")
+}
+
+fn write_unique(
+    dir: &Path,
+    stem: &str,
+    ext: &str,
+    mut write: impl FnMut(&mut std::fs::File) -> io::Result<()>,
+) -> io::Result<PathBuf> {
+    for n in 1.. {
+        let name = if n == 1 {
+            format!("{stem}.{ext}")
+        } else {
+            format!("{stem}-{n}.{ext}")
+        };
+        let path = dir.join(name);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                let result = write(&mut file).and_then(|()| file.sync_all());
+                drop(file);
+                if let Err(error) = result {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(error);
+                }
+                return Ok(path);
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!()
 }
 
 /// `dir/stem.ext`, or `dir/stem-2.ext`, … — the first that does not exist.

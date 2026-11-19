@@ -1,6 +1,11 @@
 use super::*;
 impl<'a> Emitter<'a> {
-    pub(super) fn new(text: &'a str, a: &'a Analysis, sel: Range<usize>, ctx: &'a Context<'a>) -> Self {
+    pub(super) fn new(
+        text: &'a str,
+        a: &'a Analysis,
+        sel: Range<usize>,
+        ctx: &'a Context<'a>,
+    ) -> Self {
         let mut hidden: Vec<Range<usize>> = a.conceals.iter().map(|c| c.hidden.clone()).collect();
         let comments = comments(text, a);
         hidden.extend(comments);
@@ -475,7 +480,13 @@ impl<'a> Emitter<'a> {
     }
 
     /// `![alt](src)` / `![[src]]` — relative sources stay relative.
-    pub(super) fn image(&mut self, out: &mut String, range: Range<usize>, src: Range<usize>, embed: bool) {
+    pub(super) fn image(
+        &mut self,
+        out: &mut String,
+        range: Range<usize>,
+        src: Range<usize>,
+        embed: bool,
+    ) {
         let raw = &self.text[src.clone()];
         let bare = raw
             .strip_prefix('<')
@@ -489,6 +500,9 @@ impl<'a> Emitter<'a> {
                     break;
                 }
             }
+        }
+        if let Some(source) = super::assets::image_source(bare, embed, self.ctx) {
+            href = source;
         }
         let alt = if embed {
             bare
@@ -507,7 +521,12 @@ impl<'a> Emitter<'a> {
 
     /// `[[target]]` / `[[target|alias]]` → `<a>` to the other .md file when it
     /// resolves, styled text otherwise.
-    pub(super) fn wiki(&mut self, out: &mut String, target: Range<usize>, alias: Option<Range<usize>>) {
+    pub(super) fn wiki(
+        &mut self,
+        out: &mut String,
+        target: Range<usize>,
+        alias: Option<Range<usize>>,
+    ) {
         let visible = alias.unwrap_or_else(|| target.clone());
         let href = self
             .ctx

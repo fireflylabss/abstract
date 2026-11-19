@@ -5,8 +5,8 @@ impl<'a> Emitter<'a> {
         a: &'a Analysis,
         sel: Range<usize>,
         ctx: &'a Context<'a>,
-        mono: FontFamily<Font>,
-        math: FontFamily<Font>,
+        mono: Family,
+        math: Family,
     ) -> Self {
         let mut hidden: Vec<Range<usize>> = a.conceals.iter().map(|c| c.hidden.clone()).collect();
         hidden.extend(comments(text, a));
@@ -162,7 +162,7 @@ impl<'a> Emitter<'a> {
             let ink = std::mem::replace(&mut self.ink, MUTED);
             self.children(&mut inner, node);
             self.ink = ink;
-            out.push(Bar::new(inner).styled(line_style()));
+            out.push(Block::bar(inner).styled(line_style()));
             return;
         };
         let tone = tone_color(callout.tone);
@@ -213,7 +213,7 @@ impl<'a> Emitter<'a> {
             }
             self.block(&mut inner, child);
         }
-        out.push(Bar::new(inner).styled(Style::new().with_color(tone)));
+        out.push(Block::bar(inner).styled(Style::new().with_color(tone)));
     }
 
     pub(super) fn list(&mut self, out: &mut LinearLayout, node: Node) {
@@ -271,7 +271,7 @@ impl<'a> Emitter<'a> {
             (None, Some(n)) => (format!("{n}."), Style::new().with_color(self.ink)),
             (None, None) => ("\u{2022}".to_string(), Style::new().with_color(self.ink)),
         };
-        out.push(Bullet::new(inner, bullet, style));
+        out.push(Block::bullet(inner, bullet, style));
     }
 
     pub(super) fn code(&mut self, out: &mut LinearLayout, node: Node, fenced: bool) {
@@ -310,10 +310,10 @@ impl<'a> Emitter<'a> {
         }
         let mut lines = LinearLayout::vertical();
         for l in rows {
-            lines.push(Text::new(StyledString::new(l, self.mono_style())));
+            lines.push(Paragraph::new(StyledString::new(l, self.mono_style())));
         }
         out.push(
-            PaddedElement::new(lines, Margins::trbl(1.6, 2.2, 1.6, 2.2))
+            Block::padded(lines, Margins::trbl(1.6, 2.2, 1.6, 2.2))
                 .framed()
                 .styled(line_style()),
         );
@@ -375,9 +375,8 @@ impl<'a> Emitter<'a> {
             }
         }
         let mut table = TableLayout::new(weights);
-        table.set_cell_decorator(FrameCellDecorator::new(true, true, false));
         for (is_header, cells) in grid {
-            let mut row: Vec<Box<dyn Element>> = Vec::with_capacity(ncols);
+            let mut row: Vec<Block> = Vec::with_capacity(ncols);
             for (i, cell) in cells.into_iter().enumerate() {
                 let extra = if is_header {
                     Style::new().bold().with_font_size(CELL_PT)
@@ -388,21 +387,27 @@ impl<'a> Emitter<'a> {
                     .into_iter()
                     .map(|s| StyledString::new(s.s, s.style.and(extra)))
                     .collect();
-                let alignment = match aligns.get(i).copied().unwrap_or(crate::core::table::Align::None) {
-                    crate::core::table::Align::None | crate::core::table::Align::Left => Alignment::Left,
+                let alignment = match aligns
+                    .get(i)
+                    .copied()
+                    .unwrap_or(crate::core::table::Align::None)
+                {
+                    crate::core::table::Align::None | crate::core::table::Align::Left => {
+                        Alignment::Left
+                    }
                     crate::core::table::Align::Center => Alignment::Center,
                     crate::core::table::Align::Right => Alignment::Right,
                 };
-                row.push(Box::new(PaddedElement::new(
+                row.push(Block::padded(
                     Paragraph::from(runs).aligned(alignment),
                     Margins::all(1.2f32),
-                )));
+                ));
             }
             while row.len() < ncols {
-                row.push(Box::new(Text::new("")));
+                row.push(Paragraph::new("").into());
             }
             row.truncate(ncols);
-            let _ = table.push_row(row);
+            table.push_row(row);
         }
         out.push(table.styled(line_style()));
     }
@@ -473,5 +478,4 @@ impl<'a> Emitter<'a> {
     }
 
     // ── Inline emission (flag-driven) ────────────────────────────────────
-
 }

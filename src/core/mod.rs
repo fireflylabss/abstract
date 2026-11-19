@@ -1,13 +1,17 @@
 #![allow(dead_code)]
 
+pub mod attach;
 pub mod buffer;
 pub mod code;
 pub mod find;
 pub mod footnote;
+pub mod html;
 pub mod i18n;
 pub mod lines;
 pub mod links;
+pub mod math;
 pub mod md;
+pub mod pdf;
 pub mod prefs;
 pub mod search;
 pub mod smart;

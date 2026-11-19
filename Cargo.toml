@@ -16,7 +16,7 @@ name = "abstract"
 path = "src/main.rs"
 
 [dependencies]
-rune = { git = "https://github.com/anomalyco/rune", rev = "33eabc2", features = ["tooling"] }
+rune = { git = "https://github.com/anomalyco/rune", rev = "33eabc2", features = ["tooling", "native-file-dialog"] }
 rune-kit = { git = "https://github.com/anomalyco/rune", rev = "33eabc2" }
 tree-sitter = "=0.26.13"
 sys-locale = "0.3"
@@ -25,6 +25,13 @@ unicode-segmentation = "1"
 unicode-width = "0.2"
 notify = "8.2.0"
 trash = "5"
+pulldown-latex = "0.8"
+krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
+harfrust = "0.12"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+
+[dev-dependencies]
+flate2 = "1"
 
 [build-dependencies]
 winresource = "=0.1.31"

@@ -1,4 +1,6 @@
 pub mod atomic;
+pub mod attachments;
+pub mod export;
 pub mod files;
 pub mod identity;
 pub mod navigation;
