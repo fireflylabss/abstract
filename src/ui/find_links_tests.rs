@@ -1,5 +1,33 @@
 use super::*;
 
+#[test]
+fn link_alias_reuses_open_buffer_identity_and_unsaved_text() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    let alias = fixture.0.join("note.md");
+    std::fs::write(&path, "# Note\n[other case](note.md)").unwrap();
+    #[cfg(unix)]
+    if !alias.exists() {
+        std::os::unix::fs::symlink(&path, &alias).unwrap();
+    }
+    let mut rt = fixture.runtime();
+    rt.update(|s, tx| s.open(path.clone(), tx));
+    until(&mut rt, |s| s.active.as_ref() == Some(&path));
+    rt.update(|s, tx| {
+        let edit = &mut s.document_mut().unwrap().edit;
+        edit.set_caret(edit.text.len());
+        edit.insert("\nunsaved");
+        s.edited(tx);
+        s.document_mut().unwrap().edit.set_caret(10);
+        s.follow_link(tx);
+    });
+    until(&mut rt, |s| !s.navigation.busy);
+    assert_eq!(rt.state.tabs.paths(), [path.clone()]);
+    assert_eq!(rt.state.active.as_ref(), Some(&path));
+    assert_eq!(rt.state.documents.len(), 1);
+    assert!(rt.state.document().unwrap().edit.text.ends_with("unsaved"));
+}
+
 fn command(rt: &mut Runtime<State>, c: &str, shift: bool) {
     press(
         rt,

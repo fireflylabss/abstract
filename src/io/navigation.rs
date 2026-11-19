@@ -146,6 +146,12 @@ fn load(request: &Request) -> io::Result<Loaded> {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a note"));
         }
     };
+    let path = request
+        .buffers
+        .keys()
+        .find(|open| same_file(open, &path))
+        .cloned()
+        .unwrap_or(path);
     let source = match read(&path) {
         Ok(source) => source,
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -180,6 +186,25 @@ fn load(request: &Request) -> io::Result<Loaded> {
         source,
         heading: heading.clone(),
     })
+}
+
+fn same_file(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    if let (Ok(a), Ok(b)) = (a.canonicalize(), b.canonicalize())
+        && a == b
+    {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let (Ok(a), Ok(b)) = (a.metadata(), b.metadata()) {
+            return (a.dev(), a.ino()) == (b.dev(), b.ino());
+        }
+    }
+    false
 }
 
 #[cfg(test)]
