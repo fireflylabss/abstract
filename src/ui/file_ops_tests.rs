@@ -2,6 +2,25 @@ use super::*;
 use crate::io::{operations::Operation, watch::Change};
 
 #[test]
+fn editor_rename_reveals_a_hidden_row() {
+    let fixture = Fixture::new();
+    let folder = fixture.0.join("Folder");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("Note.md"), "note").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.sidebar_open = false;
+        s.focus_mode = true;
+        s.expanded.clear();
+        tx.focus("editor", false);
+    });
+    press(&mut rt, RuneKey::Function(2), Mods::default());
+    assert!(rt.state.sidebar_open && !rt.state.focus_mode);
+    assert!(rt.state.expanded.contains(&folder));
+}
+
+#[test]
 fn quitting_with_a_conflict_preserves_both_versions_without_overwriting_recovery() {
     let fixture = Fixture::new();
     let path = fixture.0.join("Note.md");

@@ -55,6 +55,15 @@ impl State {
         if self.files_busy() {
             return;
         }
+        self.sidebar_open = true;
+        self.focus_mode = false;
+        self.expanded.extend(
+            path.ancestors()
+                .skip(1)
+                .take_while(|parent| parent.starts_with(&self.root))
+                .map(std::path::Path::to_owned),
+        );
+        tx.scroll_into_view("file-rename");
         let name = if creating {
             t(Key::NewFolder).to_owned()
         } else if folder {
