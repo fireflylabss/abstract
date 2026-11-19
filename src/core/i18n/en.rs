@@ -2,7 +2,7 @@ use super::*;
 pub(super) fn en(k: Key) -> &'static str {
     match k {
         Key::Sidebar => "Sidebar ({MOD}+\\)",
-        Key::Search => "Search notes ({MOD}+P)",
+        Key::Search => "Search notes ({MOD}+Shift+F)",
         Key::Theme => "Theme: {name} ({MOD}+Shift+L)",
         Key::ThemeSystem => "System",
         Key::ThemeLight => "Light",
@@ -29,6 +29,8 @@ pub(super) fn en(k: Key) -> &'static str {
         Key::CreateNoteFailed => "Could not create the note",
         Key::SearchPlaceholder => "Search notes…",
         Key::NoNotesFound => "No notes found",
+        Key::Searching => "Searching…",
+        Key::OpenFailed => "Could not open link",
         Key::ReferencedBy => "Referenced by",
         Key::EditorPlaceholder => "Start writing…",
         Key::EditorAria => "Markdown editor",

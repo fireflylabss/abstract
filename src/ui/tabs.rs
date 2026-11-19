@@ -4,6 +4,7 @@ use crate::ui::theme::Palette;
 impl State {
     pub fn focus_tab(&mut self, tx: &mut Tx) {
         self.active = self.tabs.active().map(std::path::Path::to_owned);
+        self.refresh_find(false, tx);
         if let Some(doc) = self.document() {
             tx.focus("editor", false);
             tx.scroll_to_y("editor-scroll", doc.scroll.get());

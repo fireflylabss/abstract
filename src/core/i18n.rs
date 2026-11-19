@@ -72,6 +72,8 @@ pub enum Key {
     // Search palette
     SearchPlaceholder,
     NoNotesFound,
+    Searching,
+    OpenFailed,
     // Wiki-links / backlinks
     ReferencedBy,
     // Editor
@@ -316,6 +318,8 @@ impl Key {
         Key::CreateNoteFailed,
         Key::SearchPlaceholder,
         Key::NoNotesFound,
+        Key::Searching,
+        Key::OpenFailed,
         Key::ReferencedBy,
         Key::EditorPlaceholder,
         Key::EditorAria,

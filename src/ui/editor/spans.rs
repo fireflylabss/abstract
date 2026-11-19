@@ -72,7 +72,7 @@ pub fn decorate(source: &str, anchor: usize, focus: usize, a: &Analysis, p: Pale
                 span = span.color(rgb(p.quote));
             }
             if flag & md::LINK != 0 {
-                span = span.color(rgb(p.callout[0]));
+                span = span.color(rgb(p.callout[0])).underline(rgb(p.callout[0]));
             }
             if flag & (md::MARK | md::MUTED) != 0 || stable[pos] {
                 span = span.color(rgb(p.muted));

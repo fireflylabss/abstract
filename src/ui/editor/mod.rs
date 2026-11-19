@@ -16,11 +16,17 @@ pub fn view(state: &State, palette: Palette) -> El {
             .color(rgb(palette.dim))
             .padding(28.);
     };
-    let decorations = doc
+    let mut decorations = doc
         .analysis
         .get(doc.revision)
         .map(|a| spans::decorate(&doc.edit.text, doc.edit.anchor, doc.edit.focus, a, palette))
         .unwrap_or_default();
+    decorations.extend(state.find_spans(palette));
+    let highlights = state
+        .current_find()
+        .map(|range| rune::TextHighlight::new(range, rune::Color::TRANSPARENT).key("find-current"))
+        .into_iter()
+        .collect::<Vec<_>>();
     text_input(&doc.edit, TextStyle::new(17., 400.))
         .key("editor")
         .label(t(Key::EditorAria))
@@ -28,6 +34,7 @@ pub fn view(state: &State, palette: Palette) -> El {
         .w_full()
         .min_h(420.)
         .spans(decorations)
+        .text_highlights(highlights)
         .color(rgb(palette.body))
         .caret(rgb(palette.caret), rgba(palette.selection))
         .on_edit(|s: &mut State| &mut s.document_mut().expect("mounted editor").edit)

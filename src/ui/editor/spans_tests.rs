@@ -55,3 +55,25 @@ fn unicode_empty_and_stale_analysis_are_safe() {
     assert!(decorate("", 0, 0, &analyzer.analyze(""), crate::ui::theme::LIGHT).is_empty());
     assert!(decorate("x", 0, 0, &a, crate::ui::theme::LIGHT).is_empty());
 }
+
+#[test]
+fn wiki_aliases_and_markdown_labels_receive_link_styling() {
+    let source = "[[Note|alias]] and [web](https://example.com)\nend";
+    let a = md::Analyzer::new().analyze(source);
+    let spans = decorate(
+        source,
+        source.len(),
+        source.len(),
+        &a,
+        crate::ui::theme::LIGHT,
+    );
+    for label in ["alias", "web"] {
+        let byte = source.find(label).unwrap();
+        let span = spans
+            .iter()
+            .find(|s| s.start as usize <= byte && byte < s.end as usize)
+            .unwrap();
+        assert_eq!(span.color, Some(rgb(crate::ui::theme::LIGHT.callout[0])));
+        assert!(span.underline.is_some());
+    }
+}

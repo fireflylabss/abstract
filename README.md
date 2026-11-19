@@ -8,7 +8,7 @@
 
 The `rune` branch is the staged Rune rewrite. The screenshots and packaged releases
 below show v0.1.5; the Rune build currently provides the Phase 1 skeleton and
-Phase 2a editing behaviours and Phase 2b tabs described here.
+Phase 2a editing behaviours, Phase 2b tabs and Phase 2c find/search/links described here.
 
 ![abstract v0.1.5, light theme](docs/screenshot-light.png)
 
@@ -77,7 +77,25 @@ cheap pointer-to-source-offset callback. Use `Cmd/Ctrl+Enter` instead.
 - Open tab order, active tab, cursors and scroll positions use the existing session
   format. Missing files are skipped during background restore.
 
-Search/find UI, following links, images,
+## Phase 2c find, search and links
+
+- `Cmd/Ctrl+F` opens the one-row find bar; `Cmd/Ctrl+Alt+F` or `Cmd/Ctrl+H`
+  adds replacement. Matches update while typing, with a current/total count,
+  source highlights and an **Aa** case-sensitive toggle.
+- `Enter` / `Shift+Enter`, `Cmd/Ctrl+G` / `Shift+G` and `F3` / `Shift+F3`
+  move between matches. In the replacement field, `Enter` replaces one and
+  `Cmd/Ctrl+Enter` replaces all. Each replacement command is one undo step.
+  Escape closes the panel and returns focus to the editor.
+- `Cmd/Ctrl+Shift+F` searches all notes in the active space on a worker, including
+  unsaved open buffers. Up/Down selects a result; Enter or a click opens its original
+  byte range. Stale query generations cannot replace newer results.
+- **Alt+Enter** follows the link under the caret: wiki-links resolve titles/stems
+  case-insensitively or create a missing note, local `.md` links open in tabs,
+  heading fragments jump within notes, and HTTP(S) links open in the browser.
+  Wiki aliases are supported. Pointer-following is not wired because the pinned
+  Rune text input has no cheap pointer-to-source-offset callback.
+
+Images,
 external-edit watching, rename/move/trash, exports, settings UI, glass, command
 palette and updater are not yet available. Settings/session/spaces file formats
 remain compatible; window geometry restoration remains deferred.

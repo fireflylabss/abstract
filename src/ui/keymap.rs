@@ -11,7 +11,24 @@ pub fn shortcut(key: &KeyEvent, character: char) -> bool {
 
 pub fn handle(state: &mut State, key: &KeyEvent, tx: &mut Tx) -> bool {
     let plain = !key.mods.shift;
-    if plain && (shortcut(key, 'n') || shortcut(key, 't')) {
+    if key.mods.shift && shortcut(key, 'f') {
+        state.open_search(tx);
+    } else if plain && shortcut(key, 'f') {
+        state.open_find(false, tx);
+    } else if (plain && shortcut(key, 'h'))
+        || (plain
+            && key.mods.alt
+            && (key.mods.cmd || key.mods.ctrl)
+            && (key.is_command('f')
+                || matches!(&key.key, Key::Text(text) if text.eq_ignore_ascii_case("f"))))
+    {
+        state.open_find(true, tx);
+    } else if shortcut(key, 'g') || matches!(key.key, Key::Function(3)) {
+        state.find_step(plain, tx);
+    } else if key.mods.alt && !key.mods.cmd && !key.mods.ctrl && matches!(key.key, Key::Enter) {
+        state.follow_link(tx);
+    } else if matches!(key.key, Key::Escape) && state.close_tools(tx) {
+    } else if plain && (shortcut(key, 'n') || shortcut(key, 't')) {
         state.new_note(tx);
     } else if plain && shortcut(key, 'w') {
         if let Some(path) = state.active.clone() {

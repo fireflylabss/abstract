@@ -8,6 +8,9 @@ use super::*;
 #[path = "tabs_tests.rs"]
 mod tabs;
 
+#[path = "find_links_tests.rs"]
+mod find_links;
+
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture(PathBuf);
@@ -50,6 +53,10 @@ impl Fixture {
             hovered_tab: None,
             restore_started: false,
             edit_revision: 0,
+            find: None,
+            search: None,
+            navigation: crate::io::navigation::Navigation::new(),
+            jump: None,
         };
         let mut rt = Runtime::with_text(
             state,

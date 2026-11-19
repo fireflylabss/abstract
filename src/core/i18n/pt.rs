@@ -2,7 +2,7 @@ use super::*;
 pub(super) fn pt(k: Key) -> &'static str {
     match k {
         Key::Sidebar => "Barra lateral ({MOD}+\\)",
-        Key::Search => "Buscar notas ({MOD}+P)",
+        Key::Search => "Buscar notas ({MOD}+Shift+F)",
         Key::Theme => "Tema: {name} ({MOD}+Shift+L)",
         Key::ThemeSystem => "Sistema",
         Key::ThemeLight => "Claro",
@@ -29,6 +29,8 @@ pub(super) fn pt(k: Key) -> &'static str {
         Key::CreateNoteFailed => "Não foi possível criar a nota",
         Key::SearchPlaceholder => "Buscar notas…",
         Key::NoNotesFound => "Nenhuma nota encontrada",
+        Key::Searching => "Buscando…",
+        Key::OpenFailed => "Não foi possível abrir o link",
         Key::ReferencedBy => "Referenciada por",
         Key::EditorPlaceholder => "Comece a escrever…",
         Key::EditorAria => "Editor Markdown",

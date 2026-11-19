@@ -86,6 +86,10 @@ pub struct State {
     hovered_tab: Option<PathBuf>,
     restore_started: bool,
     edit_revision: u64,
+    find: Option<find::FindBar>,
+    search: Option<search::SearchBar>,
+    navigation: crate::io::navigation::Navigation,
+    jump: Option<(u64, PathBuf, std::ops::Range<usize>)>,
 }
 
 impl Default for State {
@@ -139,6 +143,10 @@ impl State {
             hovered_tab: None,
             restore_started: false,
             edit_revision: 0,
+            find: None,
+            search: None,
+            navigation: crate::io::navigation::Navigation::new(),
+            jump: None,
         }
     }
 
@@ -200,6 +208,10 @@ impl State {
         }
         if doc.analysis.running() {
             tx.wake_after(Duration::from_millis(16));
+        }
+        self.refresh_find(false, tx);
+        if self.search.is_some() {
+            self.start_search(tx);
         }
     }
 
@@ -337,7 +349,14 @@ impl State {
             changed = true;
         }
         changed |= self.restored_tabs(tx);
-        let mut working = self.scanning || self.files_pending > 0 || self.settings_pending > 0;
+        changed |= self.poll_navigation(tx);
+        changed |= self.poll_search();
+        self.apply_jump(tx);
+        let mut working = self.scanning
+            || self.files_pending > 0
+            || self.settings_pending > 0
+            || self.navigation.busy
+            || self.searching();
         for (path, doc) in &mut self.documents {
             changed |= doc.analysis.poll(&doc.edit.text, doc.revision);
             let was_pending = matches!(doc.save, SaveState::Pending { .. });
@@ -435,6 +454,12 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
     if !state.focus_mode {
         pane = pane.child(header).child(tabs::view(state, palette));
     }
+    if state.find.is_some() {
+        pane = pane.child(find::view(state, palette));
+    }
+    if state.search.is_some() {
+        pane = pane.child(search::view(state, palette));
+    }
     if let Some(error) = &state.error {
         pane = pane.child(
             text(format!("{}: {error}", t(Key::SaveFailed)))
@@ -502,3 +527,10 @@ mod tests;
 
 #[path = "tabs.rs"]
 mod tabs;
+
+#[path = "find.rs"]
+mod find;
+#[path = "navigation.rs"]
+mod navigation;
+#[path = "search.rs"]
+mod search;
