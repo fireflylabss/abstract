@@ -2,49 +2,37 @@
 name = "abstract-editor"
 version = "0.1.5"
 edition = "2024"
-description = "Minimal local-first markdown notes editor, GPU-rendered with GPUI"
+description = "Minimal local-first markdown notes editor, GPU-rendered with Rune"
 repository = "https://github.com/fireflylabss/abstract"
 license = "Apache-2.0"
-rust-version = "1.97"
-keywords = ["markdown", "notes", "editor", "gpui"]
+rust-version = "1.99.1"
+keywords = ["markdown", "notes", "editor", "rune"]
 categories = ["text-editors"]
 readme = "README.md"
+publish = false
 
 [[bin]]
 name = "abstract"
 path = "src/main.rs"
 
 [dependencies]
-gpui = { version = "=0.3.4", package = "gpui-pre" }
-gpui-base = "=0.6.1"
-gpui-component = "=0.6.1"
-gpui-component-macros = "=0.6.1"
-gpui-kit = { version = "=0.6.1", default-features = false, features = ["component", "tree-sitter-markdown", "tree-sitter-markdown-inline"] }
-gpui-kit-assets = "=0.6.1"
-gpui_platform = { version = "=0.3.4", package = "gpui-pre-platform", default-features = false, features = ["wayland", "x11"] }
+rune = { git = "https://github.com/anomalyco/rune", rev = "33eabc2", features = ["tooling"] }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "33eabc2" }
 tree-sitter = "=0.26.13"
-notify = "8"
 sys-locale = "0.3"
-futures = "0.3"
 tree-sitter-md = "=0.5.3"
-trash = "5"
 unicode-segmentation = "1"
 unicode-width = "0.2"
-minisign-verify = "=0.2.5"
-sha2 = "0.10"
-arboard = { version = "=3.6.1", default-features = false }
-pulldown-latex = "0.8"
-genpdf = { version = "0.2.0", features = ["images"] }
-image = "0.23"
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-spellbook = "0.4"
-
-[dev-dependencies]
-gpui = { version = "=0.3.4", package = "gpui-pre", features = ["test-support"] }
 
 [build-dependencies]
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 winresource = "=0.1.31"
+
+[patch.crates-io]
+winit = { git = "https://github.com/anomalyco/rune", rev = "33eabc2" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "33eabc2" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "33eabc2" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "33eabc2" }
+accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "33eabc2" }
 
 [package.metadata.deb]
 depends = "libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libxcb1, libfontconfig1"
