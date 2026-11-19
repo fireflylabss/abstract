@@ -30,6 +30,11 @@ pub(super) struct SpellUi {
     actions: usize,
 }
 impl SpellUi {
+    pub fn finish(&mut self) -> Result<(), String> {
+        self.worker
+            .take()
+            .map_or(Ok(()), |mut worker| worker.finish())
+    }
     pub fn new(path: PathBuf) -> Self {
         Self {
             worker: None,

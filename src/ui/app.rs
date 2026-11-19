@@ -441,6 +441,10 @@ impl State {
     }
 
     fn shutdown(&mut self) {
+        if let Err(error) = self.spelling.finish() {
+            eprintln!("abstract: {error}");
+            self.error = Some(error);
+        }
         self.flush_export();
         self.flush_attachments();
         if self.files_busy() {

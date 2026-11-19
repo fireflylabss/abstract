@@ -2,6 +2,25 @@ use super::*;
 use std::time::Duration;
 
 #[test]
+fn dropping_worker_persists_queued_dictionary_actions() {
+    let path = std::env::temp_dir()
+        .join(format!("abstract-spell-shutdown-{}", std::process::id()))
+        .join("userdict");
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    let worker = Spelling::new(path.clone());
+    worker
+        .submit(Job::Add("abstractshutdownwordd".into()))
+        .unwrap();
+    drop(worker);
+    assert!(
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("abstractshutdownwordd")
+    );
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
 fn dictionary_languages_suggestions_ignore_and_persistence_run_on_worker() {
     let path = std::env::temp_dir()
         .join(format!("abstract-spell-worker-{}", std::process::id()))

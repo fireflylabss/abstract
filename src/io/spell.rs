@@ -21,14 +21,15 @@ pub enum Reply {
     Changed(Result<(), String>),
 }
 pub struct Spelling {
-    jobs: Sender<Job>,
+    jobs: Option<Sender<Job>>,
     pub replies: Receiver<Reply>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Spelling {
     pub fn new(path: PathBuf) -> Self {
         let (jobs, requests) = mpsc::channel();
         let (done, replies) = mpsc::channel();
-        std::thread::spawn(move || {
+        let thread = std::thread::spawn(move || {
             let mut engine = None;
             let mut cache = Cache::default();
             let mut ignored = BTreeSet::new();
@@ -59,9 +60,39 @@ impl Spelling {
                 }
             }
         });
-        Self { jobs, replies }
+        Self {
+            jobs: Some(jobs),
+            replies,
+            thread: Some(thread),
+        }
     }
     pub fn submit(&self, job: Job) -> Result<(), String> {
-        self.jobs.send(job).map_err(|e| e.to_string())
+        self.jobs
+            .as_ref()
+            .ok_or("Spellchecking stopped")?
+            .send(job)
+            .map_err(|e| e.to_string())
+    }
+    pub fn finish(&mut self) -> Result<(), String> {
+        self.jobs.take();
+        if let Some(thread) = self.thread.take() {
+            thread
+                .join()
+                .map_err(|_| "Spellchecking worker failed".to_string())?;
+        }
+        for reply in self.replies.try_iter() {
+            if let Reply::Changed(Err(error)) = reply {
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for Spelling {
+    fn drop(&mut self) {
+        if let Err(error) = self.finish() {
+            eprintln!("abstract: {error}");
+        }
     }
 }
