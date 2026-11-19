@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn identical_replace_one_advances_without_dirtying_or_adding_undo() {
+    let fixture = Fixture::new();
+    std::fs::write(fixture.0.join("Note.md"), "CAT cat CAT").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.open_find(true, tx);
+        let bar = s.find.as_mut().unwrap();
+        bar.query = TextEdit::new("cat");
+        bar.replacement = TextEdit::new("cat");
+        s.document_mut().unwrap().edit.set_caret(4);
+        s.refresh_find(true, tx);
+        s.replace_find(false, tx);
+    });
+    assert_eq!(rt.state.current_find(), Some(8..11));
+    assert_eq!(rt.state.document().unwrap().revision, 0);
+    rt.update(|s, tx| {
+        s.replace_find(false, tx);
+        s.close_find(tx);
+    });
+    assert_eq!(rt.state.document().unwrap().edit.text, "CAT cat cat");
+    command(&mut rt, "z", false);
+    assert_eq!(rt.state.document().unwrap().edit.text, "CAT cat CAT");
+}
+
+#[test]
 fn link_alias_reuses_open_buffer_identity_and_unsaved_text() {
     let fixture = Fixture::new();
     let path = fixture.0.join("Note.md");

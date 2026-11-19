@@ -121,6 +121,9 @@ impl State {
             (range, replacement)
         };
         if doc.edit.text[range.clone()] == text {
+            if !all {
+                self.find_step(true, tx);
+            }
             return;
         }
         doc.edit.undo_group(|edit| {
