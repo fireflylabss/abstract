@@ -1,6 +1,127 @@
 use super::super::{commands, palette};
 use super::*;
 
+fn note_runtime(fixture: &Fixture) -> Runtime<State> {
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "cat cat").unwrap();
+    let mut rt = fixture.runtime();
+    rt.update(|s, tx| s.open(path.clone(), tx));
+    until(&mut rt, |s| s.document().is_some());
+    rt
+}
+
+#[test]
+fn follow_shortcut_in_replacement_does_not_replace_text() {
+    let fixture = Fixture::new();
+    let mut rt = note_runtime(&fixture);
+    rt.update(|s, tx| {
+        s.open_find(true, tx);
+        s.find.as_mut().unwrap().query = TextEdit::new("cat");
+        s.find.as_mut().unwrap().replacement = TextEdit::new("dog");
+        s.refresh_find(true, tx);
+        tx.focus("find-replacement", false);
+    });
+    press(
+        &mut rt,
+        RuneKey::Enter,
+        Mods {
+            alt: true,
+            ..Mods::default()
+        },
+    );
+    assert_eq!(rt.state.document().unwrap().edit.text, "cat cat");
+}
+
+#[test]
+fn palette_trash_requests_confirmation_before_touching_disk() {
+    let fixture = Fixture::new();
+    let mut rt = note_runtime(&fixture);
+    let path = rt.state.active.clone().unwrap();
+    rt.update(|s, tx| {
+        s.open_palette(true, tx);
+        s.palette.open.as_mut().unwrap().selected = palette::entries(s)
+            .iter()
+            .position(|e| e.target == palette::Target::Command("trash"))
+            .unwrap();
+    });
+    press(&mut rt, RuneKey::Enter, Mods::default());
+    assert!(matches!(&rt.state.file_ops.mode, file_ops::Mode::Confirm(p) if p == &path));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "cat cat");
+}
+
+#[test]
+fn palette_blocks_function_shortcuts_behind_modal() {
+    let fixture = Fixture::new();
+    let mut rt = note_runtime(&fixture);
+    rt.update(|s, tx| {
+        s.open_find(false, tx);
+        s.find.as_mut().unwrap().query = TextEdit::new("cat");
+        s.refresh_find(true, tx);
+        s.open_palette(true, tx);
+    });
+    let current = rt.state.find.as_ref().unwrap().current;
+    press(&mut rt, RuneKey::Function(3), Mods::default());
+    assert_eq!(rt.state.find.as_ref().unwrap().current, current);
+    press(&mut rt, RuneKey::Function(2), Mods::default());
+    assert!(matches!(rt.state.file_ops.mode, file_ops::Mode::Idle));
+}
+
+#[test]
+fn palette_dismissal_restores_each_query_focus() {
+    for field in ["find-query", "find-replacement", "global-query"] {
+        let fixture = Fixture::new();
+        let mut rt = note_runtime(&fixture);
+        rt.update(|s, tx| {
+            if field == "global-query" {
+                s.open_search(tx);
+            } else {
+                s.open_find(true, tx);
+            }
+            tx.focus(field, false);
+        });
+        press(
+            &mut rt,
+            RuneKey::Text("p".into()),
+            Mods {
+                ctrl: true,
+                ..Mods::default()
+            },
+        );
+        press(&mut rt, RuneKey::Escape, Mods::default());
+        rt.paste("query");
+        rt.frame(1. / 60.);
+        let query = match field {
+            "global-query" => &rt.state.search.as_ref().unwrap().query.text,
+            "find-replacement" => &rt.state.find.as_ref().unwrap().replacement.text,
+            _ => &rt.state.find.as_ref().unwrap().query.text,
+        };
+        assert_eq!(query, "query", "{field}");
+        assert_eq!(rt.state.document().unwrap().edit.text, "cat cat", "{field}");
+    }
+}
+
+#[test]
+fn unavailable_commands_remain_disabled_and_do_not_dismiss_palette() {
+    let fixture = Fixture::new();
+    let mut rt = note_runtime(&fixture);
+    for id in ["find-next", "find-prev", "spelling"] {
+        rt.update(|s, tx| {
+            s.open_find(false, tx);
+            s.open_palette(true, tx);
+            let entries = palette::entries(s);
+            let index = entries
+                .iter()
+                .position(|e| e.target == palette::Target::Command(id))
+                .unwrap();
+            s.palette.open.as_mut().unwrap().selected = index;
+            assert!(!entries[index].enabled, "{id}");
+        });
+        press(&mut rt, RuneKey::Enter, Mods::default());
+        assert!(rt.state.palette.open.is_some(), "{id}");
+        press(&mut rt, RuneKey::Escape, Mods::default());
+    }
+}
+
 #[test]
 fn registry_has_unique_ids_bindings_and_localized_labels() {
     let mut ids = HashSet::new();

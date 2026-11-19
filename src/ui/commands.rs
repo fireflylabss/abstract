@@ -87,6 +87,12 @@ fn note(s: &State) -> bool {
 fn editing(s: &State) -> bool {
     note(s) && !s.settings_open()
 }
+fn find_matches(s: &State) -> bool {
+    note(s) && s.find.as_ref().is_some_and(|bar| !bar.matches.is_empty())
+}
+fn spelling(s: &State) -> bool {
+    editing(s) && s.spelling_available()
+}
 fn always(_: &State) -> bool {
     true
 }
@@ -181,7 +187,7 @@ pub const ALL: &[Command] = &[
         FindNext,
         "F3",
         [F(3, false), P('g', false)],
-        note,
+        find_matches,
         |s, tx| s.find_step(true, tx)
     ),
     entry!(
@@ -189,7 +195,7 @@ pub const ALL: &[Command] = &[
         FindPrev,
         "⇧F3",
         [F(3, true), P('g', true)],
-        note,
+        find_matches,
         |s, tx| s.find_step(false, tx)
     ),
     entry!(
@@ -197,7 +203,7 @@ pub const ALL: &[Command] = &[
         FollowLinkCommand,
         "Alt+Enter",
         [Binding::Follow],
-        editing,
+        note,
         State::follow_link
     ),
     entry!(
@@ -205,7 +211,7 @@ pub const ALL: &[Command] = &[
         SpellSuggestions,
         "F7",
         [F(7, false)],
-        editing,
+        spelling,
         State::spell_suggestions
     ),
     entry!("rename", Rename, "F2", [F(2, false)], note, |s, tx| {
@@ -215,7 +221,7 @@ pub const ALL: &[Command] = &[
     }),
     entry!("trash", MoveToTrash, "", [], note, |s, tx| {
         if let Some(p) = s.active.clone() {
-            s.operate(crate::io::operations::Operation::Trash(p), tx);
+            s.confirm_trash(p, tx);
         }
     }),
     entry!(

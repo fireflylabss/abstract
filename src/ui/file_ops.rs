@@ -239,6 +239,11 @@ impl State {
         false
     }
 
+    pub fn confirm_trash(&mut self, path: PathBuf, tx: &mut Tx) {
+        self.file_ops.mode = Mode::Confirm(path);
+        tx.focus("file-trash-confirm", false);
+    }
+
     pub fn sidebar_file_key(
         &mut self,
         path: &std::path::Path,
@@ -255,8 +260,7 @@ impl State {
         } else if matches!(key.key, RuneKey::Delete | RuneKey::Backspace)
             && (!cfg!(target_os = "macos") || key.mods.cmd)
         {
-            self.file_ops.mode = Mode::Confirm(path.to_owned());
-            tx.focus("file-trash-confirm", false);
+            self.confirm_trash(path.to_owned(), tx);
         } else if key.mods.shift && matches!(key.key, RuneKey::Function(10)) {
             self.file_menu(path.to_owned(), folder, [200., 100.], tx);
         } else {
@@ -580,8 +584,7 @@ pub(super) fn overlay(s: &State, p: theme::Palette) -> Option<El> {
                     .child(
                         button("file-action-trash", t(Key::MoveToTrash), p).on_press_tx(
                             move |s: &mut State, tx| {
-                                s.file_ops.mode = Mode::Confirm(trash.clone());
-                                tx.focus("file-trash-confirm", false);
+                                s.confirm_trash(trash.clone(), tx);
                             },
                         ),
                     )

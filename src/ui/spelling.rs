@@ -163,6 +163,15 @@ impl State {
             })
             .unwrap_or_default()
     }
+    pub fn spelling_available(&self) -> bool {
+        self.spelling.menu.is_none()
+            && self.spell_version().is_some_and(|version| {
+                self.spelling
+                    .ready
+                    .as_ref()
+                    .is_some_and(|(ready, ranges)| *ready == version && !ranges.is_empty())
+            })
+    }
     pub fn spell_suggestions(&mut self, tx: &mut Tx) {
         if self.spelling.menu.is_some() {
             return;

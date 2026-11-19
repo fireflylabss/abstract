@@ -10,6 +10,7 @@ pub(super) struct Palette {
 pub(super) struct Open {
     pub query: TextEdit,
     pub selected: usize,
+    return_focus: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Target {
@@ -91,20 +92,41 @@ pub(super) fn entries(s: &State) -> Vec<Entry> {
 
 impl State {
     pub fn open_palette(&mut self, commands: bool, tx: &mut Tx) {
+        let return_focus = self.palette.open.as_ref().map_or_else(
+            || tx.focused().map(str::to_owned),
+            |open| open.return_focus.clone(),
+        );
         self.file_ops.mode = file_ops::Mode::Idle;
         self.close_spell(tx);
         let mut query = TextEdit::new(if commands { ">" } else { "" });
         query.set_caret(query.text.len());
         query.focused = true;
-        self.palette.open = Some(Open { query, selected: 0 });
+        self.palette.open = Some(Open {
+            query,
+            selected: 0,
+            return_focus,
+        });
         tx.focus("palette-query", false);
     }
     pub fn close_palette(&mut self, tx: &mut Tx) {
-        self.palette.open = None;
-        tx.focus("editor", false);
+        if let Some(open) = self.palette.open.take() {
+            tx.focus(open.return_focus.as_deref().unwrap_or("editor"), false);
+        }
         tx.instant();
     }
     fn activate_palette(&mut self, target: Target, tx: &mut Tx) {
+        if let Target::Command(id) = target {
+            if !commands::ALL
+                .iter()
+                .any(|c| c.id == id && (c.enabled)(self))
+            {
+                return;
+            }
+            if matches!(id, "palette" | "notes") {
+                commands::run(self, id, tx);
+                return;
+            }
+        }
         self.close_palette(tx);
         match target {
             Target::Command(id) => {
@@ -139,7 +161,7 @@ impl State {
                     self.activate_palette(entry.target, tx);
                 }
             }
-            _ => return key.mods.cmd || key.mods.ctrl,
+            _ => {}
         }
         true
     }
