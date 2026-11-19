@@ -16,12 +16,17 @@ fn markdown_decorations_keep_editable_source_and_track_cursor() {
     settle(&mut rt);
     assert_eq!(rt.state.document().unwrap().edit.text, source);
     let elements = rt.elements();
-    for glyph in ["•", "☑"] {
-        assert!(
-            elements.iter().any(|e| e.text.as_deref() == Some(glyph)),
-            "{glyph}"
-        );
-    }
+    let markers: Vec<_> = elements
+        .iter()
+        .filter(|e| {
+            e.key
+                .as_deref()
+                .is_some_and(|key| key.starts_with("md-marker-"))
+        })
+        .collect();
+    assert_eq!(markers.len(), 2);
+    assert!(markers.iter().all(|e| e.rect[2] == 14. && e.rect[3] == 14.));
+    assert!(markers.iter().any(|e| e.fill == rgb(theme::LIGHT.fg)));
     let editor = elements
         .iter()
         .find(|e| e.key.as_deref() == Some("editor"))
@@ -38,7 +43,16 @@ fn markdown_decorations_keep_editable_source_and_track_cursor() {
     );
     rt.update(|s, _| s.document_mut().unwrap().edit.set_caret(1));
     settle(&mut rt);
-    assert!(!rt.elements().iter().any(|e| e.text.as_deref() == Some("•")));
+    assert_eq!(
+        rt.elements()
+            .iter()
+            .filter(|e| e
+                .key
+                .as_deref()
+                .is_some_and(|key| key.starts_with("md-marker-")))
+            .count(),
+        1
+    );
     assert_eq!(rt.state.document().unwrap().edit.text, source);
 }
 

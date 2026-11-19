@@ -90,13 +90,11 @@ pub fn view(state: &State, cx: &Cx<State>, palette: Palette) -> El {
         .on_input_key(keys::handle);
     if let Some(a) = doc.analysis.get(doc.revision) {
         for task in a.tasks.iter().filter(|task| task.checked) {
-            let end = doc.edit.text[task.marker.end..]
-                .find('\n')
-                .map_or(doc.edit.text.len(), |n| task.marker.end + n);
-            editor = editor.strike(task.marker.end, end, Some(rgb(palette.muted)));
+            let range = blocks::task_text(&doc.edit.text, &task.marker);
+            editor = editor.strike(range.start, range.end, Some(rgb(palette.muted)));
         }
     }
-    let mut content = col().w_full();
+    let mut content = col().w_full().instant_changes();
     for layer in back {
         content = content.child(layer);
     }

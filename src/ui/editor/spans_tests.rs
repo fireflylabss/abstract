@@ -104,3 +104,23 @@ fn wiki_aliases_and_markdown_labels_receive_link_styling() {
         assert!(span.underline.is_some());
     }
 }
+
+#[test]
+fn concealed_fences_shrink_including_newlines_but_reveal_at_cursor() {
+    let source = "```rust\nfn main() {}\n```\nend";
+    let a = md::Analyzer::new().analyze(source);
+    let p = crate::ui::theme::LIGHT;
+    let spans = decorate(source, source.len(), source.len(), &a, p);
+    for start in [0, source.find("\n```").unwrap() + 1] {
+        let newline = source[start..].find('\n').unwrap() + start;
+        let span = spans
+            .iter()
+            .rev()
+            .find(|s| s.start as usize <= start && newline < s.end as usize)
+            .unwrap();
+        assert_eq!(span.size, Some(4.));
+        assert_eq!(span.color, Some(Color::TRANSPARENT));
+    }
+    let revealed = decorate(source, 1, 1, &a, p);
+    assert!(!revealed.iter().any(|s| s.start == 0 && s.size == Some(4.)));
+}

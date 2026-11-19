@@ -153,15 +153,17 @@ pub fn decorate_with(
         let selected = anchor.min(focus)..anchor.max(focus);
         for decoration in super::blocks::plan(source, a, selected, true) {
             if let super::blocks::Decoration::Marker(range, _) = decoration {
-                out.push(Span::new(range.start, range.end).color(Color::TRANSPARENT));
+                out.push(super::blocks::marker_span(
+                    source,
+                    range,
+                    settings.number("editor_size"),
+                ));
             }
         }
     }
     for task in a.tasks.iter().filter(|task| task.checked) {
-        let end = source[task.marker.end..]
-            .find('\n')
-            .map_or(source.len(), |n| task.marker.end + n);
-        out.push(Span::new(task.marker.end, end).color(rgb(p.muted)));
+        let range = super::blocks::task_text(source, &task.marker);
+        out.push(Span::new(range.start, range.end).color(rgb(p.muted)));
     }
     if conceal {
         for (line, kind) in &a.lines {
@@ -170,7 +172,11 @@ pub fn decorate_with(
                 && (raw.starts_with("```") || raw.starts_with("~~~"))
                 && !(line.start <= anchor.max(focus) && anchor.min(focus) <= line.end)
             {
-                out.push(Span::new(line.start, line.end).color(Color::TRANSPARENT));
+                out.push(
+                    Span::new(line.start, (line.end + 1).min(source.len()))
+                        .size(4. * base)
+                        .color(Color::TRANSPARENT),
+                );
             }
         }
     }
