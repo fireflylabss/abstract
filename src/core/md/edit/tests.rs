@@ -283,6 +283,44 @@ fn links_wrap_and_toggle_labels_or_whole_links_without_navigation() {
 }
 
 #[test]
+fn quoted_lists_continue_and_quoted_tasks_toggle() {
+    for (source, expected) in [
+        ("> - [ ] task", "> - [ ] task\n> - [ ] "),
+        ("> > - [x] task", "> > - [x] task\n> > - [ ] "),
+        ("> 3. [X] task", "> 3. [X] task\n> 4. [ ] "),
+        ("  >   + [ ] café", "  >   + [ ] café\n  >   + [ ] "),
+        ("> > - item", "> > - item\n> > - "),
+        ("> 9. item", "> 9. item\n> 10. "),
+    ] {
+        assert_eq!(at_end(source, Command::Enter), expected);
+        if source.contains('[') {
+            let expected = if source.contains("[ ]") {
+                source.replace("[ ]", "[x]")
+            } else {
+                source.replace("[x]", "[ ]").replace("[X]", "[ ]")
+            };
+            assert_eq!(at_end(source, Command::ToggleTask), expected);
+        }
+    }
+    assert_eq!(at_end("> ordinary", Command::Enter), "> ordinary\n> ");
+    assert!(
+        command(
+            "> ordinary",
+            Selection {
+                anchor: 0,
+                focus: 0
+            },
+            Command::ToggleTask
+        )
+        .is_none()
+    );
+    assert_eq!(
+        at_end("```\n> - [ ] code", Command::Enter),
+        "```\n> - [ ] code\n"
+    );
+}
+
+#[test]
 fn line_commands_preserve_crlf_and_unicode_selections() {
     for (source, anchor, focus, cmd, expected, expected_selection) in [
         (

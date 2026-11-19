@@ -154,6 +154,14 @@ fn marker(line: &str) -> Option<Marker> {
             end += 1;
             end += padding(&rest[end..]);
         }
+        if let Some(inner) = marker(&rest[end..]) {
+            return Some(Marker {
+                len: indent + end + inner.len,
+                next: format!("{pad}{}{}", &rest[..end], inner.next),
+                task: inner.task.map(|task| indent + end + task),
+                list: inner.list,
+            });
+        }
         return Some(Marker {
             len: indent + end,
             next: format!("{pad}{}", &rest[..end]),
