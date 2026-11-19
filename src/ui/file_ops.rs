@@ -163,6 +163,7 @@ impl State {
         self.scans.start(self.root.clone());
         self.scanning = true;
         self.persist_tabs(tx);
+        self.start_search(tx);
     }
 
     pub fn finish_pending_file_operation(&mut self, result: Result<Outcome, String>) {
@@ -268,6 +269,7 @@ impl State {
                             self.external_change(change);
                         }
                         if external {
+                            self.start_search(tx);
                             self.refresh_find(false, tx);
                             self.scans.start(self.root.clone());
                             self.scanning = true;

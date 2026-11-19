@@ -2,6 +2,41 @@ use super::*;
 use crate::io::{operations::Operation, watch::Change};
 
 #[test]
+fn search_results_do_not_retain_renamed_paths() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "needle").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.open_search(tx);
+        s.search.as_mut().unwrap().query.insert("needle");
+        s.start_search(tx);
+    });
+    until(&mut rt, |s| !s.searching());
+    assert_eq!(rt.state.search.as_ref().unwrap().hits.len(), 1);
+    rt.update(|s, tx| {
+        s.operate(
+            Operation::Rename {
+                from: path.clone(),
+                to: fixture.0.join("Moved.md"),
+            },
+            tx,
+        )
+    });
+    until(&mut rt, |s| !s.files_busy());
+    assert!(
+        rt.state
+            .search
+            .as_ref()
+            .unwrap()
+            .hits
+            .iter()
+            .all(|hit| hit.path != path)
+    );
+}
+
+#[test]
 fn editor_rename_reveals_a_hidden_row() {
     let fixture = Fixture::new();
     let folder = fixture.0.join("Folder");
