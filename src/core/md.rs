@@ -6,6 +6,8 @@ use std::ops::Range;
 
 use tree_sitter::{Node, Parser, Range as TsRange, TreeCursor};
 
+pub mod edit;
+
 pub const BOLD: u16 = 1;
 pub const ITALIC: u16 = 2;
 pub const UNDERLINE: u16 = 4;
