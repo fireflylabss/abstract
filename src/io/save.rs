@@ -43,9 +43,18 @@ impl State {
 }
 
 pub fn step(state: &mut State, event: Event) -> Vec<Effect> {
+    step_after(state, event, DEBOUNCE)
+}
+
+pub fn step_after(state: &mut State, event: Event, delay: f64) -> Vec<Effect> {
     match event {
         Event::Edited { revision, now } if revision > state.revision() => {
-            let due = now + DEBOUNCE;
+            let due = now
+                + if delay.is_finite() {
+                    delay.clamp(0.1, 10.)
+                } else {
+                    DEBOUNCE
+                };
             *state = State::Pending { revision, due };
             vec![Effect::WakeAt(due)]
         }

@@ -41,6 +41,56 @@ pub enum Command {
     SelectNext,
 }
 
+pub fn pair(source: &str, selection: Selection, typed: char) -> Option<Edit> {
+    let range = selection.range();
+    if range.end > source.len()
+        || !source.is_char_boundary(range.start)
+        || !source.is_char_boundary(range.end)
+    {
+        return None;
+    }
+    let before = &source[..range.start];
+    if before.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 {
+        return None;
+    }
+    if range.is_empty()
+        && matches!(typed, ')' | ']' | '}' | '"' | '\'')
+        && source[range.end..].starts_with(typed)
+    {
+        let caret = range.end + typed.len_utf8();
+        return Some(Edit {
+            range,
+            text: String::new(),
+            selection: Selection {
+                anchor: caret,
+                focus: caret,
+            },
+        });
+    }
+    let close = match typed {
+        '(' => ')',
+        '[' => ']',
+        '{' => '}',
+        '"' => '"',
+        '\'' => '\'',
+        _ => return None,
+    };
+    if range.is_empty()
+        && (typed == '\'' && before.chars().last().is_some_and(char::is_alphanumeric)
+            || source[range.end..].chars().next().is_some_and(|c| {
+                !c.is_whitespace() && !matches!(c, ')' | ']' | '}' | ',' | '.' | ':' | ';')
+            }))
+    {
+        return None;
+    }
+    let inner = range.start + typed.len_utf8()..range.end + typed.len_utf8();
+    Some(Edit {
+        text: format!("{typed}{}{close}", &source[range.clone()]),
+        range,
+        selection: Selection::from_range(inner, selection.anchor > selection.focus),
+    })
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Edit {
     pub range: Range<usize>,

@@ -111,6 +111,29 @@ pub struct Settings {
 }
 
 impl Settings {
+    pub fn preference(&self, key: &str) -> String {
+        if matches!(key, "ui_font" | "editor_font") {
+            return self
+                .kv
+                .get(key)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(self.font())
+                .into();
+        }
+        super::prefs::preferences()
+            .into_iter()
+            .find(|p| p.key == key)
+            .map(|p| p.value(self.kv.get(key)))
+            .unwrap_or_default()
+    }
+
+    pub fn number(&self, key: &str) -> f32 {
+        self.preference(key).parse().unwrap_or_default()
+    }
+
+    pub fn enabled(&self, key: &str) -> bool {
+        self.preference(key) == "on"
+    }
     pub fn snapshot(&self) -> (PathBuf, String) {
         (settings_file(), self.kv.serialize())
     }
@@ -170,7 +193,10 @@ impl Settings {
     /// bundled default (`fonts::resolve` validates it against installed
     /// families).
     pub fn font(&self) -> &str {
-        self.kv.get("font").unwrap_or(super::prefs::SANS)
+        self.kv
+            .get("font")
+            .filter(|s| !s.is_empty())
+            .unwrap_or(super::prefs::SANS)
     }
 
     pub fn set_font(&mut self, name: &str) {
@@ -226,11 +252,17 @@ impl Settings {
         self.kv
             .get("zoom")
             .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite())
             .unwrap_or(1.)
             .clamp(super::prefs::MIN_ZOOM, super::prefs::MAX_ZOOM)
     }
 
     pub fn set_zoom(&mut self, factor: f32) {
+        let factor = if factor.is_finite() {
+            factor.clamp(super::prefs::MIN_ZOOM, super::prefs::MAX_ZOOM)
+        } else {
+            1.
+        };
         self.kv.set("zoom", &format!("{factor:.2}"));
     }
 

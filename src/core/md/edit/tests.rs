@@ -1,5 +1,40 @@
 use super::*;
 
+#[test]
+fn smart_pairs_wrap_unicode_skip_closers_and_leave_literals_alone() {
+    let cursor = |n| Selection {
+        anchor: n,
+        focus: n,
+    };
+    let e = pair("", cursor(0), '(').unwrap();
+    assert_eq!(e.text, "()");
+    assert_eq!(e.selection, cursor(1));
+    let e = pair(
+        "ação",
+        Selection {
+            anchor: 6,
+            focus: 0,
+        },
+        '[',
+    )
+    .unwrap();
+    assert_eq!(e.text, "[ação]");
+    assert_eq!(
+        e.selection,
+        Selection {
+            anchor: 7,
+            focus: 1
+        }
+    );
+    let e = pair("()", cursor(1), ')').unwrap();
+    assert!(e.text.is_empty());
+    assert_eq!(e.selection, cursor(2));
+    assert!(pair("don", cursor(3), '\'').is_none());
+    assert!(pair("\\", cursor(1), '"').is_none());
+    assert!(pair("ação", cursor(2), '(').is_none());
+    assert!(pair("word", cursor(0), '(').is_none());
+}
+
 fn apply(source: &str, anchor: usize, focus: usize, cmd: Command) -> (String, Selection) {
     let edit = command(source, Selection { anchor, focus }, cmd).expect("edit");
     let mut text = source.to_owned();
