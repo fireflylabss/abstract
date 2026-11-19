@@ -289,6 +289,7 @@ impl State {
                                 .text
                                 .as_ref()
                                 .is_some_and(|text| self.writer.acknowledged(&change.path, text))
+                                && self.file_ops.conflicts.get(&change.path) != Some(&None)
                             {
                                 continue;
                             }
@@ -320,6 +321,9 @@ impl State {
             return;
         };
         if let Some(text) = &change.text {
+            if self.file_ops.conflicts.get(&change.path) == Some(&None) {
+                self.file_ops.conflicts.remove(&change.path);
+            }
             if crate::io::writer::hash(text) == doc.disk_hash
                 || *text == doc.edit.text
                 || self.writer.acknowledged(&change.path, text)

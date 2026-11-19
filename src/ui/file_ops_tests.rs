@@ -2,6 +2,44 @@ use super::*;
 use crate::io::{operations::Operation, watch::Change};
 
 #[test]
+fn restored_unchanged_notes_clear_the_deleted_conflict() {
+    for dirty in [false, true] {
+        let fixture = Fixture::new();
+        let path = fixture.0.join("Note.md");
+        std::fs::write(&path, "original").unwrap();
+        let mut rt = fixture.runtime();
+        until(&mut rt, |s| s.document().is_some());
+        rt.update(|s, tx| {
+            if dirty {
+                s.document_mut().unwrap().edit.insert(" local");
+                s.edited(tx);
+            }
+        });
+        std::fs::remove_file(&path).unwrap();
+        rt.update(|s, _| {
+            s.external_change(Change {
+                path: path.clone(),
+                text: None,
+            });
+        });
+        std::fs::write(&path, "original").unwrap();
+        rt.update(|s, _| {
+            s.external_change(Change {
+                path: path.clone(),
+                text: Some("original".into()),
+            });
+        });
+        assert!(!rt.state.file_ops.conflicts.contains_key(&path));
+        rt.update(|s, tx| s.reload_conflict(tx));
+        assert!(rt.state.tabs.paths().contains(&path));
+        assert_eq!(
+            rt.state.document().unwrap().edit.text,
+            if dirty { "original local" } else { "original" }
+        );
+    }
+}
+
+#[test]
 fn reopened_document_uses_the_hash_just_loaded_from_disk() {
     let fixture = Fixture::new();
     let path = fixture.0.join("Note.md");
