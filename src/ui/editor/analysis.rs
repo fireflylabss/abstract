@@ -1,11 +1,11 @@
-use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{Arc, Mutex, Weak};
 
 use crate::core::md::{Analysis, Analyzer};
 
 pub const ASYNC_THRESHOLD: usize = 64 * 1024;
 
-type Job = (String, mpsc::Sender<Analysis>);
+type Job = (String, mpsc::Sender<Analysis>, Weak<()>);
 static WORKER: Mutex<Option<mpsc::Sender<Job>>> = Mutex::new(None);
 #[cfg(test)]
 static WORKER_STARTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -16,18 +16,25 @@ fn worker() -> mpsc::Sender<Job> {
     WORKER_STARTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     std::thread::spawn(move || {
         let mut analyzer = Analyzer::new();
-        for (source, reply) in rx {
-            let _ = reply.send(analyzer.analyze(&source));
-        }
+        work(rx, |source| analyzer.analyze(source));
     });
     tx
 }
 
-fn background(source: String) -> Receiver<Analysis> {
+fn work(rx: Receiver<Job>, mut analyze: impl FnMut(&str) -> Analysis) {
+    for (source, reply, alive) in rx {
+        if alive.upgrade().is_none() {
+            continue;
+        }
+        let _ = reply.send(analyze(&source));
+    }
+}
+
+fn background(source: String, alive: Weak<()>) -> Receiver<Analysis> {
     let (tx, reply) = mpsc::channel();
     let mut shared = WORKER.lock().unwrap();
     let worker = shared.get_or_insert_with(worker);
-    if let Err(error) = worker.send((source, tx)) {
+    if let Err(error) = worker.send((source, tx, alive)) {
         *worker = self::worker();
         let _ = worker.send(error.0);
     }
@@ -49,6 +56,7 @@ enum State {
 pub struct Cache {
     state: State,
     analyzer: Analyzer,
+    alive: Arc<()>,
 }
 
 impl Cache {
@@ -56,6 +64,7 @@ impl Cache {
         Self {
             state: State::Empty,
             analyzer: Analyzer::new(),
+            alive: Arc::new(()),
         }
     }
 
@@ -71,7 +80,7 @@ impl Cache {
                 analysis: Box::new(self.analyzer.analyze(source)),
             };
         } else {
-            let reply = background(source.to_owned());
+            let reply = background(source.to_owned(), Arc::downgrade(&self.alive));
             self.state = State::Running { revision, reply };
         }
     }
