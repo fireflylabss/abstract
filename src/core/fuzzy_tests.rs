@@ -1,6 +1,16 @@
 use super::*;
 
 #[test]
+fn blank_queries_do_not_normalize_candidates() {
+    for query in ["", " \t "] {
+        let query = Query::new(query);
+        FOLDED_BYTES.with(|bytes| bytes.set(0));
+        assert_eq!(query.score(&"Cafe\u{301}/".repeat(8192)), Some(0));
+        assert_eq!(FOLDED_BYTES.with(|bytes| bytes.get()), 0);
+    }
+}
+
+#[test]
 fn canonically_equivalent_filenames_match_in_both_directions() {
     for (text, query) in [
         ("Café.md", "Cafe\u{301}"),

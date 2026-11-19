@@ -3,9 +3,12 @@ use unicode_normalization::UnicodeNormalization;
 #[cfg(test)]
 thread_local! {
     static VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static FOLDED_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn folded(text: &str) -> Vec<char> {
+    #[cfg(test)]
+    FOLDED_BYTES.with(|bytes| bytes.set(bytes.get() + text.len()));
     text.nfc()
         .flat_map(|c| match c {
             'ß' | 'ẞ' => "ss".chars().collect::<Vec<_>>(),
@@ -24,6 +27,9 @@ impl Query {
     }
 
     pub fn score(&self, text: &str) -> Option<i64> {
+        if self.0.is_empty() {
+            return Some(0);
+        }
         score_folded(&folded(text), &self.0)
     }
 }
