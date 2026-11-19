@@ -320,7 +320,10 @@ impl State {
             return;
         };
         if let Some(text) = &change.text {
-            if *text == doc.edit.text || self.writer.acknowledged(&change.path, text) {
+            if crate::io::writer::hash(text) == doc.disk_hash
+                || *text == doc.edit.text
+                || self.writer.acknowledged(&change.path, text)
+            {
                 return;
             }
             if !doc.save.unacknowledged() {

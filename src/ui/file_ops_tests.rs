@@ -1,6 +1,88 @@
 use super::*;
 use crate::io::{operations::Operation, watch::Change};
 
+#[test]
+fn reopened_document_uses_the_hash_just_loaded_from_disk() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "original").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" saved");
+        s.edited(tx);
+        s.save_now(tx);
+    });
+    rt.state.writer.flush().unwrap();
+    rt.update(|s, tx| {
+        s.completions();
+        s.close_tab(&path, tx);
+        s.completions();
+    });
+    assert!(!rt.state.documents.contains_key(&path));
+    std::fs::write(&path, "external").unwrap();
+    rt.update(|s, tx| s.open(path.clone(), tx));
+    until(&mut rt, |s| s.files_pending == 0 && s.document().is_some());
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
+        s.save_now(tx);
+    });
+    assert!(rt.state.writer.flush().is_ok());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "external local");
+}
+
+#[test]
+fn a_watcher_recheck_of_the_disk_baseline_does_not_conflict_with_edits() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "original").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
+        s.external_change(Change {
+            path: path.clone(),
+            text: Some("original".into()),
+        });
+    });
+    assert!(!rt.state.file_ops.conflicts.contains_key(&path));
+    rt.update(|s, tx| s.save_now(tx));
+    rt.state.writer.flush().unwrap();
+    rt.update(|s, tx| {
+        s.completions();
+        assert_eq!(
+            s.document().unwrap().disk_hash,
+            crate::io::writer::hash("original local")
+        );
+        s.document_mut().unwrap().edit.insert(" newer");
+        s.edited(tx);
+        s.writer.forget_ack(&path);
+        s.external_change(Change {
+            path: path.clone(),
+            text: Some("original local".into()),
+        });
+    });
+    assert!(!rt.state.file_ops.conflicts.contains_key(&path));
+}
+
+#[test]
+fn writing_the_pending_local_text_externally_is_already_saved() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "original").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
+    });
+    std::fs::write(&path, "original local").unwrap();
+    rt.update(|s, tx| s.save_now(tx));
+    assert!(rt.state.writer.flush().is_ok());
+}
+
 #[cfg(unix)]
 #[test]
 fn relocation_does_not_follow_final_symlinks_or_hard_links() {

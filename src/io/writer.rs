@@ -22,6 +22,7 @@ pub struct Completion {
     pub revision: u64,
     pub result: Result<(), String>,
     pub external: Option<Option<String>>,
+    pub disk_hash: u64,
 }
 
 enum Command {
@@ -86,6 +87,7 @@ impl Writer {
                         }
                         revisions.insert(snapshot.path.clone(), snapshot.revision);
                         let mut external = None;
+                        let disk_hash = hash(&snapshot.text);
                         let result = if let Some(expected) = expected {
                             let actual = super::operations::read_regular(&snapshot.path);
                             let expected = baselines
@@ -93,7 +95,8 @@ impl Writer {
                                 .copied()
                                 .unwrap_or(Some(expected));
                             let allowed = match actual {
-                                Ok(text) if Some(hash(&text)) == expected => Ok(()),
+                                Ok(text) if text == snapshot.text => Ok(false),
+                                Ok(text) if Some(hash(&text)) == expected => Ok(true),
                                 Ok(text) => {
                                     external = Some(Some(text));
                                     Err("File changed outside Abstract".into())
@@ -106,14 +109,17 @@ impl Writer {
                                     if expected.is_none()
                                         || retry_missing.contains(&snapshot.path) =>
                                 {
-                                    Ok(())
+                                    Ok(true)
                                 }
                                 Err(_) => {
                                     external = Some(None);
                                     Err("File changed outside Abstract".into())
                                 }
                             };
-                            allowed.and_then(|()| {
+                            allowed.and_then(|write| {
+                                if !write {
+                                    return Ok(());
+                                }
                                 super::atomic::write_existing(
                                     &snapshot.path,
                                     snapshot.text.as_bytes(),
@@ -127,11 +133,11 @@ impl Writer {
                         match &result {
                             Ok(()) => {
                                 retry_missing.remove(&snapshot.path);
-                                baselines.insert(snapshot.path.clone(), Some(hash(&snapshot.text)));
+                                baselines.insert(snapshot.path.clone(), Some(disk_hash));
                                 failures.remove(&snapshot.path);
                                 acks.lock()
                                     .unwrap()
-                                    .insert(snapshot.path.clone(), hash(&snapshot.text));
+                                    .insert(snapshot.path.clone(), disk_hash);
                             }
                             Err(e) => {
                                 failures.insert(snapshot.path.clone(), e.clone());
@@ -142,6 +148,7 @@ impl Writer {
                             revision: snapshot.revision,
                             result,
                             external,
+                            disk_hash,
                         });
                     }
                     Command::Barrier(reply) => {

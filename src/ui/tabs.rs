@@ -145,7 +145,8 @@ impl State {
                 if self.documents.contains_key(&path) {
                     continue;
                 }
-                let mut doc = Document::new(source);
+                self.load_document(path.clone(), source);
+                let doc = self.documents.get_mut(&path).unwrap();
                 let mut cursor = note.cursor.min(doc.edit.text.len());
                 while !doc.edit.text.is_char_boundary(cursor) {
                     cursor -= 1;
@@ -156,7 +157,6 @@ impl State {
                 } else {
                     0.
                 });
-                self.documents.insert(path.clone(), doc);
                 self.tabs.insert(path);
             }
             if let Some(path) = preferred.filter(|p| self.tabs.paths().contains(p)) {

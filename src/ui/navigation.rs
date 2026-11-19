@@ -79,9 +79,7 @@ impl State {
         }
         match reply.result {
             Ok(loaded) => {
-                self.documents
-                    .entry(loaded.path.clone())
-                    .or_insert_with(|| Document::new(loaded.source));
+                self.load_document(loaded.path.clone(), loaded.source);
                 self.tabs.open(loaded.path.clone());
                 self.focus_tab(tx);
                 let range = self

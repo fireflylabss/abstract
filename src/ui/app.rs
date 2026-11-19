@@ -165,6 +165,16 @@ impl State {
         self.active.as_ref().and_then(|p| self.documents.get_mut(p))
     }
 
+    pub(super) fn load_document(&mut self, path: PathBuf, source: String) {
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.documents.entry(path.clone())
+        {
+            if let Err(error) = self.writer.forget(path) {
+                self.error = Some(error);
+            }
+            entry.insert(Document::new(source));
+        }
+    }
+
     pub fn open(&mut self, path: PathBuf, tx: &mut Tx) {
         if self.files_busy() {
             return;
@@ -304,6 +314,9 @@ impl State {
                 continue;
             }
             if let Some(doc) = self.documents.get_mut(&completion.path) {
+                if completion.result.is_ok() {
+                    doc.disk_hash = completion.disk_hash;
+                }
                 if let Some(external) = completion.external {
                     self.file_ops
                         .conflicts
@@ -365,9 +378,7 @@ impl State {
             }
             match reply.result {
                 Ok((path, source)) => {
-                    self.documents
-                        .entry(path.clone())
-                        .or_insert_with(|| Document::new(source));
+                    self.load_document(path.clone(), source);
                     self.tabs.insert(path.clone());
                     if reply.ticket == self.file_ticket {
                         self.tabs.open(path);
