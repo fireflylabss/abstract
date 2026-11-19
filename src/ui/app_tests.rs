@@ -38,7 +38,7 @@ impl Fixture {
             file_ticket: 0,
             files_pending: 0,
             session: Session::default(),
-            shut_down: true,
+            session_path: self.0.join("session"),
         };
         let mut rt = Runtime::with_text(
             state,
@@ -129,4 +129,50 @@ fn failed_open_keeps_current_buffer_and_exposes_error() {
     until(&mut rt, |s| s.error.is_some());
     assert_eq!(rt.state.active, Some(path));
     assert_eq!(rt.state.document().unwrap().edit.text, "keep me");
+}
+
+#[test]
+fn cancelled_quit_does_not_skip_later_edits_or_failed_save_retries() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "before quit").unwrap();
+    let mut rt = fixture.runtime();
+    rt.update(|s, tx| s.open(path.clone(), tx));
+    until(&mut rt, |s| s.document().is_some());
+    rt.state.shutdown();
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" after cancellation");
+        s.edited(tx);
+    });
+    rt.state.shutdown();
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "before quit after cancellation"
+    );
+    assert!(matches!(
+        rt.state.document().unwrap().save,
+        SaveState::Clean { revision: 1 }
+    ));
+
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" retry");
+        s.edited(tx);
+    });
+    rt.state.shutdown();
+    assert!(matches!(
+        rt.state.document().unwrap().save,
+        SaveState::Failed { revision: 2, .. }
+    ));
+    std::fs::remove_dir(&path).unwrap();
+    rt.state.shutdown();
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "before quit after cancellation retry"
+    );
+    assert!(matches!(
+        rt.state.document().unwrap().save,
+        SaveState::Clean { revision: 2 }
+    ));
 }

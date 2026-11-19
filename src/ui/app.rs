@@ -72,7 +72,7 @@ pub struct State {
     file_ticket: u64,
     files_pending: usize,
     session: Session,
-    shut_down: bool,
+    session_path: PathBuf,
 }
 
 impl Default for State {
@@ -98,6 +98,8 @@ impl State {
         let root = spaces.current().to_owned();
         let mut scans = Scans::new();
         scans.start(root.clone());
+        let session = Session::load();
+        let session_path = session.snapshot().0;
         Self {
             settings,
             root,
@@ -112,8 +114,8 @@ impl State {
             files: Files::new(),
             file_ticket: 0,
             files_pending: 0,
-            session: Session::load(),
-            shut_down: false,
+            session,
+            session_path,
         }
     }
 
@@ -288,10 +290,6 @@ impl State {
     }
 
     fn shutdown(&mut self) {
-        if self.shut_down {
-            return;
-        }
-        self.shut_down = true;
         for (path, doc) in &mut self.documents {
             for effect in save::step(&mut doc.save, Event::Flush) {
                 if let Effect::Write(revision) = effect
@@ -328,11 +326,11 @@ impl State {
                 .and_then(|p| p.strip_prefix(&self.root).ok())
                 .map(|rel| (self.root.as_path(), rel)),
         );
-        let (path, text) = self.session.snapshot();
+        let (_, text) = self.session.snapshot();
         if let Err(error) = self
             .writer
             .submit(Snapshot {
-                path,
+                path: self.session_path.clone(),
                 revision: 0,
                 text,
             })
