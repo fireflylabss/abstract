@@ -60,6 +60,22 @@ fn perf_report() {
         let text = big_note(kb * 1024);
         let mut a = crate::md::Analyzer::new();
         time(&format!("analyze {kb} KB"), 5, || a.analyze(&text));
+        // What a keystroke costs on the UI thread once the note is past the
+        // editor's sync-parse limit: shift the stale analysis, keep the copy.
+        let mid = text.len() / 2;
+        let typed = format!("{}x{}", &text[..mid], &text[mid..]);
+        let mut an = a.analyze(&text);
+        let mut prev = text.clone();
+        time(&format!("rebase per key {kb} KB"), 20, || {
+            let next = if prev.len() == text.len() {
+                &typed
+            } else {
+                &text
+            };
+            an.rebase(&prev, next);
+            prev.clear();
+            prev.push_str(next);
+        });
     }
     let dir = space("report", 2000);
     let note = first_note(&dir);
