@@ -283,6 +283,26 @@ fn links_wrap_and_toggle_labels_or_whole_links_without_navigation() {
 }
 
 #[test]
+fn italic_toggle_distinguishes_bold_and_combined_asterisk_runs() {
+    for (source, marker, expected) in [
+        ("**word**", "*", "***word***"),
+        ("***word***", "*", "**word**"),
+        ("***word***", "**", "*word*"),
+        ("*word*", "**", "***word***"),
+        ("****word****", "*", "*****word*****"),
+    ] {
+        assert_eq!(
+            apply(source, 0, source.len(), Command::Wrap(marker)).0,
+            expected
+        );
+    }
+    assert_eq!(apply("**word**", 1, 7, Command::Wrap("*")).0, "***word***");
+    assert_eq!(apply("***word***", 3, 7, Command::Wrap("*")).0, "**word**");
+    assert_eq!(apply("***word***", 3, 7, Command::Wrap("**")).0, "*word*");
+    assert_eq!(apply("**", 1, 1, Command::Wrap("*")).0, "");
+}
+
+#[test]
 fn link_toggle_only_unwraps_one_complete_link() {
     for source in [
         "[one](a) and [two](b)",

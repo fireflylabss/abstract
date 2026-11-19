@@ -295,16 +295,33 @@ fn indent(source: &str, selection: Selection, outdent: bool) -> Option<Edit> {
 fn wrap(source: &str, selection: Selection, left: &str, right: &str) -> Edit {
     let sel = selection.range();
     let inner = &source[sel.clone()];
+    let pair = |start: usize, end: usize| {
+        let run = |at: usize| {
+            source[..at]
+                .bytes()
+                .rev()
+                .take_while(|b| *b == b'*')
+                .count()
+                + source[at..].bytes().take_while(|b| *b == b'*').count()
+        };
+        left != "*"
+            || (sel.is_empty() && run(start) == 2)
+            || (run(start) % 2 == 1 && run(end) % 2 == 1)
+    };
     let (range, text, start) = if inner.len() >= left.len() + right.len()
         && inner.starts_with(left)
         && inner.ends_with(right)
+        && pair(sel.start, sel.end)
     {
         (
             sel.clone(),
             inner[left.len()..inner.len() - right.len()].to_owned(),
             sel.start,
         )
-    } else if source[..sel.start].ends_with(left) && source[sel.end..].starts_with(right) {
+    } else if source[..sel.start].ends_with(left)
+        && source[sel.end..].starts_with(right)
+        && pair(sel.start - left.len(), sel.end + right.len())
+    {
         (
             sel.start - left.len()..sel.end + right.len(),
             inner.to_owned(),
