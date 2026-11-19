@@ -38,6 +38,8 @@ pub(super) fn en(k: Key) -> &'static str {
         Key::FilesTrashedUndo => "Moved to Trash · Undo",
         Key::ExternalConflict => "Changed outside Abstract. Your edits are kept.",
         Key::KeepLocal => "Keep my edits",
+        Key::DiscardEdits => "Discard edits",
+        Key::RecreateNote => "Recreate note",
         Key::ConflictRecovered => "Unsaved conflict recovered",
         Key::ReloadDiscard => "Reload (discard edits)",
         Key::ResolveFileConflict => {

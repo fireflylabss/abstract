@@ -40,6 +40,7 @@ const FONTS: &[&[u8]] = &[
 pub struct Document {
     pub edit: TextEdit,
     pub revision: u64,
+    pub disk_hash: u64,
     pub save: SaveState,
     pub analysis: Cache,
     pub scroll: Rc<Cell<f32>>,
@@ -47,12 +48,14 @@ pub struct Document {
 
 impl Document {
     fn new(source: String) -> Self {
+        let disk_hash = crate::io::writer::hash(&source);
         let mut edit = TextEdit::new(source);
         edit.set_caret(edit.text.len());
         edit.focused = true;
         let mut analysis = Cache::new();
         analysis.update(&edit.text, 0);
         Self {
+            disk_hash,
             edit,
             revision: 0,
             save: SaveState::Clean { revision: 0 },
@@ -267,11 +270,14 @@ impl State {
             match effect {
                 Effect::WakeAt(due) => tx.wake_at(due),
                 Effect::Write(revision) => {
-                    if let Err(error) = writer.submit(Snapshot {
-                        path: path.to_owned(),
-                        revision,
-                        text: doc.edit.text.clone(),
-                    }) {
+                    if let Err(error) = writer.submit_document(
+                        Snapshot {
+                            path: path.to_owned(),
+                            revision,
+                            text: doc.edit.text.clone(),
+                        },
+                        doc.disk_hash,
+                    ) {
                         save::step(
                             &mut doc.save,
                             Event::Completed {
@@ -298,6 +304,11 @@ impl State {
                 continue;
             }
             if let Some(doc) = self.documents.get_mut(&completion.path) {
+                if let Some(external) = completion.external {
+                    self.file_ops
+                        .conflicts
+                        .insert(completion.path.clone(), external);
+                }
                 let failed = completion.result.as_ref().err().cloned();
                 save::step(
                     &mut doc.save,
@@ -404,6 +415,7 @@ impl State {
                 Err(error) => self.error = Some(error.to_string()),
             }
         }
+        self.completions();
         self.recover_conflicts();
         self.session.set_sidebar(self.sidebar_open);
         for (path, doc) in &mut self.documents {
@@ -412,11 +424,14 @@ impl State {
             }
             for effect in save::step(&mut doc.save, Event::Flush) {
                 if let Effect::Write(revision) = effect
-                    && let Err(error) = self.writer.submit(Snapshot {
-                        path: path.clone(),
-                        revision,
-                        text: doc.edit.text.clone(),
-                    })
+                    && let Err(error) = self.writer.submit_document(
+                        Snapshot {
+                            path: path.clone(),
+                            revision,
+                            text: doc.edit.text.clone(),
+                        },
+                        doc.disk_hash,
+                    )
                 {
                     eprintln!(
                         "abstract: {}: {}: {error}",
@@ -441,6 +456,7 @@ impl State {
             eprintln!("abstract: {}", self.error.as_deref().unwrap_or_default());
         }
         self.completions();
+        self.recover_conflicts();
     }
 }
 

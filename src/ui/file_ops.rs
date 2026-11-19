@@ -25,6 +25,7 @@ pub(super) struct FileOps {
     pub undo: Option<Backup>,
     pub conflicts: HashMap<PathBuf, Option<String>>,
     pub watch: Option<crate::io::watch::Watch>,
+    pub recovered: HashMap<PathBuf, u64>,
 }
 
 impl Default for FileOps {
@@ -34,6 +35,7 @@ impl Default for FileOps {
             undo: None,
             conflicts: HashMap::new(),
             watch: None,
+            recovered: HashMap::new(),
         }
     }
 }
@@ -99,7 +101,16 @@ impl State {
             return;
         }
         self.save_now(tx);
-        match self.writer.operate(operation) {
+        let mut paths: Vec<_> = self
+            .documents
+            .keys()
+            .cloned()
+            .chain(self.expanded.iter().cloned())
+            .collect();
+        if let Some(undo) = &self.file_ops.undo {
+            paths.push(undo.path.clone());
+        }
+        match self.writer.operate_tracked(operation, paths) {
             Ok(()) => {
                 self.file_ops.mode = Mode::Busy;
                 tx.wake_after(Duration::from_millis(16));
@@ -112,19 +123,28 @@ impl State {
         self.completions();
         self.file_ops.mode = Mode::Idle;
         match result {
-            Ok(Outcome::Renamed { from, to }) => {
+            Ok(Outcome::Renamed { from, to, paths }) => {
+                let relocate = |path: &std::path::Path| {
+                    paths
+                        .iter()
+                        .find(|(old, _)| old == path)
+                        .map(|(_, new)| new.clone())
+                        .unwrap_or_else(|| vault::relocated(path, &from, &to))
+                };
                 let old = std::mem::take(&mut self.documents);
                 for (path, doc) in old {
-                    let path = vault::relocated(&path, &from, &to);
+                    let path = relocate(&path);
                     self.documents.insert(path, doc);
                 }
                 self.tabs.relocate(&from, &to);
+                for (old, new) in &paths {
+                    self.tabs.relocate(old, new);
+                }
+                if let Some(undo) = &mut self.file_ops.undo {
+                    undo.path = relocate(&undo.path);
+                }
                 self.active = self.tabs.active().map(std::path::Path::to_owned);
-                self.expanded = self
-                    .expanded
-                    .drain()
-                    .map(|path| vault::relocated(&path, &from, &to))
-                    .collect();
+                self.expanded = self.expanded.drain().map(|path| relocate(&path)).collect();
                 self.focus_tab(tx);
             }
             Ok(Outcome::Trashed(backup)) => {
@@ -155,6 +175,12 @@ impl State {
             Ok(Outcome::Read(path, text)) => {
                 self.file_ops.conflicts.remove(&path);
                 self.documents.insert(path, Document::new(text));
+                self.focus_tab(tx);
+            }
+            Ok(Outcome::Discarded(path)) => {
+                self.file_ops.conflicts.remove(&path);
+                self.documents.remove(&path);
+                self.tabs.close(&path);
                 self.focus_tab(tx);
             }
             Ok(Outcome::Recovered(_)) => {}
@@ -251,6 +277,7 @@ impl State {
         }
         if !self.files_busy() {
             let watch = self.file_ops.watch.as_ref().unwrap();
+            watch.track(self.documents.keys().cloned().collect());
             let replies: Vec<_> = watch.replies.try_iter().collect();
             let generation = watch.generation;
             for reply in replies {
@@ -298,6 +325,10 @@ impl State {
             }
             if !doc.save.unacknowledged() {
                 self.writer.forget_ack(&change.path);
+                if let Err(error) = self.writer.forget(change.path.clone()) {
+                    self.error = Some(error);
+                    return;
+                }
                 let caret = doc.edit.focus.min(text.len());
                 *doc = Document::new(text.clone());
                 let mut caret = caret;
@@ -317,7 +348,12 @@ impl State {
             return;
         };
         if self.file_ops.conflicts.contains_key(&path) && !self.files_busy() {
-            match self.writer.operate(Operation::Read(path)) {
+            let operation = if self.file_ops.conflicts.get(&path) == Some(&None) {
+                Operation::Discard(path)
+            } else {
+                Operation::Read(path)
+            };
+            match self.writer.operate(operation) {
                 Ok(()) => {
                     self.file_ops.mode = Mode::Busy;
                     tx.wake_after(Duration::from_millis(16));
@@ -328,11 +364,20 @@ impl State {
     }
 
     pub fn keep_local(&mut self, tx: &mut Tx) {
+        if self.files_busy() {
+            return;
+        }
         if self
             .active
             .as_ref()
             .is_some_and(|path| self.file_ops.conflicts.remove(path).is_some())
         {
+            if let Some(path) = &self.active
+                && let Err(error) = self.writer.accept_disk(path.clone())
+            {
+                self.error = Some(error);
+                return;
+            }
             self.edited(tx);
             self.save_now(tx);
         }
@@ -343,6 +388,10 @@ impl State {
             let Some(doc) = self.documents.get(path) else {
                 continue;
             };
+            let hash = crate::io::writer::hash(&doc.edit.text);
+            if !doc.save.unacknowledged() || self.file_ops.recovered.get(path) == Some(&hash) {
+                continue;
+            }
             let result = self
                 .writer
                 .operate(Operation::Recover {
@@ -357,8 +406,9 @@ impl State {
                 .and_then(|()| self.writer.operations.recv().map_err(|e| e.to_string()))
                 .and_then(|result| result);
             match result {
-                Ok(Outcome::Recovered(path)) => {
-                    eprintln!("{}: {}", t(Key::ConflictRecovered), path.display())
+                Ok(Outcome::Recovered(recovered)) => {
+                    self.file_ops.recovered.insert(path.clone(), hash);
+                    eprintln!("{}: {}", t(Key::ConflictRecovered), recovered.display())
                 }
                 Err(error) => eprintln!("{}: {error}", t(Key::SaveFailed)),
                 _ => {}
@@ -440,10 +490,39 @@ pub(super) fn notice(s: &State, p: theme::Palette) -> El {
                     .padding(7.),
             )
             .child(
-                button("conflict-reload", t(Key::ReloadDiscard), p)
-                    .on_press_tx(State::reload_conflict),
+                button(
+                    "conflict-reload",
+                    t(
+                        if s.active
+                            .as_ref()
+                            .is_some_and(|path| s.file_ops.conflicts.get(path) == Some(&None))
+                        {
+                            Key::DiscardEdits
+                        } else {
+                            Key::ReloadDiscard
+                        },
+                    ),
+                    p,
+                )
+                .on_press_tx(State::reload_conflict),
             )
-            .child(button("conflict-keep", t(Key::KeepLocal), p).on_press_tx(State::keep_local));
+            .child(
+                button(
+                    "conflict-keep",
+                    t(
+                        if s.active
+                            .as_ref()
+                            .is_some_and(|path| s.file_ops.conflicts.get(path) == Some(&None))
+                        {
+                            Key::RecreateNote
+                        } else {
+                            Key::KeepLocal
+                        },
+                    ),
+                    p,
+                )
+                .on_press_tx(State::keep_local),
+            );
     }
     notice
 }

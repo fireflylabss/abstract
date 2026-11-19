@@ -11,6 +11,7 @@ pub enum Operation {
     Restore(Backup),
     Folder(PathBuf),
     Read(PathBuf),
+    Discard(PathBuf),
     Recover {
         path: PathBuf,
         text: String,
@@ -19,11 +20,16 @@ pub enum Operation {
 }
 
 pub enum Outcome {
-    Renamed { from: PathBuf, to: PathBuf },
+    Renamed {
+        from: PathBuf,
+        to: PathBuf,
+        paths: Vec<(PathBuf, PathBuf)>,
+    },
     Trashed(Backup),
     Restored(PathBuf, bool),
     Created(PathBuf),
     Read(PathBuf, String),
+    Discarded(PathBuf),
     Recovered(PathBuf),
 }
 
@@ -192,7 +198,11 @@ pub fn execute(operation: Operation) -> Result<Outcome, String> {
                     }
                     fs::rename(&from, &to)?;
                 }
-                Ok(Outcome::Renamed { from, to })
+                Ok(Outcome::Renamed {
+                    from,
+                    to,
+                    paths: Vec::new(),
+                })
             }
             Operation::Trash(path) => {
                 let backup = snapshot(&path)?;
@@ -211,6 +221,7 @@ pub fn execute(operation: Operation) -> Result<Outcome, String> {
                 let text = read_regular(&path)?;
                 Ok(Outcome::Read(path, text))
             }
+            Operation::Discard(path) => Ok(Outcome::Discarded(path)),
             Operation::Recover {
                 path,
                 text,

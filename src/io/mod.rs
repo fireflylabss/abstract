@@ -1,5 +1,6 @@
 pub mod atomic;
 pub mod files;
+pub mod identity;
 pub mod navigation;
 pub mod operations;
 pub mod save;

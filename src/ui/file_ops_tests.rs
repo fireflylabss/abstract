@@ -2,6 +2,124 @@ use super::*;
 use crate::io::{operations::Operation, watch::Change};
 
 #[test]
+fn clean_external_reload_rebases_the_next_save() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "original").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" saved");
+        s.edited(tx);
+        s.save_now(tx);
+    });
+    rt.state.writer.flush().unwrap();
+    rt.update(|s, _| {
+        s.completions();
+    });
+    std::fs::write(&path, "external").unwrap();
+    rt.update(|s, tx| {
+        s.external_change(Change {
+            path: path.clone(),
+            text: Some("external".into()),
+        });
+        s.document_mut().unwrap().edit.set_caret(8);
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
+        s.save_now(tx);
+    });
+    assert!(rt.state.writer.flush().is_ok());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "external local");
+}
+
+#[test]
+fn editor_rename_reveals_a_hidden_row() {
+    let fixture = Fixture::new();
+    let folder = fixture.0.join("Folder");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("Note.md"), "note").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.sidebar_open = false;
+        s.focus_mode = true;
+        s.expanded.clear();
+        tx.focus("editor", false);
+    });
+    press(&mut rt, RuneKey::Function(2), Mods::default());
+    assert!(rt.state.sidebar_open && !rt.state.focus_mode);
+    assert!(rt.state.expanded.contains(&folder));
+}
+
+#[test]
+fn clean_external_deletion_can_be_closed() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "note").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    std::fs::remove_file(&path).unwrap();
+    rt.update(|s, tx| {
+        s.external_change(Change {
+            path: path.clone(),
+            text: None,
+        });
+        s.close_tab(&path, tx);
+    });
+    assert!(!rt.state.tabs.paths().contains(&path));
+    assert!(!rt.state.file_ops.conflicts.contains_key(&path));
+}
+
+#[test]
+fn dirty_external_deletion_can_be_explicitly_discarded() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "note").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
+    });
+    std::fs::remove_file(&path).unwrap();
+    rt.update(|s, tx| {
+        s.external_change(Change {
+            path: path.clone(),
+            text: None,
+        });
+        s.reload_conflict(tx);
+    });
+    until(&mut rt, |s| !s.files_busy());
+    assert!(!rt.state.tabs.paths().contains(&path));
+    assert!(!path.exists());
+}
+
+#[test]
+fn dirty_external_deletion_can_be_explicitly_recreated() {
+    let fixture = Fixture::new();
+    let parent = fixture.0.join("Folder");
+    std::fs::create_dir(&parent).unwrap();
+    let path = parent.join("Note.md");
+    std::fs::write(&path, "note").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
+    });
+    std::fs::remove_dir_all(parent).unwrap();
+    rt.update(|s, tx| {
+        s.external_change(Change {
+            path: path.clone(),
+            text: None,
+        });
+        s.keep_local(tx);
+    });
+    rt.state.writer.flush().unwrap();
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "note local");
+}
+
+#[test]
 fn search_results_do_not_retain_renamed_paths() {
     let fixture = Fixture::new();
     let path = fixture.0.join("Note.md");
@@ -37,22 +155,113 @@ fn search_results_do_not_retain_renamed_paths() {
 }
 
 #[test]
-fn editor_rename_reveals_a_hidden_row() {
+fn undo_follows_a_renamed_parent() {
     let fixture = Fixture::new();
     let folder = fixture.0.join("Folder");
+    let moved = fixture.0.join("Moved");
     std::fs::create_dir(&folder).unwrap();
-    std::fs::write(folder.join("Note.md"), "note").unwrap();
+    let path = folder.join("Note.md");
+    std::fs::write(&path, "note").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| s.operate(Operation::Trash(path.clone()), tx));
+    until(&mut rt, |s| !s.files_busy());
+    rt.update(|s, tx| {
+        s.operate(
+            Operation::Rename {
+                from: folder.clone(),
+                to: moved.clone(),
+            },
+            tx,
+        )
+    });
+    until(&mut rt, |s| !s.files_busy());
+    assert_eq!(
+        rt.state.file_ops.undo.as_ref().unwrap().path,
+        moved.join("Note.md")
+    );
+    rt.update(|s, tx| s.operate(Operation::Restore(s.file_ops.undo.clone().unwrap()), tx));
+    until(&mut rt, |s| !s.files_busy());
+    assert_eq!(
+        std::fs::read_to_string(moved.join("Note.md")).unwrap(),
+        "note"
+    );
+    assert!(!folder.exists());
+}
+
+#[test]
+fn rename_flush_checks_external_changes_before_writing() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "original").unwrap();
     let mut rt = fixture.runtime();
     until(&mut rt, |s| s.document().is_some());
     rt.update(|s, tx| {
-        s.sidebar_open = false;
-        s.focus_mode = true;
-        s.expanded.clear();
-        tx.focus("editor", false);
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
     });
-    press(&mut rt, RuneKey::Function(2), Mods::default());
-    assert!(rt.state.sidebar_open && !rt.state.focus_mode);
-    assert!(rt.state.expanded.contains(&folder));
+    std::fs::write(&path, "external").unwrap();
+    rt.update(|s, tx| {
+        s.operate(
+            Operation::Rename {
+                from: path.clone(),
+                to: fixture.0.join("Moved.md"),
+            },
+            tx,
+        )
+    });
+    until(&mut rt, |s| !s.files_busy());
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap_or_default(),
+        "external"
+    );
+    assert!(rt.state.file_ops.conflicts.contains_key(&path));
+}
+
+#[test]
+fn autosave_does_not_recreate_an_externally_moved_parent() {
+    let fixture = Fixture::new();
+    let folder = fixture.0.join("Folder");
+    std::fs::create_dir(&folder).unwrap();
+    let path = folder.join("Note.md");
+    std::fs::write(&path, "original").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" local");
+        s.edited(tx);
+    });
+    std::fs::rename(&folder, fixture.0.join("Moved")).unwrap();
+    rt.update(|s, tx| s.save_now(tx));
+    let _ = rt.state.writer.flush();
+    assert!(!folder.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn rename_relocates_buffers_opened_through_directory_aliases() {
+    let fixture = Fixture::new();
+    let folder = fixture.0.join("Folder");
+    std::fs::create_dir(&folder).unwrap();
+    let path = folder.join("Note.md");
+    let moved = folder.join("Moved.md");
+    std::fs::write(&path, "original").unwrap();
+    let alias = fixture.0.join("Alias");
+    std::os::unix::fs::symlink(&folder, &alias).unwrap();
+    let mut rt = fixture.runtime();
+    rt.update(|s, tx| s.open(alias.join("Note.md"), tx));
+    until(&mut rt, |s| s.files_pending == 0 && s.document().is_some());
+    rt.update(|s, tx| {
+        s.operate(
+            Operation::Rename {
+                from: path.clone(),
+                to: moved.clone(),
+            },
+            tx,
+        )
+    });
+    until(&mut rt, |s| !s.files_busy());
+    assert_eq!(rt.state.active.as_ref(), Some(&moved));
 }
 
 #[test]
@@ -85,6 +294,17 @@ fn quitting_with_a_conflict_preserves_both_versions_without_overwriting_recovery
         std::fs::read_to_string(fixture.0.join("Note (conflict) 2.md")).unwrap(),
         "original local"
     );
+    rt.state.shutdown();
+    assert!(!fixture.0.join("Note (conflict) 3.md").exists());
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert(" later");
+        s.edited(tx);
+    });
+    rt.state.shutdown();
+    assert_eq!(
+        std::fs::read_to_string(fixture.0.join("Note (conflict) 3.md")).unwrap(),
+        "original local later"
+    );
 }
 
 #[test]
@@ -107,7 +327,7 @@ fn explicit_keep_local_writes_even_when_a_previous_save_was_acknowledged() {
 }
 
 #[test]
-fn reload_of_a_deleted_conflict_keeps_the_buffer_and_conflict() {
+fn reload_failure_keeps_the_buffer_and_conflict() {
     let fixture = Fixture::new();
     let path = fixture.0.join("Note.md");
     std::fs::write(&path, "local").unwrap();
@@ -115,7 +335,9 @@ fn reload_of_a_deleted_conflict_keeps_the_buffer_and_conflict() {
     until(&mut rt, |s| s.document().is_some());
     std::fs::remove_file(&path).unwrap();
     rt.update(|s, tx| {
-        s.file_ops.conflicts.insert(path.clone(), None);
+        s.file_ops
+            .conflicts
+            .insert(path.clone(), Some("previous disk content".into()));
         s.reload_conflict(tx);
     });
     until(&mut rt, |s| !s.files_busy());

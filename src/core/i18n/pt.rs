@@ -38,6 +38,8 @@ pub(super) fn pt(k: Key) -> &'static str {
         Key::FilesTrashedUndo => "Movido para a lixeira · Desfazer",
         Key::ExternalConflict => "Alterado fora do Abstract. Suas edições foram mantidas.",
         Key::KeepLocal => "Manter minhas edições",
+        Key::DiscardEdits => "Descartar edições",
+        Key::RecreateNote => "Recriar nota",
         Key::ConflictRecovered => "Conflito não salvo recuperado",
         Key::ReloadDiscard => "Recarregar (descartar edições)",
         Key::ResolveFileConflict => {

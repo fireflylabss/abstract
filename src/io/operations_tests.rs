@@ -4,6 +4,132 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn unchanged_rename_preserves_the_latest_save_baseline() {
+    use crate::io::writer::{Snapshot, Writer, hash};
+    let dir = Dir::new();
+    let path = dir.0.join("Note.md");
+    fs::write(&path, "original").unwrap();
+    let writer = Writer::new();
+    writer
+        .submit_document(
+            Snapshot {
+                path: path.clone(),
+                revision: 1,
+                text: "saved".into(),
+            },
+            hash("original"),
+        )
+        .unwrap();
+    writer.flush().unwrap();
+    writer
+        .operate(Operation::Rename {
+            from: path.clone(),
+            to: path.clone(),
+        })
+        .unwrap();
+    assert!(writer.operations.recv().unwrap().is_ok());
+    writer
+        .submit_document(
+            Snapshot {
+                path: path.clone(),
+                revision: 2,
+                text: "later".into(),
+            },
+            hash("original"),
+        )
+        .unwrap();
+    assert!(writer.flush().is_ok());
+    assert_eq!(fs::read_to_string(path).unwrap(), "later");
+}
+
+#[test]
+fn reload_clears_a_discarded_writer_failure() {
+    use crate::io::writer::{Snapshot, Writer};
+    let dir = Dir::new();
+    let path = dir.0.join("Note.md");
+    fs::create_dir(&path).unwrap();
+    let writer = Writer::new();
+    writer
+        .submit(Snapshot {
+            path: path.clone(),
+            revision: 1,
+            text: "failed".into(),
+        })
+        .unwrap();
+    assert!(writer.flush().is_err());
+    fs::remove_dir(&path).unwrap();
+    fs::write(&path, "external").unwrap();
+    writer.operate(Operation::Read(path)).unwrap();
+    assert!(matches!(
+        writer.operations.recv().unwrap(),
+        Ok(Outcome::Read(..))
+    ));
+    writer
+        .operate(Operation::Folder(dir.0.join("New")))
+        .unwrap();
+    assert!(matches!(
+        writer.operations.recv().unwrap(),
+        Ok(Outcome::Created(_))
+    ));
+}
+
+#[test]
+fn rename_forgets_the_old_write_acknowledgement() {
+    use crate::io::writer::{Snapshot, Writer};
+    let dir = Dir::new();
+    let path = dir.0.join("Note.md");
+    let writer = Writer::new();
+    writer
+        .submit(Snapshot {
+            path: path.clone(),
+            revision: 1,
+            text: "old".into(),
+        })
+        .unwrap();
+    writer.flush().unwrap();
+    writer
+        .operate(Operation::Rename {
+            from: path.clone(),
+            to: dir.0.join("Moved.md"),
+        })
+        .unwrap();
+    assert!(writer.operations.recv().unwrap().is_ok());
+    assert!(!writer.acknowledged(&path, "old"));
+}
+
+#[test]
+fn trash_forgets_hashes_baselines_and_revisions_before_path_reuse() {
+    use crate::io::writer::{Snapshot, Writer, hash};
+    let dir = Dir::new();
+    let path = dir.0.join("Note.md");
+    let writer = Writer::new();
+    writer
+        .submit(Snapshot {
+            path: path.clone(),
+            revision: 7,
+            text: "old".into(),
+        })
+        .unwrap();
+    writer.flush().unwrap();
+    writer.operate(Operation::Trash(path.clone())).unwrap();
+    assert!(writer.operations.recv().unwrap().is_ok());
+    fs::write(&path, "new").unwrap();
+    assert!(!writer.acknowledged(&path, "old"));
+    writer
+        .submit_document(
+            Snapshot {
+                path: path.clone(),
+                revision: 1,
+                text: "new edited".into(),
+            },
+            hash("new"),
+        )
+        .unwrap();
+    writer.flush().unwrap();
+    assert_eq!(fs::read_to_string(path).unwrap(), "new edited");
+}
+
+#[test]
 fn failed_restore_removes_its_partial_destination() {
     let dir = Dir::new();
     let path = dir.0.join("restore");
@@ -23,14 +149,42 @@ fn failed_restore_removes_its_partial_destination() {
 #[test]
 fn recovery_survives_a_missing_parent() {
     let dir = Dir::new();
-    assert!(matches!(
-        execute(Operation::Recover {
-            path: dir.0.join("gone/Note.md"),
-            text: "local".into(),
-            fallback: dir.0.join("recovery"),
-        }),
-        Ok(Outcome::Recovered(_))
-    ));
+    let outcome = execute(Operation::Recover {
+        path: dir.0.join("gone/Note.md"),
+        text: "local".into(),
+        fallback: dir.0.join("recovery"),
+    })
+    .unwrap();
+    let Outcome::Recovered(path) = outcome else {
+        panic!("Expected recovery");
+    };
+    assert!(path.starts_with(dir.0.join("recovery")));
+    assert_eq!(fs::read_to_string(path).unwrap(), "local");
+}
+
+#[test]
+fn folder_events_recheck_every_tracked_open_descendant() {
+    let dir = Dir::new();
+    let folder = dir.0.join("Old");
+    fs::create_dir(&folder).unwrap();
+    let note = folder.join("Note.md");
+    fs::write(&note, "before").unwrap();
+    fs::rename(&folder, dir.0.join("Moved")).unwrap();
+    let changes =
+        crate::io::watch::changes([folder].into_iter().collect(), std::slice::from_ref(&note));
+    assert!(
+        changes
+            .iter()
+            .any(|change| change.path == note && change.text.is_none())
+    );
+}
+
+#[test]
+fn existing_document_atomic_write_never_recreates_parents() {
+    let dir = Dir::new();
+    let parent = dir.0.join("missing");
+    assert!(crate::io::atomic::write_existing(&parent.join("Note.md"), b"local").is_err());
+    assert!(!parent.exists());
 }
 
 #[cfg(unix)]

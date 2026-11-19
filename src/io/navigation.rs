@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 
+use super::identity::same_file;
 use crate::core::{links::follow::Target, search, vault};
 
 pub struct Loaded {
@@ -186,25 +187,6 @@ fn load(request: &Request) -> io::Result<Loaded> {
         source,
         heading: heading.clone(),
     })
-}
-
-fn same_file(a: &Path, b: &Path) -> bool {
-    if a == b {
-        return true;
-    }
-    if let (Ok(a), Ok(b)) = (a.canonicalize(), b.canonicalize())
-        && a == b
-    {
-        return true;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if let (Ok(a), Ok(b)) = (a.metadata(), b.metadata()) {
-            return (a.dev(), a.ino()) == (b.dev(), b.ino());
-        }
-    }
-    false
 }
 
 #[cfg(test)]

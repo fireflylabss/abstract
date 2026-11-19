@@ -27,6 +27,23 @@ impl State {
             return;
         }
         if self.file_ops.conflicts.contains_key(path) {
+            if self.file_ops.conflicts.get(path) == Some(&None)
+                && self
+                    .documents
+                    .get(path)
+                    .is_some_and(|doc| !doc.save.unacknowledged())
+            {
+                match self.writer.forget(path.to_owned()) {
+                    Ok(()) => {
+                        self.file_ops.conflicts.remove(path);
+                        self.documents.remove(path);
+                        self.tabs.close(path);
+                        self.focus_tab(tx);
+                    }
+                    Err(error) => self.error = Some(error),
+                }
+                return;
+            }
             self.error = Some(t(Key::ResolveFileConflict).into());
             return;
         }
