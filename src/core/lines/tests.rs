@@ -1,5 +1,20 @@
 use super::*;
 
+#[test]
+fn move_down_mixed_newlines_keeps_utf8_selection_in_replacement() {
+    for sel in [0..2, 2..2, 0..3] {
+        let (range, replacement, moved) = move_sel("é\nx\r\nz", &sel, true).unwrap();
+        let mut text = "é\nx\r\nz".to_owned();
+        text.replace_range(range, &replacement);
+        assert_eq!(text, "x\r\né\r\nz");
+        assert!(text.is_char_boundary(moved.start));
+        assert!(text.is_char_boundary(moved.end));
+        assert_eq!(moved, if sel.start == 2 { 5..5 } else { 3..5 });
+    }
+    assert!(move_sel("", &(0..0), true).is_none());
+    assert!(move_sel("é\nx\r\nz", &(7..7), true).is_none());
+}
+
 fn moved(text: &str, sel: Range<usize>, down: bool) -> Option<(String, Range<usize>)> {
     move_sel(text, &sel, down).map(|(r, new, s)| {
         let mut t = text.to_string();

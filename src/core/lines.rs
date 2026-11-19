@@ -69,7 +69,8 @@ pub fn move_sel(
             return None;
         }
         let shift = next.len() + newline.len();
-        let sel = (sel.start + shift).min(next.end)..(sel.end + shift).min(next.end);
+        let end = first.start + shift + block.len();
+        let sel = (sel.start + shift).min(end)..(sel.end + shift).min(end);
         Some((
             first.start..next.end,
             format!("{}{newline}{block}", &text[next]),
