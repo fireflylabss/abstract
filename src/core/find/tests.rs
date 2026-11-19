@@ -1,5 +1,14 @@
 use super::*;
 
+#[test]
+fn greek_sigma_folds_independently_of_word_position() {
+    let source = "ΟΣ ος οσ";
+    for query in ["ΟΣ", "ος", "οσ"] {
+        assert_eq!(found(source, query, false), ["ΟΣ", "ος", "οσ"]);
+    }
+    assert_eq!(matches(source, "ΟΣ", true), [0..4]);
+}
+
 fn found<'a>(text: &'a str, q: &str, case: bool) -> Vec<&'a str> {
     matches(text, q, case)
         .into_iter()

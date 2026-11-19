@@ -3,6 +3,14 @@
 
 use std::ops::Range;
 
+fn push_folded(out: &mut String, c: char) {
+    match c {
+        'ß' | 'ẞ' => out.push_str("ss"),
+        'ς' => out.push('σ'),
+        _ => out.extend(c.to_lowercase()),
+    }
+}
+
 /// Non-overlapping matches of `query` in `text`, left to right.
 pub fn matches(text: &str, query: &str, case: bool) -> Vec<Range<usize>> {
     if query.is_empty() {
@@ -20,14 +28,13 @@ pub fn matches(text: &str, query: &str, case: bool) -> Vec<Range<usize>> {
     let mut origin = Vec::with_capacity(text.len());
     for (i, c) in text.char_indices() {
         let before = lower.len();
-        if matches!(c, 'ß' | 'ẞ') {
-            lower.push_str("ss");
-        } else {
-            lower.extend(c.to_lowercase());
-        }
+        push_folded(&mut lower, c);
         origin.resize(origin.len() + lower.len() - before, i);
     }
-    let q = query.replace(['ß', 'ẞ'], "ss").to_lowercase();
+    let mut q = String::with_capacity(query.len());
+    for c in query.chars() {
+        push_folded(&mut q, c);
+    }
     let start_of = |b: usize| b == 0 || origin[b - 1] != origin[b];
     let end_of = |b: usize| b == lower.len() || origin[b - 1] != origin[b];
     let orig_end = |b: usize| origin.get(b).copied().unwrap_or(text.len());
