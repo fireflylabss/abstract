@@ -12,6 +12,7 @@ pub(super) enum Phase {
     Checking(u64),
     Quiet,
     Available(Release, Install),
+    Preparing(Release, Install),
     Installing(Release, Install),
     Failed(Release, Install, String),
     Waiting(PathBuf),
@@ -94,7 +95,10 @@ impl State {
         if !self.settings.updates()
             && !matches!(
                 self.services.phase,
-                Phase::Installing(..) | Phase::Waiting(_) | Phase::Relaunching
+                Phase::Preparing(..)
+                    | Phase::Installing(..)
+                    | Phase::Waiting(_)
+                    | Phase::Relaunching
             )
         {
             self.services.phase = Phase::Quiet;
@@ -116,13 +120,7 @@ impl State {
             _ => return,
         };
         self.save_now(tx);
-        match self
-            .services
-            .send(Job::Install(0, release.clone(), install.clone()))
-        {
-            Ok(()) => self.services.phase = Phase::Installing(release, install),
-            Err(error) => self.services.phase = Phase::Failed(release, install, error),
-        }
+        self.services.phase = Phase::Preparing(release, install);
         tx.wake_after(Duration::from_millis(30));
     }
     pub fn poll_services(&mut self, tx: &mut Tx) -> bool {
@@ -187,6 +185,44 @@ impl State {
             }
             changed = true;
         }
+        if let Phase::Preparing(release, install) = &self.services.phase {
+            let (release, install) = (release.clone(), install.clone());
+            if !self.file_ops.conflicts.is_empty()
+                || self
+                    .documents
+                    .values()
+                    .any(|d| matches!(d.save, SaveState::Failed { .. }))
+            {
+                self.services.phase = Phase::Failed(release, install, t(Key::SaveFailed).into());
+                changed = true;
+            } else {
+                if !self.files_busy() {
+                    for (path, doc) in &mut self.documents {
+                        if matches!(doc.save, SaveState::Pending { .. }) {
+                            Self::effects(&self.writer, path, doc, Event::Flush, tx);
+                        }
+                    }
+                }
+                if self
+                    .documents
+                    .values()
+                    .all(|d| matches!(d.save, SaveState::Clean { .. }))
+                    && self.settings_pending == 0
+                    && self.files_pending == 0
+                    && !self.files_busy()
+                {
+                    self.services.phase =
+                        match self
+                            .services
+                            .send(Job::Install(0, release.clone(), install.clone()))
+                        {
+                            Ok(()) => Phase::Installing(release, install),
+                            Err(error) => Phase::Failed(release, install, error),
+                        };
+                    changed = true;
+                }
+            }
+        }
         if let Phase::Waiting(path) = &self.services.phase {
             let path = path.clone();
             if !self.file_ops.conflicts.is_empty()
@@ -215,7 +251,11 @@ impl State {
         if self.services.startup_pending
             || matches!(
                 self.services.phase,
-                Phase::Checking(_) | Phase::Installing(..) | Phase::Waiting(_) | Phase::Relaunching
+                Phase::Checking(_)
+                    | Phase::Preparing(..)
+                    | Phase::Installing(..)
+                    | Phase::Waiting(_)
+                    | Phase::Relaunching
             )
         {
             tx.wake_after(Duration::from_millis(50));
@@ -241,7 +281,7 @@ pub(super) fn notice(s: &State, p: theme::Palette) -> El {
             !i.automatic(),
         ),
         Phase::Failed(_, i, e) => (tf(Key::UpdateFailed, &[("err", e)]), i.automatic(), false),
-        Phase::Installing(..) | Phase::Waiting(_) | Phase::Relaunching => {
+        Phase::Preparing(..) | Phase::Installing(..) | Phase::Waiting(_) | Phase::Relaunching => {
             (t(Key::UpdateInstalling).into(), false, false)
         }
         Phase::RestartFailed(_, e) => (tf(Key::UpdateFailed, &[("err", e)]), true, false),
@@ -283,7 +323,7 @@ pub(super) fn notice(s: &State, p: theme::Palette) -> El {
     }
     if !matches!(
         s.services.phase,
-        Phase::Installing(..) | Phase::Waiting(_) | Phase::Relaunching
+        Phase::Preparing(..) | Phase::Installing(..) | Phase::Waiting(_) | Phase::Relaunching
     ) {
         notice = notice.child(
             button("update-dismiss", t(Key::Later), p)

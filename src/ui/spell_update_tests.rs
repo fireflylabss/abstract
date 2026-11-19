@@ -123,7 +123,70 @@ fn failed_update_stays_nonmodal_and_no_new_release_is_quiet() {
     assert_eq!(*calls.lock().unwrap(), vec!["install"]);
 }
 #[test]
-fn update_waits_for_saves_and_conflicts_block_relaunch() {
+fn update_install_is_not_queued_before_save_acknowledgements() {
+    let fixture = Fixture::new();
+    std::fs::write(fixture.0.join("Note.md"), "original").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    let (worker, calls) = mock(Ok("99.0.0"), false);
+    rt.state.services.worker = Some(worker);
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert("edited");
+        s.edited(tx);
+        s.services.phase = services::Phase::Available(
+            Release {
+                version: "99.0.0".into(),
+            },
+            Install::Tarball("abstract".into()),
+        );
+        s.install_update(tx);
+    });
+    assert!(matches!(
+        rt.state.document().unwrap().save,
+        SaveState::Saving { .. }
+    ));
+    assert!(calls.lock().unwrap().is_empty());
+    std::thread::sleep(Duration::from_millis(20));
+    assert!(calls.lock().unwrap().is_empty());
+    until(&mut rt, |_| calls.lock().unwrap().contains(&"relaunch"));
+    assert!(
+        std::fs::read_to_string(fixture.0.join("Note.md"))
+            .unwrap()
+            .contains("edited")
+    );
+}
+
+#[test]
+fn failed_save_never_starts_update_installation() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "original").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    let (worker, calls) = mock(Ok("99.0.0"), false);
+    rt.state.services.worker = Some(worker);
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit.insert("edited");
+        s.edited(tx);
+        s.services.phase = services::Phase::Available(
+            Release {
+                version: "99.0.0".into(),
+            },
+            Install::Tarball("abstract".into()),
+        );
+        s.install_update(tx);
+    });
+    until(&mut rt, |s| {
+        matches!(s.services.phase, services::Phase::Failed(..))
+    });
+    assert!(calls.lock().unwrap().is_empty());
+    assert!(rt.state.document().unwrap().save.unacknowledged());
+}
+
+#[test]
+fn update_waits_for_saves_and_conflicts_block_installation() {
     let fixture = Fixture::new();
     let path = fixture.0.join("Note.md");
     std::fs::write(&path, "original").unwrap();
@@ -144,9 +207,9 @@ fn update_waits_for_saves_and_conflicts_block_relaunch() {
         s.install_update(tx);
     });
     until(&mut rt, |s| {
-        matches!(s.services.phase, services::Phase::RestartFailed(..))
+        matches!(s.services.phase, services::Phase::Failed(..))
     });
-    assert_eq!(*calls.lock().unwrap(), vec!["install"]);
+    assert!(calls.lock().unwrap().is_empty());
     rt.update(|s, tx| {
         s.file_ops.conflicts.clear();
         s.install_update(tx);
