@@ -5,6 +5,9 @@ use rune::{Env, Key as RuneKey, KeyEvent, Mods, Runtime, text::TextSystem};
 
 use super::*;
 
+#[path = "polish_tests.rs"]
+mod polish_tests;
+
 #[path = "tabs_tests.rs"]
 mod tabs;
 

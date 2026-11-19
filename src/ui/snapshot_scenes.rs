@@ -11,6 +11,8 @@ pub(super) const ALL: &[Scene] = &[
     ("palette-notes-light", notes_light),
     ("palette-notes-dark", notes_dark),
     ("overall", overall),
+    ("polish-light", polish_light),
+    ("polish-dark", polish_dark),
 ];
 #[cfg(not(debug_assertions))]
 pub(super) const ALL: &[Scene] = &[];
@@ -72,4 +74,42 @@ fn notes_light(s: &mut State) {
 #[cfg(debug_assertions)]
 fn notes_dark(s: &mut State) {
     palette(s, false, true);
+}
+
+#[cfg(debug_assertions)]
+fn polish_light(s: &mut State) {
+    s.scans = Scans::new();
+    s.scanning = false;
+    s.restore_started = true;
+    s.settings.set_spellcheck(false);
+    s.settings.set_updates(false);
+    s.settings.kv.set("theme", "light");
+    let path = s.root.join("Welcome to abstract.md");
+    let source = "# Welcome to abstract\n\nA minimal markdown editor that renders as you type — **bold**, *italic* and `inline code` all show up instantly. Your notes stay plain files on disk.\n\n- plain text files\n  - nested under real folders\n- wiki-links and backlinks\n\n- [ ] try the tour (F1)\n- [x] open a folder as a space\n\n```rust\nfn main() {\n    println!(\"local-first\");\n}\n```\n";
+    s.load_document(path.clone(), source.into());
+    s.tabs.open(path.clone());
+    s.active = Some(path.clone());
+    s.document_mut()
+        .unwrap()
+        .edit
+        .set_caret(source.find("\n\n```").unwrap() + 1);
+    s.tree = [
+        (path, "Welcome to abstract"),
+        (s.root.join("- item one.md"), "- item one"),
+    ]
+    .into_iter()
+    .map(|(path, name)| vault::Node {
+        path,
+        name: name.into(),
+        kind: vault::NodeKind::Note,
+        modified: std::time::SystemTime::UNIX_EPOCH,
+        children: vec![],
+    })
+    .collect();
+}
+
+#[cfg(debug_assertions)]
+fn polish_dark(s: &mut State) {
+    polish_light(s);
+    s.settings.kv.set("theme", "dark");
 }
