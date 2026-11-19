@@ -105,6 +105,9 @@ fn zoom(s: &mut State, tx: &mut Tx, delta: f32) {
     s.save_settings(tx);
 }
 macro_rules! editor_only {
+    (spelling) => {
+        true
+    };
     (editing) => {
         true
     };
@@ -203,7 +206,7 @@ pub const ALL: &[Command] = &[
         FollowLinkCommand,
         "Alt+Enter",
         [Binding::Follow],
-        note,
+        editing,
         State::follow_link
     ),
     entry!(

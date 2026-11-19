@@ -11,6 +11,55 @@ fn note_runtime(fixture: &Fixture) -> Runtime<State> {
 }
 
 #[test]
+fn spelling_shortcut_preserves_rename_draft() {
+    let fixture = Fixture::new();
+    let mut rt = note_runtime(&fixture);
+    rt.update(|s, tx| {
+        s.settings.set_spellcheck(true);
+        s.settings.kv.set("spell_lang", "en");
+        s.document_mut().unwrap().edit = TextEdit::new("speling");
+        s.edited(tx);
+    });
+    until(&mut rt, |s| s.spelling_available());
+    rt.update(|s, tx| {
+        s.rename_file(s.active.clone().unwrap(), false, false, tx);
+        if let file_ops::Mode::Rename { edit, .. } = &mut s.file_ops.mode {
+            **edit = TextEdit::new("Uncommitted draft");
+        }
+    });
+    press(&mut rt, RuneKey::Function(7), Mods::default());
+    assert!(
+        matches!(&rt.state.file_ops.mode, file_ops::Mode::Rename { edit, .. } if edit.text == "Uncommitted draft")
+    );
+}
+
+#[test]
+fn follow_shortcut_in_settings_does_not_open_hidden_note_link() {
+    let fixture = Fixture::new();
+    let target = fixture.0.join("Target.md");
+    std::fs::write(&target, "target").unwrap();
+    let mut rt = note_runtime(&fixture);
+    let original = rt.state.active.clone();
+    rt.update(|s, tx| {
+        s.document_mut().unwrap().edit = TextEdit::new("[[Target]]");
+        s.document_mut().unwrap().edit.set_caret(3);
+        s.edited(tx);
+        s.toggle_settings(tx);
+    });
+    press(
+        &mut rt,
+        RuneKey::Enter,
+        Mods {
+            alt: true,
+            ..Mods::default()
+        },
+    );
+    until(&mut rt, |s| !s.navigation.busy);
+    assert_eq!(rt.state.active, original);
+    assert_eq!(rt.state.tabs.paths().len(), 1);
+}
+
+#[test]
 fn pointer_can_scroll_and_open_notes_beyond_the_first_page() {
     let fixture = Fixture::new();
     let target = fixture.0.join("Note 20.md");

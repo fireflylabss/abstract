@@ -170,6 +170,9 @@ fn input_key(state: &mut State, key: &KeyEvent, tx: &mut Tx, replacement: bool) 
         return true;
     }
     if matches!(key.key, RuneKey::Enter) {
+        if key.mods.alt {
+            return true;
+        }
         if replacement {
             state.replace_find(key.mods.cmd || key.mods.ctrl, tx);
         } else {
