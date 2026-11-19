@@ -2,6 +2,42 @@ use super::*;
 use crate::io::export::Format;
 
 #[test]
+fn export_keeps_the_dialog_confirmed_path_and_never_overwrites_its_sibling() {
+    for format in [Format::Html, Format::Pdf] {
+        for name in ["chosen.txt", "chosen"] {
+            for exists in [false, true] {
+                let fixture = Fixture::new();
+                let note = fixture.0.join("Note.md");
+                std::fs::write(&note, "# Note\n").unwrap();
+                let confirmed = fixture.0.join(name);
+                if exists {
+                    std::fs::write(&confirmed, "confirmed old content").unwrap();
+                }
+                let sibling = confirmed.with_extension(format.extension());
+                std::fs::write(&sibling, "unconfirmed content").unwrap();
+                let mut rt = fixture.runtime();
+                until(&mut rt, |s| s.document().is_some());
+                rt.update(|s, tx| s.export_note(note.clone(), format, tx));
+                rt.frame(0.01);
+                rt.resolve_file_dialog(Some(confirmed.clone())).unwrap();
+                until(&mut rt, |s| s.export.notice.is_some());
+                assert_eq!(
+                    std::fs::read_to_string(&sibling).unwrap(),
+                    "unconfirmed content"
+                );
+                let bytes = std::fs::read(&confirmed).unwrap();
+                match format {
+                    Format::Html => {
+                        assert!(String::from_utf8(bytes).unwrap().contains("<h1>Note</h1>"))
+                    }
+                    Format::Pdf => assert!(bytes.starts_with(b"%PDF")),
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn export_uses_inactive_dirty_buffer_and_snapshots_before_the_dialog() {
     let fixture = Fixture::new();
     let first = fixture.0.join("First.md");

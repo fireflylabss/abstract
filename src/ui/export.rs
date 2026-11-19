@@ -78,8 +78,7 @@ impl State {
         tx.save_file(options, move |s: &mut State, result, tx| {
             s.export.phase = Phase::Idle;
             match result {
-                Ok(Some(mut destination)) => {
-                    destination.set_extension(format.extension());
+                Ok(Some(destination)) => {
                     s.start_export(
                         Job {
                             source,
