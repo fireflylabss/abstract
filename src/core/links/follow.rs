@@ -136,13 +136,15 @@ pub fn heading_range(source: &str, heading: &str) -> Range<usize> {
             .replace(' ', "-")
     };
     let target = normalize(heading);
-    let mut offset = 0;
-    for line in source.split_inclusive('\n') {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with('#') && normalize(trimmed.trim_start_matches('#')) == target {
-            return offset..offset;
+    let analysis = crate::core::md::Analyzer::new().analyze(source);
+    for (range, kind) in analysis.lines {
+        if !matches!(kind, crate::core::md::Kind::Heading(_)) {
+            continue;
         }
-        offset += line.len();
+        let trimmed = source[range.clone()].trim_start();
+        if normalize(trimmed.trim_start_matches('#')) == target {
+            return range.start..range.start;
+        }
     }
     0..0
 }
@@ -150,6 +152,17 @@ pub fn heading_range(source: &str, heading: &str) -> Range<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn heading_lookup_ignores_code_and_uses_real_markdown_headings() {
+        let source = "intro\n```md\n# Part\n```\n\n    # Part\n\n#Part\n\n## Part\n";
+        let offset = source.rfind("## Part").unwrap();
+        assert_eq!(heading_range(source, "Part"), offset..offset);
+        let setext = "intro\n\nPart\n----\n";
+        assert_eq!(heading_range(setext, "Part"), 7..7);
+        assert_eq!(heading_range("```\n# Part\n```\n", "Part"), 0..0);
+        assert_eq!(heading_range("", "Part"), 0..0);
+        assert_eq!(heading_range(source, "missing"), 0..0);
+    }
     #[test]
     fn indented_code_links_are_not_followable() {
         for source in [
