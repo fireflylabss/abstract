@@ -12,6 +12,10 @@ use krilla::text::{Font, GlyphId, KrillaGlyph};
 use super::model::*;
 use super::{BODY_PT, BULLET_SPACE, FAINT, FOOTER_Y, INK, TEXT_W};
 
+#[cfg(test)]
+#[path = "writer_tests.rs"]
+mod tests;
+
 const PT_MM: f32 = 72. / 25.4;
 const PAGE_W: f32 = 210. * PT_MM;
 const PAGE_H: f32 = 297. * PT_MM;
@@ -163,6 +167,10 @@ impl Layout<'_> {
     }
 
     fn paragraph(&mut self, p: &Paragraph, x: f32, width: f32) {
+        if p.preformatted {
+            self.preformatted(p, x, width);
+            return;
+        }
         let mut runs: Vec<StyledString> = vec![];
         let mut used = 0.;
         for run in &p.runs {
@@ -200,6 +208,28 @@ impl Layout<'_> {
         if !runs.is_empty() {
             self.text_line(runs, p.alignment, x, width);
         }
+    }
+
+    fn preformatted(&mut self, p: &Paragraph, x: f32, width: f32) {
+        let mut runs = vec![];
+        let mut used = 0.;
+        for run in &p.runs {
+            let mut text = String::new();
+            for c in run.s.chars() {
+                let size = self.fonts.width(&c.to_string(), run.style);
+                if used + size > width && used > 0. {
+                    if !text.is_empty() {
+                        runs.push(StyledString::new(std::mem::take(&mut text), run.style));
+                    }
+                    self.text_line(std::mem::take(&mut runs), p.alignment, x, width);
+                    used = 0.;
+                }
+                text.push(c);
+                used += size;
+            }
+            runs.push(StyledString::new(text, run.style));
+        }
+        self.text_line(runs, p.alignment, x, width);
     }
 
     fn text_line(&mut self, runs: Vec<StyledString>, align: Alignment, x: f32, width: f32) {

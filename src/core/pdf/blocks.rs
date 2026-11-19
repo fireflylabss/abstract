@@ -295,22 +295,19 @@ impl<'a> Emitter<'a> {
         if let Some(r) = content
             && let Some(s) = self.text.get(r)
         {
-            for line in s.split('\n') {
+            for line in s.lines() {
                 let line = if fenced {
                     line
                 } else {
                     let indent = line.len() - line.trim_start_matches(' ').len();
                     &line[indent.min(4)..]
                 };
-                wrap_code(&mut rows, line);
+                wrap_code(&mut rows, &line.replace('\t', "    "));
             }
-        }
-        while matches!(rows.last(), Some(l) if l.is_empty()) {
-            rows.pop();
         }
         let mut lines = LinearLayout::vertical();
         for l in rows {
-            lines.push(Paragraph::new(StyledString::new(l, self.mono_style())));
+            lines.push(Paragraph::new(StyledString::new(l, self.mono_style())).preformatted());
         }
         out.push(
             Block::padded(lines, Margins::trbl(1.6, 2.2, 1.6, 2.2))

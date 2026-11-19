@@ -100,6 +100,7 @@ pub(super) enum Alignment {
 pub(super) struct Paragraph {
     pub runs: Vec<StyledString>,
     pub alignment: Alignment,
+    pub preformatted: bool,
 }
 impl Paragraph {
     pub fn new(s: impl Into<StyledString>) -> Self {
@@ -109,12 +110,17 @@ impl Paragraph {
         self.alignment = a;
         self
     }
+    pub fn preformatted(mut self) -> Self {
+        self.preformatted = true;
+        self
+    }
 }
 impl From<Vec<StyledString>> for Paragraph {
     fn from(runs: Vec<StyledString>) -> Self {
         Self {
             runs,
             alignment: Alignment::Left,
+            preformatted: false,
         }
     }
 }
