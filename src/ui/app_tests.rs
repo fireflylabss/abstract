@@ -5,6 +5,9 @@ use rune::{Env, Key as RuneKey, KeyEvent, Mods, Runtime, text::TextSystem};
 
 use super::*;
 
+#[path = "tabs_tests.rs"]
+mod tabs;
+
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture(PathBuf);
@@ -43,6 +46,9 @@ impl Fixture {
             session_path: self.0.join("session"),
             settings_path: self.0.join("settings"),
             settings_pending: 0,
+            tabs: Tabs::default(),
+            hovered_tab: None,
+            restore_started: false,
         };
         let mut rt = Runtime::with_text(
             state,
@@ -341,8 +347,11 @@ fn startup_preserves_valid_restoration_and_handles_empty_space() {
     rt.state
         .session
         .set_active_tab(Some((&empty.0, std::path::Path::new("Missing.md"))));
-    until(&mut rt, |s| s.error.is_some());
+    until(&mut rt, |s| {
+        s.restore_started && !s.scanning && s.files_pending == 0
+    });
     assert!(rt.state.active.is_none());
+    assert!(rt.state.error.is_none());
     assert_eq!(rt.state.files_pending, 0);
 }
 

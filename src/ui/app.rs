@@ -1,5 +1,7 @@
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::time::Duration;
 
 use rune::{App, AppSpec, Cx, El, ScrollSpec, TextEdit, TextStyle, Tx, col, row, text};
@@ -8,6 +10,7 @@ use crate::core::{
     i18n::{self, Key, Lang, LangPref, t},
     spaces,
     store::{Session, SessionNote, Settings},
+    tabs::Tabs,
     vault,
 };
 use crate::io::{
@@ -39,6 +42,7 @@ pub struct Document {
     pub revision: u64,
     pub save: SaveState,
     pub analysis: Cache,
+    pub scroll: Rc<Cell<f32>>,
 }
 
 impl Document {
@@ -53,6 +57,7 @@ impl Document {
             revision: 0,
             save: SaveState::Clean { revision: 0 },
             analysis,
+            scroll: Rc::new(Cell::new(0.)),
         }
     }
 }
@@ -77,6 +82,9 @@ pub struct State {
     session_path: PathBuf,
     settings_path: PathBuf,
     settings_pending: usize,
+    tabs: Tabs,
+    hovered_tab: Option<PathBuf>,
+    restore_started: bool,
 }
 
 impl Default for State {
@@ -126,6 +134,9 @@ impl State {
             session_path,
             settings_path,
             settings_pending: 0,
+            tabs: Tabs::default(),
+            hovered_tab: None,
+            restore_started: false,
         }
     }
 
@@ -144,8 +155,8 @@ impl State {
     fn open_with_fallback(&mut self, path: PathBuf, fallback: Option<PathBuf>, tx: &mut Tx) {
         self.file_ticket += 1;
         if self.documents.contains_key(&path) {
-            self.active = Some(path);
-            tx.focus("editor", false);
+            self.tabs.open(path);
+            self.focus_tab(tx);
         } else {
             self.files_pending += 1;
             self.files.open(self.file_ticket, path, fallback);
@@ -242,7 +253,7 @@ impl State {
     fn completions(&mut self) -> bool {
         let mut changed = false;
         for completion in self.writer.completions.try_iter() {
-            if completion.path == self.settings_path {
+            if completion.path == self.settings_path || completion.path == self.session_path {
                 self.settings_pending = self.settings_pending.saturating_sub(1);
                 if let Err(error) = completion.result {
                     self.error = Some(error);
@@ -251,6 +262,7 @@ impl State {
                 continue;
             }
             if let Some(doc) = self.documents.get_mut(&completion.path) {
+                let failed = completion.result.as_ref().err().cloned();
                 save::step(
                     &mut doc.save,
                     Event::Completed {
@@ -258,9 +270,20 @@ impl State {
                         result: completion.result,
                     },
                 );
+                if let Some(error) = failed {
+                    self.error = Some(error);
+                    self.tabs.insert(completion.path.clone());
+                    if self.active.is_none() {
+                        self.tabs.open(completion.path.clone());
+                        self.active = Some(completion.path);
+                    }
+                }
                 changed = true;
             }
         }
+        self.documents.retain(|path, doc| {
+            self.tabs.paths().contains(path) || !matches!(doc.save, SaveState::Clean { .. })
+        });
         changed
     }
 
@@ -274,17 +297,10 @@ impl State {
             match reply.result {
                 Ok(tree) => {
                     self.tree = tree;
-                    if self.active.is_none() && self.files_pending == 0 {
-                        let restored = self
-                            .session
-                            .active_tab()
-                            .filter(|(space, _)| space == &self.root)
-                            .map(|(_, rel)| self.root.join(rel));
-                        if let Some(path) =
-                            restored.or_else(|| vault::newest_note(&self.tree, None))
-                        {
-                            let fallback = vault::newest_note(&self.tree, Some(&path));
-                            self.open_with_fallback(path, fallback, tx);
+                    if !self.restore_started {
+                        self.restore_started = true;
+                        if self.active.is_none() && self.files_pending == 0 {
+                            self.restore_tabs(tx);
                         }
                     }
                 }
@@ -298,21 +314,25 @@ impl State {
                 self.scans.start(self.root.clone());
                 self.scanning = true;
             }
-            if reply.ticket != self.file_ticket {
-                continue;
-            }
             match reply.result {
                 Ok((path, source)) => {
                     self.documents
                         .entry(path.clone())
                         .or_insert_with(|| Document::new(source));
-                    self.active = Some(path);
-                    tx.focus("editor", false);
+                    self.tabs.insert(path.clone());
+                    if reply.ticket == self.file_ticket {
+                        self.tabs.open(path);
+                        self.focus_tab(tx);
+                    } else {
+                        self.persist_tabs(tx);
+                    }
                 }
-                Err(error) => self.error = Some(error),
+                Err(error) if reply.ticket == self.file_ticket => self.error = Some(error),
+                Err(_) => {}
             }
             changed = true;
         }
+        changed |= self.restored_tabs(tx);
         let mut working = self.scanning || self.files_pending > 0 || self.settings_pending > 0;
         for (path, doc) in &mut self.documents {
             changed |= doc.analysis.poll(&doc.edit.text, doc.revision);
@@ -346,25 +366,7 @@ impl State {
                 }
             }
         }
-        let notes: Vec<_> = self
-            .documents
-            .iter()
-            .filter_map(|(path, doc)| {
-                Some(SessionNote {
-                    space: self.root.clone(),
-                    rel: path.strip_prefix(&self.root).ok()?.to_owned(),
-                    cursor: doc.edit.focus,
-                    scroll: 0.,
-                })
-            })
-            .collect();
-        self.session.set_tabs(&notes);
-        self.session.set_active_tab(
-            self.active
-                .as_ref()
-                .and_then(|p| p.strip_prefix(&self.root).ok())
-                .map(|rel| (self.root.as_path(), rel)),
-        );
+        self.snapshot_tabs();
         let (_, text) = self.session.snapshot();
         if let Err(error) = self
             .writer
@@ -427,7 +429,7 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
     }
     let mut pane = col().grow(1.).min_w(0.).h_full();
     if !state.focus_mode {
-        pane = pane.child(header);
+        pane = pane.child(header).child(tabs::view(state, palette));
     }
     if let Some(error) = &state.error {
         pane = pane.child(
@@ -437,6 +439,7 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
                 .padding(12.),
         );
     }
+    let scroll = state.document().map(|doc| doc.scroll.clone());
     pane = pane.child(
         col()
             .key("editor-scroll")
@@ -445,6 +448,11 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
             .min_h(0.)
             .scroll(ScrollSpec {
                 stick_bottom: false,
+            })
+            .on_scroll_offset(move |pos| {
+                if let Some(scroll) = &scroll {
+                    scroll.set(pos.offset[1]);
+                }
             })
             .items_center()
             .padding(28.)
@@ -487,3 +495,6 @@ pub fn run() {
 #[cfg(test)]
 #[path = "app_tests.rs"]
 mod tests;
+
+#[path = "tabs.rs"]
+mod tabs;

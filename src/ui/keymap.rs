@@ -11,8 +11,24 @@ pub fn shortcut(key: &KeyEvent, character: char) -> bool {
 
 pub fn handle(state: &mut State, key: &KeyEvent, tx: &mut Tx) -> bool {
     let plain = !key.mods.shift;
-    if plain && shortcut(key, 'n') {
+    if plain && (shortcut(key, 'n') || shortcut(key, 't')) {
         state.new_note(tx);
+    } else if plain && shortcut(key, 'w') {
+        if let Some(path) = state.active.clone() {
+            state.close_tab(&path, tx);
+        }
+    } else if plain
+        && let Some(digit) = (1..=9).find(|digit| shortcut(key, char::from(b'0' + *digit as u8)))
+    {
+        state.select_tab(digit, tx);
+    } else if !key.mods.alt && key.mods.ctrl && matches!(key.key, Key::Tab) {
+        state.cycle_tab(!key.mods.shift, tx);
+    } else if !key.mods.alt && key.mods.ctrl && matches!(key.key, Key::PageUp | Key::PageDown) {
+        state.cycle_tab(matches!(key.key, Key::PageDown), tx);
+    } else if key.mods.shift && (shortcut(key, ']') || shortcut(key, '}')) {
+        state.cycle_tab(true, tx);
+    } else if key.mods.shift && (shortcut(key, '[') || shortcut(key, '{')) {
+        state.cycle_tab(false, tx);
     } else if plain && shortcut(key, 's') {
         state.save_now(tx);
     } else if plain && shortcut(key, 'q') {

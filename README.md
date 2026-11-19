@@ -8,7 +8,7 @@
 
 The `rune` branch is the staged Rune rewrite. The screenshots and packaged releases
 below show v0.1.5; the Rune build currently provides the Phase 1 skeleton and
-Phase 2a editing behaviours described here.
+Phase 2a editing behaviours and Phase 2b tabs described here.
 
 ![abstract v0.1.5, light theme](docs/screenshot-light.png)
 
@@ -65,10 +65,22 @@ compression will also need restoring when spell is wired.
 Checkbox clicking is not wired: the pinned Rune text input does not expose a
 cheap pointer-to-source-offset callback. Use `Cmd/Ctrl+Enter` instead.
 
-Tabs, search/find UI, following links, images,
+## Phase 2b tabs
+
+- Sidebar notes open in new tabs or focus the existing tab. The compact strip
+  stays visible for a single tab, with titles, dirty dots and hover close buttons.
+- Each note keeps its selection, scroll position, undo history and analysis cache.
+  Inactive notes autosave; closing flushes edits and failed writes retain their buffer.
+- `Cmd/Ctrl+T` or `N` creates a note; `Cmd/Ctrl+W` closes a tab. `Ctrl+Tab` and
+  `Ctrl+Shift+Tab` cycle; `Cmd+Shift+]` / `[` and `Ctrl+PageDown` / `PageUp`
+  also navigate. `Cmd/Ctrl+1..9` selects a tab (`9` selects the last).
+- Open tab order, active tab, cursors and scroll positions use the existing session
+  format. Missing files are skipped during background restore.
+
+Search/find UI, following links, images,
 external-edit watching, rename/move/trash, exports, settings UI, glass, command
 palette and updater are not yet available. Settings/session/spaces file formats
-remain compatible; Phase 1 restores the active note, not window geometry or tabs.
+remain compatible; window geometry restoration remains deferred.
 
 ## Install
 

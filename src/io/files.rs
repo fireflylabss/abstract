@@ -2,6 +2,13 @@ use std::fs::{self, OpenOptions};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 
+use crate::core::store::SessionNote;
+
+pub struct Restored {
+    pub ticket: u64,
+    pub notes: Vec<(SessionNote, String)>,
+}
+
 pub struct Reply {
     pub ticket: u64,
     pub created: bool,
@@ -11,12 +18,34 @@ pub struct Reply {
 pub struct Files {
     tx: Sender<Reply>,
     pub replies: Receiver<Reply>,
+    restore_tx: Sender<Restored>,
+    pub restored: Receiver<Restored>,
 }
 
 impl Files {
     pub fn new() -> Self {
         let (tx, replies) = mpsc::channel();
-        Self { tx, replies }
+        let (restore_tx, restored) = mpsc::channel();
+        Self {
+            tx,
+            replies,
+            restore_tx,
+            restored,
+        }
+    }
+
+    pub fn restore(&self, ticket: u64, root: PathBuf, notes: Vec<SessionNote>) {
+        let tx = self.restore_tx.clone();
+        std::thread::spawn(move || {
+            let notes = notes
+                .into_iter()
+                .filter_map(|note| {
+                    let text = fs::read_to_string(root.join(&note.rel)).ok()?;
+                    Some((note, text))
+                })
+                .collect();
+            let _ = tx.send(Restored { ticket, notes });
+        });
     }
 
     pub fn open(&self, ticket: u64, path: PathBuf, fallback: Option<PathBuf>) {
