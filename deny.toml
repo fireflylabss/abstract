@@ -1,24 +1,11 @@
 [advisories]
 yanked = "deny"
-# Unmaintained crates pulled in transitively via pinned gpui-pre/gpui-kit
-# versions (= pins); no upgrade is available until upstream updates.
+# Rune 33eabc2's AccessKit/AT-SPI stack still uses the standalone D-Bus
+# crates merged into zbus 6; these require an upstream dependency migration.
 ignore = [
-    "RUSTSEC-2024-0384", # instant
-    "RUSTSEC-2024-0436", # paste
-    "RUSTSEC-2025-0134", # rustls-pemfile
-    "RUSTSEC-2026-0192", # ttf-parser
-    "RUSTSEC-2026-0206", # rustybuzz
-    # Unmaintained crates pulled in transitively via pinned genpdf/printpdf
-    # versions (= pins); no upgrade is available until upstream updates.
-    "RUSTSEC-2020-0020", # stb_truetype
-    "RUSTSEC-2020-0056", # stdweb
-    "RUSTSEC-2020-0144", # lzw
-    "RUSTSEC-2021-0140", # rusttype
-    "RUSTSEC-2021-0153", # encoding
-    "RUSTSEC-2025-0056", # adler
-    # lopdf 0.26 (pinned by genpdf/printpdf): the flaw is in `load_mem` et al.
-    # (parsing untrusted PDFs); abstract only ever *writes* PDFs, never parses.
-    "RUSTSEC-2026-0187", # lopdf
+    "RUSTSEC-2026-0370", # zvariant
+    "RUSTSEC-2026-0371", # zbus_names
+    "RUSTSEC-2026-0372", # zvariant_derive
 ]
 
 [licenses]
@@ -47,3 +34,4 @@ multiple-versions = "warn"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+allow-git = ["https://github.com/anomalyco/rune"]

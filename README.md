@@ -1,33 +1,53 @@
 # <img src="assets/logo.png" width="96" alt="abstract logo"> abstract
 
-**A minimal, local-first markdown notes editor — GPU-rendered with [GPUI](https://gpui.rs).**
+**A minimal, local-first markdown notes editor — GPU-rendered with [Rune](https://github.com/anomalyco/rune).**
 
 [![ci](https://github.com/fireflylabss/abstract/actions/workflows/ci.yml/badge.svg)](https://github.com/fireflylabss/abstract/actions/workflows/ci.yml)
 [![latest release](https://img.shields.io/github/v/release/fireflylabss/abstract)](https://github.com/fireflylabss/abstract/releases)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-![abstract, light theme](docs/screenshot-light.png)
+The `rune` branch is the staged Rune rewrite. The screenshots and packaged releases
+below show v0.1.5; Phase 1 currently provides the editing skeleton described here.
+
+![abstract v0.1.5, light theme](docs/screenshot-light.png)
 
 ![abstract, dark theme](docs/screenshot-dark.png)
 
 Your notes are plain `.md` files living in real folders on disk. No accounts, no sync daemon, no proprietary format — the folder is the app.
 
-## Features
+## Phase 1
 
-- **Live markdown** — Typora-style rendering powered by tree-sitter: bold, italic, `==highlights==`, `%%comments%%`, code, links, headings, lists, tasks, `> [!note]` callouts and `[^1]` footnotes render inline, and the syntax conceals itself until your selection touches it.
-- **Autosave** — writes are debounced as you type; a note's file is created on the first keystroke and named after its first heading.
-- **Spaces** — keep several note directories and switch between them from the sidebar.
-- **Sidebar tree** — folders and notes with inline rename, drag-and-drop moves and a right-click menu, plus one-click new note / new folder.
-- **Images and attachments** — paste or drop images onto a note: they are copied to `attachments/` and render inline, as do hand-written `![](…)` / `![[…]]` images. Other dropped files become links (`[[note]]` for notes in the space).
-- **Context menus** — right-click in the editor for clipboard, links, formatting, paragraph styles and inserts.
-- **Task lists** — click the checkbox to toggle; **code blocks** with syntax highlighting.
-- **Wiki-links** — `[[note]]` links with autocomplete; `Ctrl`/`Cmd`+click follows a link (creating the note if missing), and a backlinks panel lists references.
-- **Global search** — `Ctrl`/`Cmd`+`P` opens a palette over note titles and bodies; empty query lists recently edited notes.
-- **External-edit aware** — the space folder is watched live (inotify/FSEvents/ReadDirectoryChanges), so edits and deletions from other apps show up instantly.
-- **Session restore** — reopens your notes, window geometry and sidebar state.
-- **Cross-platform** — Linux (Wayland & X11), macOS and Windows; bundled Noto fonts for consistent rendering.
-- **Interface in English and Portuguese** — auto-detected from the system locale.
-- **Chromeless** — custom titlebar, light and dark themes (Abstract, Paper, Sepia, Solarized, Midnight, Nord), first-run tour.
+- **Live Markdown** — one native multiline text model, styled with tree-sitter.
+  Heading and inline syntax reveals on the caret/selection's lines; the resulting
+  text shift is intentional. Lists, tasks and quote markers keep their geometry.
+  Tables remain raw monospace source. Rune supplies undo, clipboard, selection and IME.
+- **Autosave** — 600 ms debounce, a single revision-ordered background writer,
+  unique atomic temporary files, visible save failures, and synchronous quit flushing
+  of every unacknowledged buffer, including failed writes. Quit errors are reported
+  on stderr. Switching notes does not discard dirty buffers.
+- **Sidebar** — expand folders, click notes, and create an empty, collision-safe note
+  with **New note** or `Cmd/Ctrl+N`. `Cmd/Ctrl+S` retries/saves pending edits.
+- **Active space** — reads the existing spaces file, or pass a note directory:
+  `abstract /path/to/notes`. Generation tags prevent older scans replacing newer trees.
+- **Appearance** — existing light/dark/system palettes, font, zoom, text width and
+  English/Portuguese language preferences are read from the unchanged settings file.
+  Noto Sans and Noto Sans Mono remain bundled.
+- **Responsive analysis** — below 64 KiB, analysis runs synchronously once per edit;
+  at or above 64 KiB, a background worker publishes only the current revision.
+  Source remains editable while analysis catches up.
+
+The pure logic lives in `src/core/`, persistence in `src/io/`, and Rune views in
+`src/ui/`. Buffer, Markdown/code/footnote parsing, find, lines, smart editing, tables,
+vault, search, links, spaces, preferences, store and i18n compile now; later phases
+will wire their additional UI. HTML/PDF export, attachments, math rendering, spell,
+watch, updates, crash reporting and Discord sources are retained in `core/` but
+excluded from this build and their dependencies are not pulled in. Spell dictionary
+compression will also need restoring when spell is wired.
+
+Tabs, search/find UI, list continuation, task toggling, following links, images,
+external-edit watching, rename/move/trash, exports, settings UI, glass, command
+palette and updater are not yet available. Settings/session/spaces file formats
+remain compatible; Phase 1 restores the active note, not window geometry or tabs.
 
 ## Install
 
@@ -41,7 +61,8 @@ Prebuilt artifacts are attached to each [GitHub Release](https://github.com/fire
 
 ### Updates
 
-Once a day abstract checks GitHub for a newer release. Turn this off with **Check for updates** in the spaces menu. The AppImage, the macOS `.app`, the Windows `.exe` and the Linux tarball can update themselves. The download is only installed if `SHA256SUMS` carries a valid minisign signature and the file matches its checksum. `.deb`, `.rpm`, AUR and Homebrew installs just get a notice, so update them with your package manager.
+Automatic updates are not wired in the Rune Phase 1 build. Packaged v0.1.5 releases
+retain their previous updater; update package-managed installs with your package manager.
 
 ### Arch / CachyOS (AUR)
 
@@ -77,7 +98,11 @@ chmod +x abstract-<version>-linux-x86_64.AppImage
 
 ### From source
 
-Rust toolchain is pinned via `rust-toolchain.toml` (rustup handles it automatically).
+Rust **1.99.1** is pinned via `rust-toolchain.toml` (rustup handles it automatically).
+Rune and rune-kit, plus the required winit, parley_engine, wgpu-hal and AccessKit
+patches, are pinned to git revision **33eabc2**. Keep all pins together; an arbitrary
+Rune development HEAD is not a supported substitute. Builds need git access to
+GitHub on the first run. This app is not published to crates.io.
 
 - **macOS** — `xcode-select --install`
 - **Arch** —
@@ -90,7 +115,7 @@ Rust toolchain is pinned via `rust-toolchain.toml` (rustup handles it automatica
   ```bash
   sudo apt-get install libxcb-xkb-dev libxkbcommon-dev libxkbcommon-x11-dev \
     libxcb-icccm4-dev libxcb-image0-dev libxcb-render0-dev libxcb-shape0-dev \
-    libxcb-xfixes0-dev libxcb-keysyms1-dev libwayland-dev pkg-config
+    libxcb-xfixes0-dev libxcb-keysyms1-dev libwayland-dev libfontconfig-dev pkg-config
   ```
 - **Windows** — [rustup](https://rustup.rs) + Visual Studio Build Tools ("Desktop development with C++" workload).
 
