@@ -3,12 +3,19 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 pub enum Operation {
-    Rename { from: PathBuf, to: PathBuf },
+    Rename {
+        from: PathBuf,
+        to: PathBuf,
+    },
     Trash(PathBuf),
     Restore(Backup),
     Folder(PathBuf),
     Read(PathBuf),
-    Recover { path: PathBuf, text: String },
+    Recover {
+        path: PathBuf,
+        text: String,
+        fallback: PathBuf,
+    },
 }
 
 pub enum Outcome {
@@ -35,7 +42,7 @@ fn snapshot(path: &Path) -> io::Result<Backup> {
         bytes: &mut u64,
     ) -> io::Result<()> {
         let meta = fs::symlink_metadata(path)?;
-        if meta.file_type().is_symlink()
+        if (!meta.is_file() && !meta.is_dir())
             || entries.len() >= 10_000
             || *bytes + meta.len() > 128 * 1024 * 1024
         {
@@ -121,29 +128,40 @@ fn restore(backup: Backup) -> io::Result<PathBuf> {
             Err(e) => return Err(e),
             Ok(file) => file,
         };
-        if let Some(mut file) = file {
-            if let Some((_, Some(content))) = backup.entries.first() {
-                file.write_all(content)?;
-            }
-            file.sync_all()?;
-            return Ok(path);
-        }
-        for (rel, content) in &backup.entries {
-            let target = path.join(rel);
-            if let Some(content) = content {
-                let mut options = OpenOptions::new();
-                options.write(true);
-                options.create_new(true);
-                let mut file = options.open(if rel.as_os_str().is_empty() {
-                    &path
-                } else {
-                    &target
-                })?;
-                file.write_all(content)?;
+        let result = (|| -> io::Result<()> {
+            if let Some(mut file) = file {
+                if let Some((_, Some(content))) = backup.entries.first() {
+                    file.write_all(content)?;
+                }
                 file.sync_all()?;
-            } else if !rel.as_os_str().is_empty() {
-                fs::create_dir(&target)?;
+                return Ok(());
             }
+            for (rel, content) in &backup.entries {
+                let target = path.join(rel);
+                if let Some(content) = content {
+                    let mut options = OpenOptions::new();
+                    options.write(true);
+                    options.create_new(true);
+                    let mut file = options.open(if rel.as_os_str().is_empty() {
+                        &path
+                    } else {
+                        &target
+                    })?;
+                    file.write_all(content)?;
+                    file.sync_all()?;
+                } else if !rel.as_os_str().is_empty() {
+                    fs::create_dir(&target)?;
+                }
+            }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            if backup.directory {
+                let _ = fs::remove_dir_all(&path);
+            } else {
+                let _ = fs::remove_file(&path);
+            }
+            return Err(error);
         }
         return Ok(path);
     }
@@ -155,7 +173,15 @@ pub fn execute(operation: Operation) -> Result<Outcome, String> {
         match operation {
             Operation::Rename { from, to } => {
                 if from != to {
-                    if to.try_exists()? && fs::canonicalize(&from)? != fs::canonicalize(&to)? {
+                    let occupied = match fs::symlink_metadata(&to) {
+                        Ok(meta) => {
+                            meta.file_type().is_symlink()
+                                || fs::canonicalize(&from)? != fs::canonicalize(&to)?
+                        }
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+                        Err(error) => return Err(error),
+                    };
+                    if occupied {
                         return Err(io::Error::new(
                             io::ErrorKind::AlreadyExists,
                             "Destination exists",
@@ -182,23 +208,42 @@ pub fn execute(operation: Operation) -> Result<Outcome, String> {
                 Ok(Outcome::Created(path))
             }
             Operation::Read(path) => {
-                let text = fs::read_to_string(&path)?;
+                let text = read_regular(&path)?;
                 Ok(Outcome::Read(path, text))
             }
-            Operation::Recover { path, text } => {
+            Operation::Recover {
+                path,
+                text,
+                fallback,
+            } => {
                 let stem = crate::core::vault::stem_for_title(
                     &path.file_stem().unwrap_or_default().to_string_lossy(),
                 );
-                restore(Backup {
+                let backup = Backup {
                     path: path.with_file_name(format!("{stem} (conflict).md")),
                     directory: false,
                     entries: vec![(PathBuf::new(), Some(text.into_bytes()))],
-                })
-                .map(Outcome::Recovered)
+                };
+                restore(backup.clone())
+                    .or_else(|_| {
+                        fs::create_dir_all(&fallback)?;
+                        restore(Backup {
+                            path: fallback.join(backup.path.file_name().unwrap()),
+                            ..backup
+                        })
+                    })
+                    .map(Outcome::Recovered)
             }
         }
     };
     run().map_err(|e| e.to_string())
+}
+
+pub fn read_regular(path: &Path) -> io::Result<String> {
+    if !fs::symlink_metadata(path)?.is_file() {
+        return Err(io::Error::other("Not a regular file"));
+    }
+    fs::read_to_string(path)
 }
 
 #[cfg(test)]

@@ -82,7 +82,7 @@ impl Watch {
                             let changes = paths
                                 .drain()
                                 .map(|path| {
-                                    let text = std::fs::read_to_string(&path).ok();
+                                    let text = super::operations::read_regular(&path).ok();
                                     Change { path, text }
                                 })
                                 .collect();

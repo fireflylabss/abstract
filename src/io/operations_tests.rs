@@ -2,6 +2,80 @@ use super::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+
+#[test]
+fn failed_restore_removes_its_partial_destination() {
+    let dir = Dir::new();
+    let path = dir.0.join("restore");
+    let backup = Backup {
+        path: path.clone(),
+        directory: true,
+        entries: vec![
+            (PathBuf::new(), None),
+            ("first.md".into(), Some(b"written".to_vec())),
+            ("missing/second.md".into(), Some(b"fails".to_vec())),
+        ],
+    };
+    assert!(restore(backup).is_err());
+    assert!(!path.exists());
+}
+
+#[test]
+fn recovery_survives_a_missing_parent() {
+    let dir = Dir::new();
+    assert!(matches!(
+        execute(Operation::Recover {
+            path: dir.0.join("gone/Note.md"),
+            text: "local".into(),
+            fallback: dir.0.join("recovery"),
+        }),
+        Ok(Outcome::Recovered(_))
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn rename_refuses_dangling_and_source_pointing_symlinks() {
+    use std::os::unix::fs::symlink;
+    let dir = Dir::new();
+    let from = dir.0.join("source.md");
+    fs::write(&from, "source").unwrap();
+    for target in [dir.0.join("missing"), from.clone()] {
+        let to = dir.0.join("link.md");
+        symlink(target, &to).unwrap();
+        assert!(
+            execute(Operation::Rename {
+                from: from.clone(),
+                to: to.clone()
+            })
+            .is_err()
+        );
+        assert!(fs::symlink_metadata(&to).unwrap().file_type().is_symlink());
+        fs::remove_file(to).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn snapshot_rejects_a_fifo_without_opening_it() {
+    let dir = Dir::new();
+    let pipe = dir.0.join("pipe.md");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&pipe)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(snapshot(&pipe).is_err() && read_regular(&pipe).is_err());
+    });
+    assert_eq!(
+        rx.recv_timeout(std::time::Duration::from_secs(1)).ok(),
+        Some(true)
+    );
+}
 struct Dir(PathBuf);
 impl Dir {
     fn new() -> Self {
