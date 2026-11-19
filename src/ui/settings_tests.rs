@@ -19,6 +19,28 @@ fn legacy_font_controls_step_from_effective_font() {
 }
 
 #[test]
+fn smart_dash_uses_current_line_not_later_table_rows() {
+    for (source, offset, expected) in [
+        ("prose-\n| table |", 6, "prose—\n| table |"),
+        ("prose- | table |", 6, "prose-- | table |"),
+        ("prose-", 6, "prose—"),
+        ("", 0, "-"),
+    ] {
+        let fixture = Fixture::new();
+        std::fs::write(fixture.0.join("Note.md"), source).unwrap();
+        let mut rt = fixture.runtime();
+        until(&mut rt, |s| s.document().is_some());
+        rt.update(|s, tx| {
+            s.settings.kv.set("smart_quotes", "on");
+            s.document_mut().unwrap().edit.set_selection(offset, offset);
+            tx.focus("editor", false);
+        });
+        press(&mut rt, RuneKey::Text("-".into()), Mods::default());
+        assert_eq!(rt.state.document().unwrap().edit.text, expected);
+    }
+}
+
+#[test]
 fn settings_shortcuts_live_changes_persist_and_restore_editor_without_editing() {
     let fixture = Fixture::new();
     std::fs::write(fixture.0.join("Note.md"), "# Heading\nbody").unwrap();

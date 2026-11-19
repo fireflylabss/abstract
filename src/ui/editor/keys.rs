@@ -28,6 +28,9 @@ pub fn handle(state: &mut State, key: &KeyEvent, tx: &mut Tx) -> bool {
         };
         let offset = selection.anchor.min(selection.focus);
         let start = doc.edit.text[..offset].rfind('\n').map_or(0, |i| i + 1);
+        let end = doc.edit.text[offset..]
+            .find('\n')
+            .map_or(doc.edit.text.len(), |i| offset + i);
         let before = &doc.edit.text[start..offset];
         let literal = doc
             .analysis
@@ -44,7 +47,7 @@ pub fn handle(state: &mut State, key: &KeyEvent, tx: &mut Tx) -> bool {
         }
         if doc.edit.anchor == doc.edit.focus
             && let Some(subst) = crate::core::smart::substitute(
-                &doc.edit.text[start..],
+                &doc.edit.text[start..end],
                 before,
                 typed,
                 quotes,
