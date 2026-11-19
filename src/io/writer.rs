@@ -175,6 +175,7 @@ impl Writer {
                             paths.extend(revisions.keys().cloned());
                             paths.extend(baselines.keys().cloned());
                             paths.extend(acks.lock().unwrap().keys().cloned());
+                            let mut identities = super::identity::Entries::default();
                             let relocations =
                                 if let super::operations::Operation::Rename { from, to } =
                                     &operation
@@ -182,7 +183,7 @@ impl Writer {
                                     paths
                                         .iter()
                                         .filter_map(|path| {
-                                            super::identity::relative(path, from).map(|rel| {
+                                            identities.relative(path, from).map(|rel| {
                                                 (
                                                     path.clone(),
                                                     if rel.as_os_str().is_empty() {
@@ -197,16 +198,15 @@ impl Writer {
                                 } else {
                                     Vec::new()
                                 };
-                            let removed = if let super::operations::Operation::Trash(root) =
-                                &operation
-                            {
-                                paths
-                                    .into_iter()
-                                    .filter(|path| super::identity::relative(path, root).is_some())
-                                    .collect::<Vec<_>>()
-                            } else {
-                                Vec::new()
-                            };
+                            let removed =
+                                if let super::operations::Operation::Trash(root) = &operation {
+                                    paths
+                                        .into_iter()
+                                        .filter(|path| identities.relative(path, root).is_some())
+                                        .collect::<Vec<_>>()
+                                } else {
+                                    Vec::new()
+                                };
                             let mut result = super::operations::execute(operation);
                             if let Ok(super::operations::Outcome::Renamed { paths, .. }) =
                                 &mut result
