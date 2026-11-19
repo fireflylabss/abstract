@@ -265,11 +265,21 @@ pub struct Escaped;
 /// `insert_text` with the markdown that references them.
 pub struct Attach(pub Vec<Incoming>);
 
+/// Notes up to this size re-parse on the UI thread per edit (a few ms);
+/// larger ones parse in the background.
+const SYNC_PARSE_MAX: usize = 16 * 1024;
+
 pub struct LiveEditor {
     focus: FocusHandle,
     buf: Buffer,
     analyzer: Analyzer,
     analysis: Analysis,
+    /// The text `analysis` describes, kept only for notes over
+    /// `SYNC_PARSE_MAX`: the next edit is diffed against it.
+    parsed: Option<String>,
+    /// Bumped per buffer change; a background parse of an older text is stale.
+    parse_gen: u64,
+    parsing: bool,
     scroll_y: f32,
     autoscroll: bool,
     goal_x: Option<f32>,
@@ -337,6 +347,9 @@ impl LiveEditor {
             buf: Buffer::new(),
             analyzer,
             analysis,
+            parsed: None,
+            parse_gen: 0,
+            parsing: false,
             scroll_y: 0.,
             autoscroll: false,
             goal_x: None,
@@ -945,7 +958,8 @@ impl LiveEditor {
         self.caret = None;
         self.last_edit = None;
         self.last_subst = None;
-        self.analysis = self.analyzer.analyze(self.buf.text());
+        self.parse_gen += 1;
+        self.analyze_now();
         cx.notify();
     }
 
@@ -1014,8 +1028,59 @@ impl LiveEditor {
         self.changed(cx);
     }
 
+    /// Bring `analysis` in line with the buffer after an edit. Small notes
+    /// parse in place; a big one would stall every keystroke, so its stale
+    /// analysis is shifted around the edit and the real parse runs off the
+    /// UI thread.
+    fn reanalyze(&mut self, cx: &mut Context<Self>) {
+        self.parse_gen += 1;
+        let text = self.buf.text();
+        match &mut self.parsed {
+            Some(prev) if text.len() > SYNC_PARSE_MAX => {
+                self.analysis.rebase(prev, text);
+                prev.clear();
+                prev.push_str(text);
+                self.request_parse(cx);
+            }
+            _ => self.analyze_now(),
+        }
+    }
+
+    fn analyze_now(&mut self) {
+        let text = self.buf.text();
+        self.analysis = self.analyzer.analyze(text);
+        self.parsed = (text.len() > SYNC_PARSE_MAX).then(|| text.to_string());
+    }
+
+    /// One background parse at a time; a result the buffer has moved past is
+    /// dropped and the parse restarts on the current text.
+    fn request_parse(&mut self, cx: &mut Context<Self>) {
+        if self.parsing {
+            return;
+        }
+        self.parsing = true;
+        let generation = self.parse_gen;
+        let text = self.buf.text().to_string();
+        cx.spawn(async move |this, cx| {
+            let analysis = cx
+                .background_spawn(async move { Analyzer::new().analyze(&text) })
+                .await;
+            this.update(cx, |ed, cx| {
+                ed.parsing = false;
+                if ed.parse_gen == generation {
+                    ed.analysis = analysis;
+                    cx.notify();
+                } else if ed.parsed.is_some() {
+                    ed.request_parse(cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn changed(&mut self, cx: &mut Context<Self>) {
-        self.analysis = self.analyzer.analyze(self.buf.text());
+        self.reanalyze(cx);
         self.autoscroll = true;
         self.goal_x = None;
         self.last_edit = Some(Instant::now());

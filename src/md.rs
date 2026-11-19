@@ -959,7 +959,196 @@ pub fn is_image_path(path: &str) -> bool {
         .is_some_and(|x| IMAGE_EXTS.contains(&x.to_ascii_lowercase().as_str()))
 }
 
+/// The span that differs between `old` and `new`, on char boundaries:
+/// `(start, old_end, new_end)`.
+fn changed_span(old: &str, new: &str) -> (usize, usize, usize) {
+    let (o, n) = (old.as_bytes(), new.as_bytes());
+    let mut at = o.iter().zip(n).take_while(|(a, b)| a == b).count();
+    while !new.is_char_boundary(at) {
+        at -= 1;
+    }
+    let max = o.len().min(n.len()) - at;
+    let mut tail = o
+        .iter()
+        .rev()
+        .zip(n.iter().rev())
+        .take(max)
+        .take_while(|(a, b)| a == b)
+        .count();
+    while !new.is_char_boundary(n.len() - tail) {
+        tail -= 1;
+    }
+    (at, o.len() - tail, n.len() - tail)
+}
+
+/// Where an edit replacing `at..old_end` (growing by `delta`) leaves a span:
+/// untouched spans keep their text, one that contains the edit resizes, and
+/// one the edit cuts into is dropped.
+struct Shift {
+    at: usize,
+    old_end: usize,
+    delta: isize,
+}
+
+impl Shift {
+    fn end(&self, o: usize) -> usize {
+        if o <= self.at {
+            o
+        } else {
+            (o.max(self.old_end) as isize + self.delta) as usize
+        }
+    }
+
+    fn start(&self, o: usize) -> usize {
+        if o < self.at || (o == self.at && self.at < self.old_end) {
+            o
+        } else {
+            (o.max(self.old_end) as isize + self.delta) as usize
+        }
+    }
+
+    fn range(&self, r: &mut Range<usize>) {
+        let start = self.start(r.start);
+        *r = start..self.end(r.end).max(start);
+    }
+
+    fn keeps(&self, r: &Range<usize>) -> bool {
+        let apart = r.end <= self.at || r.start >= self.old_end;
+        let around = r.start <= self.at && self.old_end <= r.end;
+        (apart || around) && !(around && !apart && r.len() == self.old_end - self.at)
+    }
+}
+
 impl Analysis {
+    /// Keep this analysis of `old` usable for `new` until a fresh parse
+    /// lands: every offset and line index stays in bounds and on a char
+    /// boundary, and text away from the edit keeps its styling. The edited
+    /// text itself borrows the styling around it.
+    pub fn rebase(&mut self, old: &str, new: &str) {
+        debug_assert_eq!(self.flags.len(), old.len());
+        let (at, old_end, new_end) = changed_span(old, new);
+        if at == old_end && at == new_end {
+            return;
+        }
+        let sh = Shift {
+            at,
+            old_end,
+            delta: new_end as isize - old_end as isize,
+        };
+        let (first, last) = (self.line_of(at), self.line_of(old_end));
+
+        let fill = match at.checked_sub(1) {
+            Some(i) if old.as_bytes()[i] != b'\n' => self.flags[i] & !(MARK | TASK),
+            _ => 0,
+        };
+        self.flags
+            .splice(at..old_end, std::iter::repeat_n(fill, new_end - at));
+
+        // Re-split only the edited lines; the ones after just move.
+        let region =
+            self.lines[first].0.start..(self.lines[last].0.end as isize + sh.delta) as usize;
+        let kind = self.lines[first].1;
+        let tail = self.lines.split_off(last + 1);
+        self.lines.truncate(first);
+        let mut start = region.start;
+        for (i, part) in new[region.clone()].split('\n').enumerate() {
+            let kind = match kind {
+                Kind::Heading(_) | Kind::Rule if i > 0 => Kind::Body,
+                k => k,
+            };
+            self.lines.push((start..start + part.len(), kind));
+            start += part.len() + 1;
+        }
+        let new_last = self.lines.len() - 1;
+        self.lines.extend(tail.into_iter().map(|(mut r, k)| {
+            sh.range(&mut r);
+            (r, k)
+        }));
+        let line = |ix: usize| {
+            if ix <= last {
+                ix.min(new_last)
+            } else {
+                ix - last + new_last
+            }
+        };
+        let line_range = |r: &mut Range<usize>| {
+            let keep = r.end <= first || r.start > last || (r.start <= first && r.end > last);
+            if r.start > last {
+                r.start = line(r.start);
+            }
+            if r.end > last {
+                r.end = line(r.end - 1) + 1;
+            }
+            keep
+        };
+
+        self.conceals.retain_mut(|c| {
+            let keep =
+                sh.keeps(&(c.owner.start.min(c.hidden.start)..c.owner.end.max(c.hidden.end)));
+            sh.range(&mut c.owner);
+            sh.range(&mut c.hidden);
+            keep
+        });
+        self.wiki_links.retain_mut(|l| {
+            let keep = sh.keeps(&l.range);
+            sh.range(&mut l.range);
+            sh.range(&mut l.target);
+            if let Some(alias) = &mut l.alias {
+                sh.range(alias);
+            }
+            keep
+        });
+        self.footnotes.retain_mut(|f| {
+            let keep = sh.keeps(&f.range);
+            sh.range(&mut f.range);
+            sh.range(&mut f.label);
+            keep
+        });
+        self.tasks.retain_mut(|t| {
+            let keep = sh.keeps(&t.marker);
+            sh.range(&mut t.marker);
+            keep
+        });
+        self.images.retain_mut(|im| {
+            let keep = sh.keeps(&im.range);
+            sh.range(&mut im.range);
+            sh.range(&mut im.src);
+            keep
+        });
+        self.marks.retain_mut(|m| {
+            let keep = sh.keeps(&m.range);
+            sh.range(&mut m.range);
+            keep
+        });
+        self.maths.retain_mut(|m| {
+            let keep = sh.keeps(&m.range);
+            sh.range(&mut m.range);
+            sh.range(&mut m.content);
+            keep
+        });
+        self.metadata.retain_mut(|r| {
+            let keep = sh.keeps(r);
+            sh.range(r);
+            keep
+        });
+        let mut items = std::mem::take(&mut self.items);
+        items.retain_mut(|it| {
+            let keep = sh.keeps(&it.marker);
+            sh.range(&mut it.marker);
+            it.line = if it.line < first {
+                it.line
+            } else if it.line > last {
+                line(it.line)
+            } else {
+                self.line_of(it.marker.start)
+            };
+            keep
+        });
+        self.items = items;
+        self.callouts.retain_mut(|c| line_range(&mut c.lines));
+        self.tables.retain_mut(|t| line_range(t) && t.len() >= 2);
+    }
+
     pub fn line_of(&self, offset: usize) -> usize {
         self.lines
             .partition_point(|(r, _)| r.start <= offset)
@@ -1206,6 +1395,134 @@ pub fn list_prefix(line: &str) -> Option<(usize, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Everything the editor indexes with must be in bounds for `text`.
+    fn assert_usable(a: &Analysis, text: &str) {
+        assert_eq!(a.flags.len(), text.len());
+        let fresh: Vec<_> = Analyzer::new()
+            .analyze(text)
+            .lines
+            .into_iter()
+            .map(|l| l.0)
+            .collect();
+        assert_eq!(
+            a.lines.iter().map(|l| l.0.clone()).collect::<Vec<_>>(),
+            fresh
+        );
+        let ok = |r: &Range<usize>| {
+            assert!(r.start <= r.end && r.end <= text.len(), "{r:?}");
+            assert!(text.is_char_boundary(r.start) && text.is_char_boundary(r.end));
+        };
+        for c in &a.conceals {
+            ok(&c.owner);
+            ok(&c.hidden);
+        }
+        for l in &a.wiki_links {
+            ok(&l.range);
+            ok(&l.target);
+            l.alias.iter().for_each(ok);
+        }
+        for f in &a.footnotes {
+            ok(&f.range);
+            ok(&f.label);
+        }
+        a.tasks.iter().for_each(|t| ok(&t.marker));
+        for im in &a.images {
+            ok(&im.range);
+            ok(&im.src);
+        }
+        a.marks.iter().for_each(|m| ok(&m.range));
+        for m in &a.maths {
+            ok(&m.range);
+            ok(&m.content);
+        }
+        a.metadata.iter().for_each(ok);
+        for it in &a.items {
+            ok(&it.marker);
+            assert_eq!(it.line, a.line_of(it.marker.start));
+        }
+        assert!(a.items.windows(2).all(|w| w[0].line <= w[1].line));
+        assert!(
+            a.conceals
+                .windows(2)
+                .all(|w| w[0].hidden.start <= w[1].hidden.start)
+        );
+        for r in a.callouts.iter().map(|c| &c.lines).chain(&a.tables) {
+            assert!(r.start < r.end && r.end <= a.lines.len(), "{r:?}");
+        }
+    }
+
+    const SAMPLE: &str = "---\ntitle: x\n---\n# Título\n\nSome **bold** and _itálico_ ==mark== \
+        [[Note|alias]] ![img](a.png) $x^2$ text[^1].\n\n- item one\n  - [ ] task ß\n- [x] done\n\n\
+        > [!tip] Callout\n> body\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n```rust\nfn main() {}\n```\n\n\
+        [^1]: note İ\n";
+
+    #[test]
+    fn rebase_stays_usable_after_any_edit() {
+        let bounds: Vec<usize> = (0..=SAMPLE.len())
+            .filter(|&i| SAMPLE.is_char_boundary(i))
+            .collect();
+        let mut seed = 7u64;
+        let mut next = |n: usize| {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) as usize % n
+        };
+        let inserts = ["", "x", "\n", "é", "**", "| ", "\n\n- ", "[[", "ab\ncd\nef"];
+        for _ in 0..4000 {
+            let a = bounds[next(bounds.len())];
+            let b = bounds[next(bounds.len())];
+            let (from, to) = (a.min(b), if next(3) == 0 { a.max(b) } else { a.min(b) });
+            let to = to.min(from + 40);
+            let to = *bounds.iter().find(|&&i| i >= to).unwrap();
+            let new = format!(
+                "{}{}{}",
+                &SAMPLE[..from],
+                inserts[next(inserts.len())],
+                &SAMPLE[to..]
+            );
+            let mut an = Analyzer::new().analyze(SAMPLE);
+            an.rebase(SAMPLE, &new);
+            assert_usable(&an, &new);
+            // A second edit on top of the rebased state.
+            let cut = new.len() / 2;
+            let cut = (cut..=new.len())
+                .find(|&i| new.is_char_boundary(i))
+                .unwrap();
+            let newer = format!("{}z{}", &new[..cut], &new[cut..]);
+            an.rebase(&new, &newer);
+            assert_usable(&an, &newer);
+        }
+    }
+
+    #[test]
+    fn rebase_keeps_styling_away_from_the_edit() {
+        let old = "# Head\n\n**bold** plain [[Link]]\n";
+        let new = "# Head\n\nnew line\n\n**bold** plain [[Link]]\n";
+        let mut a = Analyzer::new().analyze(old);
+        a.rebase(old, new);
+        let fresh = Analyzer::new().analyze(new);
+        assert_eq!(a.flags, fresh.flags);
+        assert_eq!(a.conceals, fresh.conceals);
+        assert_eq!(a.wiki_links[0].range, fresh.wiki_links[0].range);
+        assert_eq!(a.lines[0].1, Kind::Heading(1));
+        // Typing inside bold stays bold until the real parse lands.
+        let typed = "# Head\n\n**boXld** plain [[Link]]\n";
+        let mut a = Analyzer::new().analyze(old);
+        a.rebase(old, typed);
+        assert_ne!(a.flags[typed.find('X').unwrap()] & BOLD, 0);
+        assert_eq!(a.conceals.len(), fresh.conceals.len());
+    }
+
+    #[test]
+    fn changed_span_snaps_to_char_boundaries() {
+        // `é` → `è` share their first byte.
+        assert_eq!(changed_span("aéb", "aèb"), (1, 3, 3));
+        assert_eq!(changed_span("abc", "abc"), (3, 3, 3));
+        assert_eq!(changed_span("aa", "aaa"), (2, 2, 3));
+        assert_eq!(changed_span("abc", ""), (0, 3, 0));
+    }
 
     fn shown(text: &str, cursor: usize) -> String {
         let a = Analyzer::new().analyze(text);

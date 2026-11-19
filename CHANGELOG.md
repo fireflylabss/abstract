@@ -6,6 +6,12 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Typing in large notes no longer re-parses the whole note on every key:
+  past 16 KiB the Markdown is parsed in the background and the styling is
+  shifted around the edit until the result lands (1 MB note: ~390 ms of
+  parsing per key before, under 1 ms now).
+
 ## [0.1.5] - 2026-10-06
 
 ### Added
