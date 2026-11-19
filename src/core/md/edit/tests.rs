@@ -283,6 +283,73 @@ fn links_wrap_and_toggle_labels_or_whole_links_without_navigation() {
 }
 
 #[test]
+fn line_commands_preserve_crlf_and_unicode_selections() {
+    for (source, anchor, focus, cmd, expected, expected_selection) in [
+        (
+            "one\r\ntwo",
+            1,
+            1,
+            Command::MoveLines { down: true },
+            "two\r\none",
+            Selection {
+                anchor: 6,
+                focus: 6,
+            },
+        ),
+        (
+            "one\r\ntwo",
+            6,
+            6,
+            Command::MoveLines { down: false },
+            "two\r\none",
+            Selection {
+                anchor: 1,
+                focus: 1,
+            },
+        ),
+        (
+            "café\r\ntwo\r\n",
+            0,
+            5,
+            Command::DuplicateLines,
+            "café\r\ncafé\r\ntwo\r\n",
+            Selection {
+                anchor: 7,
+                focus: 12,
+            },
+        ),
+        (
+            "one\r\ncafé",
+            10,
+            7,
+            Command::DuplicateLines,
+            "one\r\ncafé\r\ncafé",
+            Selection {
+                anchor: 17,
+                focus: 14,
+            },
+        ),
+    ] {
+        assert_eq!(
+            apply(source, anchor, focus, cmd),
+            (expected.into(), expected_selection)
+        );
+    }
+    assert_eq!(
+        apply("a\r\nb\r\nc", 0, 4, Command::MoveLines { down: true }).0,
+        "c\r\na\r\nb"
+    );
+    assert_eq!(
+        apply("a\r\nb\r\nc", 3, 7, Command::MoveLines { down: false }).0,
+        "b\r\nc\r\na"
+    );
+    assert_eq!(
+        apply("a\r\nb\r\nc", 0, 4, Command::DuplicateLines).0,
+        "a\r\nb\r\na\r\nb\r\nc"
+    );
+}
+
+#[test]
 fn italic_toggle_distinguishes_bold_and_combined_asterisk_runs() {
     for (source, marker, expected) in [
         ("**word**", "*", "***word***"),

@@ -5,19 +5,28 @@
 
 use std::ops::Range;
 
-/// Byte ranges of `text`'s lines, `\n`s excluded — the `Analysis::lines`
-/// model, so a trailing `\n` leaves a final empty line.
+/// Byte ranges of `text`'s lines, line endings excluded. A trailing
+/// newline leaves a final empty line.
 fn lines(text: &str) -> Vec<Range<usize>> {
     let mut out = Vec::new();
     let mut start = 0;
     for (i, b) in text.bytes().enumerate() {
         if b == b'\n' {
-            out.push(start..i);
+            let end = if i > start && text.as_bytes()[i - 1] == b'\r' {
+                i - 1
+            } else {
+                i
+            };
+            out.push(start..end);
             start = i + 1;
         }
     }
     out.push(start..text.len());
     out
+}
+
+fn newline(text: &str) -> &'static str {
+    if text.contains("\r\n") { "\r\n" } else { "\n" }
 }
 
 /// Index of the line containing `off` — `Analysis::line_of`'s rule.
@@ -51,6 +60,7 @@ pub fn move_sel(
     let b = touched(&lines, sel);
     let (first, last) = (lines[b.start].clone(), lines[b.end - 1].clone());
     let block = &text[first.start..last.end];
+    let newline = newline(text);
     if down {
         let next = lines.get(b.end)?.clone();
         // A trailing '\n' leaves a final empty line — moving onto it would
@@ -58,11 +68,11 @@ pub fn move_sel(
         if next.start == text.len() {
             return None;
         }
-        let shift = next.len() + 1;
+        let shift = next.len() + newline.len();
         let sel = (sel.start + shift).min(next.end)..(sel.end + shift).min(next.end);
         Some((
             first.start..next.end,
-            format!("{}\n{block}", &text[next]),
+            format!("{}{newline}{block}", &text[next]),
             sel,
         ))
     } else {
@@ -70,7 +80,7 @@ pub fn move_sel(
         let shift = first.start - prev.start;
         Some((
             prev.start..last.end,
-            format!("{block}\n{}", &text[prev]),
+            format!("{block}{newline}{}", &text[prev]),
             sel.start - shift..sel.end - shift,
         ))
     }
@@ -83,11 +93,12 @@ pub fn duplicate_sel(text: &str, sel: &Range<usize>) -> (Range<usize>, String, R
     let b = touched(&lines, sel);
     let (first, last) = (lines[b.start].clone(), lines[b.end - 1].clone());
     let block = &text[first.start..last.end];
-    let copy_end = last.end + 1 + block.len();
-    let shift = last.end + 1 - first.start;
+    let newline = newline(text);
+    let copy_end = last.end + newline.len() + block.len();
+    let shift = last.end + newline.len() - first.start;
     (
         last.end..last.end,
-        format!("\n{block}"),
+        format!("{newline}{block}"),
         (sel.start + shift).min(copy_end)..(sel.end + shift).min(copy_end),
     )
 }
