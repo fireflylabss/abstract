@@ -23,6 +23,8 @@ pub struct Cache {
     clock: u64,
     #[cfg(test)]
     misses: usize,
+    #[cfg(test)]
+    span_visits: usize,
 }
 
 impl Cache {
@@ -50,7 +52,13 @@ impl Cache {
                 .iter()
                 .map(|l| &l.range)
                 .chain(analysis.images.iter().map(|i| &i.src))
-                .chain(analysis.maths.iter().map(|m| &m.range))
+                .chain(analysis.maths_overlapping(range).iter().map(|m| {
+                    #[cfg(test)]
+                    {
+                        self.span_visits += 1;
+                    }
+                    &m.range
+                }))
                 .filter(|r| r.start < range.end && range.start < r.end)
             {
                 (

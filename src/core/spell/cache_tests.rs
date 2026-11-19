@@ -79,6 +79,22 @@ fn repeated_large_documents_reuse_cached_lines() {
 }
 
 #[test]
+fn math_heavy_notes_visit_only_overlapping_spans() {
+    for count in [512, 1024] {
+        let text = (0..count)
+            .map(|i| format!("wrng $x + {i}$\n"))
+            .collect::<String>();
+        let mut cache = Cache::default();
+        assert_eq!(cache.check(&text, &engine(), Langs::EN).len(), count);
+        assert!(
+            cache.span_visits <= count * 2,
+            "{} visits for {count} spans",
+            cache.span_visits
+        );
+    }
+}
+
+#[test]
 fn cache_is_bounded_by_entries_and_bytes() {
     let text = (0..MAX_LINES + 10)
         .map(|i| format!("word{i}\n"))
