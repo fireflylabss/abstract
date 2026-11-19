@@ -164,7 +164,7 @@ fn button(label: &str, key: &str, p: theme::Palette) -> El {
         .label(label)
         .focusable(true)
         .font(TextStyle::new(13., 500.))
-        .padding(7.)
+        .padding(8.)
         .color(rgb(p.fg))
         .hover(rgb(p.hover))
         .on_key(panel_key)

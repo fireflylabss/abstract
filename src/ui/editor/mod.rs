@@ -1,5 +1,6 @@
 pub mod analysis;
 mod keys;
+pub(crate) use keys::{command, restore};
 mod spans;
 
 use rune::{El, text_input};

@@ -99,6 +99,7 @@ pub struct State {
     attachments: attachments::Attachments,
     spelling: spelling::SpellUi,
     services: services::Services,
+    palette: palette::Palette,
 }
 
 impl Default for State {
@@ -129,6 +130,7 @@ impl State {
         let settings_path = settings.snapshot().0;
         let sidebar_open = session.sidebar_open().unwrap_or(true);
         Self {
+            palette: palette::Palette::default(),
             spelling: spelling::SpellUi::new(settings.snapshot().0.with_file_name("userdict")),
             services: services::Services::new(true),
             file_ops: file_ops::FileOps::default(),
@@ -607,6 +609,7 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
             .child(settings::resize_handle(palette));
     }
     let mut root = col()
+        .key("app")
         .w_full()
         .h_full()
         .child(settings::surface(
@@ -632,6 +635,9 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
         root = root.child(overlay);
     }
     if let Some(overlay) = spelling::overlay(state, palette) {
+        root = root.child(overlay);
+    }
+    if let Some(overlay) = self::palette::overlay(state, cx, palette) {
         root = root.child(overlay);
     }
     root
@@ -696,3 +702,8 @@ pub(super) mod services;
 
 #[path = "snapshot_scenes.rs"]
 mod snapshot_scenes;
+
+#[path = "commands.rs"]
+pub(super) mod commands;
+#[path = "palette.rs"]
+pub(super) mod palette;

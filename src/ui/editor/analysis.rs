@@ -1,8 +1,38 @@
+use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use crate::core::md::{Analysis, Analyzer};
 
 pub const ASYNC_THRESHOLD: usize = 64 * 1024;
+
+type Job = (String, mpsc::Sender<Analysis>);
+static WORKER: Mutex<Option<mpsc::Sender<Job>>> = Mutex::new(None);
+#[cfg(test)]
+static WORKER_STARTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn worker() -> mpsc::Sender<Job> {
+    let (tx, rx) = mpsc::channel::<Job>();
+    #[cfg(test)]
+    WORKER_STARTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::thread::spawn(move || {
+        let mut analyzer = Analyzer::new();
+        for (source, reply) in rx {
+            let _ = reply.send(analyzer.analyze(&source));
+        }
+    });
+    tx
+}
+
+fn background(source: String) -> Receiver<Analysis> {
+    let (tx, reply) = mpsc::channel();
+    let mut shared = WORKER.lock().unwrap();
+    let worker = shared.get_or_insert_with(worker);
+    if let Err(error) = worker.send((source, tx)) {
+        *worker = self::worker();
+        let _ = worker.send(error.0);
+    }
+    reply
+}
 
 enum State {
     Empty,
@@ -31,7 +61,7 @@ impl Cache {
 
     pub fn update(&mut self, source: &str, revision: u64) {
         match &self.state {
-            State::Running { .. } if source.len() >= ASYNC_THRESHOLD => return,
+            State::Running { .. } => return,
             State::Ready { revision: old, .. } if *old == revision => return,
             _ => {}
         }
@@ -41,12 +71,7 @@ impl Cache {
                 analysis: Box::new(self.analyzer.analyze(source)),
             };
         } else {
-            let source = source.to_owned();
-            let (tx, reply) = mpsc::channel();
-            std::thread::spawn(move || {
-                let result = Analyzer::new().analyze(&source);
-                let _ = tx.send(result);
-            });
+            let reply = background(source.to_owned());
             self.state = State::Running { revision, reply };
         }
     }
@@ -73,10 +98,8 @@ impl Cache {
                 true
             }
             Err(TryRecvError::Disconnected) => {
-                self.state = State::Ready {
-                    revision,
-                    analysis: Box::default(),
-                };
+                self.state = State::Empty;
+                self.update(source, revision);
                 true
             }
             Err(TryRecvError::Empty) => false,

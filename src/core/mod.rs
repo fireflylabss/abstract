@@ -6,6 +6,7 @@ pub mod code;
 pub mod crash;
 pub mod find;
 pub mod footnote;
+pub mod fuzzy;
 pub mod html;
 pub mod i18n;
 pub mod lines;

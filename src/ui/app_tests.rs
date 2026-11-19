@@ -23,6 +23,12 @@ mod export_tests;
 #[path = "spell_update_tests.rs"]
 mod spell_update_tests;
 
+#[path = "palette_tests.rs"]
+mod palette_tests;
+
+#[path = "performance_tests.rs"]
+mod performance_tests;
+
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture(PathBuf);
@@ -42,6 +48,7 @@ impl Fixture {
         let mut scans = Scans::new();
         scans.start(self.0.clone());
         let state = State {
+            palette: palette::Palette::default(),
             spelling: spelling::SpellUi::new(self.0.join("userdict")),
             services: services::Services::new(false),
             file_ops: file_ops::FileOps::default(),

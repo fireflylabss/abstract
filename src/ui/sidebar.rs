@@ -48,7 +48,7 @@ pub fn view(state: &State, p: Palette) -> El {
                 })
                 .focus_selected(selected)
                 .w_full()
-                .padding(7.)
+                .padding(8.)
                 .fill(if selected {
                     rgb(p.active)
                 } else {

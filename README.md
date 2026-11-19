@@ -76,6 +76,39 @@ cheap pointer-to-source-offset callback. Use `Cmd/Ctrl+Enter` instead.
 - Open tab order, active tab, cursors and scroll positions use the existing session
   format. Missing files are skipped during background restore.
 
+## Phase 5 command palette
+
+`Cmd/Ctrl+Shift+P` opens commands; `Cmd/Ctrl+P` quick-opens any note in the
+active space, including collapsed folders. Type `>` to switch to commands.
+Matching is a Unicode-safe scored subsequence; recent commands sort first.
+Up/Down selects, Enter activates and Escape dismisses. Shortcuts and the
+palette share one registry of localized labels, enabled predicates and actions.
+The overlay has a short, reduced-motion-aware entrance; query changes and
+keyboard navigation are instant. Recents are bounded and session-only.
+
+Large-note analysis uses the background/latest-wins fallback, not block-local
+incremental parsing: Markdown fences, references and byte-indexed decorations
+can change downstream blocks. A shared worker serializes background analysis
+across documents. Each document keeps at most one request outstanding even
+when edits shrink below and grow above the threshold; intervening revisions
+are skipped. Small notes remain synchronous below 64 KiB.
+
+The ignored `large_note_keystroke_medians` test measures 31 native text-input
+edits plus headless UI frames. Run it with
+`cargo test --release large_note_keystroke_medians -- --ignored --nocapture`.
+On macOS the measured medians were 2.024 ms for 200 KiB and 4.443 ms for 1 MiB.
+These are not display latency: spellcheck is disabled, with no GPU upload or
+presentation in the harness.
+
+Audit follow-up: B1/B2 are covered by non-replacing document loads, serialized
+reloads and surfaced read failures; B3/B4/B5 by ordered writes, revisioned
+acknowledgements, retry and recovery; B6 by collision-safe Undo; B7 by scan
+generations. B9/B10 use background exports with live buffers, B11 has portable
+safe names, B12 is disabled without a registered Discord ID, and B13 uses
+origin-mapped Unicode search. Existing regressions cover these retained fixes.
+B8 uses the bounded-in-flight fallback above; whole-document analysis and
+native editor undo/layout remain, rather than claiming fully incremental work.
+
 ## Phase 3 settings and customization
 
 `Cmd/Ctrl+,` opens a keyboard-accessible editor-area settings panel; Escape
@@ -273,7 +306,9 @@ cargo build --release
 | Settings | `Ctrl+,` | `Cmd+,` |
 | Toggle sidebar | `Ctrl+\` | `Cmd+\` |
 | Delete note | `Ctrl+Shift+Backspace` | `Cmd+Shift+Backspace` |
-| Search notes | `Ctrl+P` or `Ctrl+Shift+F` | `Cmd+P` or `Cmd+Shift+F` |
+| Quick-open note | `Ctrl+P` | `Cmd+P` |
+| Command palette | `Ctrl+Shift+P` | `Cmd+Shift+P` |
+| Search note contents | `Ctrl+Shift+F` | `Cmd+Shift+F` |
 | Find in note | `Ctrl+F` | `Cmd+F` |
 | Replace in note | `Ctrl+H` | `Cmd+Alt+F` |
 | Next / previous match | `F3` / `Shift+F3` | `Cmd+G` / `Cmd+Shift+G` |

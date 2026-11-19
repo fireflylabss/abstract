@@ -203,9 +203,9 @@ impl State {
         if matches!(self.file_ops.mode, Mode::Idle)
             && matches!(key.key, RuneKey::Function(2))
             && tx.focused() == Some("editor")
-            && let Some(path) = self.active.clone()
+            && self.active.is_some()
         {
-            self.rename_file(path, false, false, tx);
+            commands::run(self, "rename", tx);
             return true;
         }
         if matches!(key.key, RuneKey::Escape)
@@ -436,7 +436,7 @@ fn button(key: &str, label: &'static str, p: theme::Palette) -> El {
         .focusable(true)
         .font(TextStyle::new(12., 400.))
         .color(rgb(p.fg))
-        .padding(7.)
+        .padding(8.)
         .hover(rgb(p.hover))
 }
 

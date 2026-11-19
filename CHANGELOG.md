@@ -6,6 +6,8 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+- Add a shared-registry command palette and fuzzy quick-open for all notes, English/pt-BR labels, recent commands and keyboard navigation. Serialize background analysis through one shared worker and coalesce edits across size-threshold transitions.
+
 - Restore background English/pt-BR spellcheck with bounded changed-line caching, editor underlines, suggestions and a personal dictionary; restore signed background updates and local crash reports. Disable Discord until a registered application ID is available.
 
 - Restore HTML/PDF export from live tab buffers with background workers, native save dialogs, progress/error notices and embedded images; add collision-safe clipboard/drop image imports. Replace the legacy PDF writer with krilla and HarfRust.
