@@ -283,6 +283,35 @@ fn links_wrap_and_toggle_labels_or_whole_links_without_navigation() {
 }
 
 #[test]
+fn link_toggle_only_unwraps_one_complete_link() {
+    for source in [
+        "[one](a) and [two](b)",
+        "[one]() and [two]()",
+        "[one](a) trailing",
+    ] {
+        assert_eq!(
+            apply(source, 0, source.len(), Command::Link).0,
+            format!("[{source}]()")
+        );
+    }
+    for source in [
+        "[one](a)",
+        "[one](a(b)c)",
+        "[one [nested]](url)",
+        "[one\\]](url)",
+    ] {
+        let close = source.rfind("](").unwrap();
+        let label = &source[1..close];
+        assert_eq!(apply(source, 0, source.len(), Command::Link).0, label);
+        assert_eq!(apply(source, 1, close, Command::Link).0, label);
+    }
+    assert_eq!(
+        apply("[one](a) and [two](b)", 1, 17, Command::Link).0,
+        "[[one](a) and [two]()](b)"
+    );
+}
+
+#[test]
 fn legacy_line_commands_are_pure_edits_and_edge_moves_are_noops() {
     assert_eq!(
         apply("a\nb", 0, 0, Command::MoveLines { down: true }).0,

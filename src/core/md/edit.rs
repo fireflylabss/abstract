@@ -332,12 +332,10 @@ fn wrap(source: &str, selection: Selection, left: &str, right: &str) -> Edit {
 fn link(source: &str, selection: Selection) -> Edit {
     let sel = selection.range();
     let inner = &source[sel.clone()];
-    let label = inner
-        .strip_prefix('[')
-        .and_then(|s| s.split_once("]("))
-        .filter(|(_, url)| url.ends_with(')'))
-        .map(|(label, _)| label);
-    if let Some(label) = label {
+    if let Some((label, end)) = link_parts(inner)
+        && end == inner.len()
+    {
+        let label = &inner[label];
         return Edit {
             range: sel.clone(),
             text: label.into(),
@@ -348,11 +346,11 @@ fn link(source: &str, selection: Selection) -> Edit {
         };
     }
     if source[..sel.start].ends_with('[')
-        && let Some(after) = source[sel.end..].strip_prefix("](")
-        && let Some(end) = after.find(')')
+        && let Some((label, end)) = link_parts(&source[sel.start - 1..])
+        && sel.start - 1 + label.end == sel.end
     {
         return Edit {
-            range: sel.start - 1..sel.end + 3 + end,
+            range: sel.start - 1..sel.start - 1 + end,
             text: inner.into(),
             selection: Selection::from_range(
                 sel.start - 1..sel.end - 1,
@@ -360,7 +358,45 @@ fn link(source: &str, selection: Selection) -> Edit {
             ),
         };
     }
-    wrap(source, selection, "[", "]()")
+    Edit {
+        range: sel.clone(),
+        text: format!("[{inner}]()"),
+        selection: Selection::from_range(
+            sel.start + 1..sel.end + 1,
+            selection.anchor > selection.focus,
+        ),
+    }
+}
+
+fn link_parts(source: &str) -> Option<(Range<usize>, usize)> {
+    fn close(source: &str, open: u8, close: u8) -> Option<usize> {
+        let mut depth = 0usize;
+        let mut escaped = false;
+        for (i, byte) in source.bytes().enumerate() {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == open {
+                depth += 1;
+            } else if byte == close {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+        }
+        None
+    }
+    if !source.starts_with('[') {
+        return None;
+    }
+    let label_end = close(source, b'[', b']')?;
+    let url = &source[label_end + 1..];
+    if !url.starts_with('(') {
+        return None;
+    }
+    Some((1..label_end, label_end + 2 + close(url, b'(', b')')?))
 }
 
 #[cfg(test)]
