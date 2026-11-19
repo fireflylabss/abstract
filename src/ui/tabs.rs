@@ -39,6 +39,7 @@ impl State {
                         self.documents.remove(path);
                         self.tabs.close(path);
                         self.focus_tab(tx);
+                        self.start_search(tx);
                     }
                     Err(error) => self.error = Some(error),
                 }

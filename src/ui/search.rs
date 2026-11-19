@@ -30,6 +30,9 @@ impl State {
     }
 
     pub(super) fn start_search(&mut self, tx: &mut Tx) {
+        if self.search.is_none() {
+            return;
+        }
         let buffers = self.buffers();
         if let Some(search) = &mut self.search {
             search.selected = 0;

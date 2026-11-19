@@ -219,6 +219,48 @@ fn clean_external_deletion_can_be_closed() {
 }
 
 #[test]
+fn closing_a_clean_deleted_note_removes_its_search_result() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("Note.md");
+    std::fs::write(&path, "needle").unwrap();
+    let mut rt = fixture.runtime();
+    until(&mut rt, |s| s.document().is_some());
+    rt.update(|s, tx| {
+        s.open_search(tx);
+        s.search.as_mut().unwrap().query.insert("needle");
+        s.start_search(tx);
+    });
+    until(&mut rt, |s| !s.searching());
+    assert!(
+        rt.state
+            .search
+            .as_ref()
+            .unwrap()
+            .hits
+            .iter()
+            .any(|hit| hit.path == path)
+    );
+    std::fs::remove_file(&path).unwrap();
+    rt.update(|s, tx| {
+        s.external_change(Change {
+            path: path.clone(),
+            text: None,
+        });
+        s.close_tab(&path, tx);
+    });
+    until(&mut rt, |s| !s.searching());
+    assert!(
+        !rt.state
+            .search
+            .as_ref()
+            .unwrap()
+            .hits
+            .iter()
+            .any(|hit| hit.path == path)
+    );
+}
+
+#[test]
 fn dirty_external_deletion_can_be_explicitly_discarded() {
     let fixture = Fixture::new();
     let path = fixture.0.join("Note.md");
@@ -291,6 +333,7 @@ fn search_results_do_not_retain_renamed_paths() {
         )
     });
     until(&mut rt, |s| !s.files_busy());
+    until(&mut rt, |s| !s.searching());
     assert!(
         rt.state
             .search
@@ -299,6 +342,15 @@ fn search_results_do_not_retain_renamed_paths() {
             .hits
             .iter()
             .all(|hit| hit.path != path)
+    );
+    assert!(
+        rt.state
+            .search
+            .as_ref()
+            .unwrap()
+            .hits
+            .iter()
+            .any(|hit| hit.path == fixture.0.join("Moved.md"))
     );
 }
 
