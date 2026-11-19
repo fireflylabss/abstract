@@ -608,8 +608,11 @@ impl Session {
         }
     }
 
-    /// Blocking.
+    /// Blocking. Serialized: two overlapping saves share one temp file, and
+    /// the loser's rename would fail.
     pub fn save(&self) {
+        static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _write = WRITE.lock().unwrap_or_else(|e| e.into_inner());
         let file = session_file();
         if let Err(err) = write_atomic(&file, self.kv.serialize().as_bytes()) {
             eprintln!(
