@@ -48,7 +48,7 @@ fn link_alias_reuses_open_buffer_identity_and_unsaved_text() {
         s.follow_link(tx);
     });
     until(&mut rt, |s| !s.navigation.busy);
-    assert_eq!(rt.state.tabs.paths(), [path.clone()]);
+    assert_eq!(rt.state.tabs.paths(), std::slice::from_ref(&path));
     assert_eq!(rt.state.active.as_ref(), Some(&path));
     assert_eq!(rt.state.documents.len(), 1);
     assert!(rt.state.document().unwrap().edit.text.ends_with("unsaved"));
