@@ -32,8 +32,9 @@ pub(super) fn entries(s: &State) -> Vec<Entry> {
     let mut out = vec![];
     let query = open.query.text.trim_start();
     if let Some(query) = query.strip_prefix('>') {
+        let query = fuzzy::Query::new(query);
         for c in commands::ALL {
-            if let Some(score) = fuzzy::score(c.title(), query) {
+            if let Some(score) = query.score(c.title()) {
                 out.push(Entry {
                     title: c.title().into(),
                     detail: c.shortcut.into(),
@@ -56,7 +57,12 @@ pub(super) fn entries(s: &State) -> Vec<Entry> {
                 .then(a.title.cmp(&b.title))
         });
     } else {
-        fn visit(nodes: &[vault::Node], root: &std::path::Path, query: &str, out: &mut Vec<Entry>) {
+        fn visit(
+            nodes: &[vault::Node],
+            root: &std::path::Path,
+            query: &fuzzy::Query,
+            out: &mut Vec<Entry>,
+        ) {
             for node in nodes {
                 if node.is_folder() {
                     visit(&node.children, root, query, out);
@@ -66,7 +72,7 @@ pub(super) fn entries(s: &State) -> Vec<Entry> {
                         .strip_prefix(root)
                         .unwrap_or(&node.path)
                         .to_string_lossy();
-                    if let Some(score) = fuzzy::score(&path, query) {
+                    if let Some(score) = query.score(&path) {
                         out.push(Entry {
                             title: node.name.clone(),
                             detail: path.into_owned(),
@@ -79,7 +85,7 @@ pub(super) fn entries(s: &State) -> Vec<Entry> {
                 }
             }
         }
-        visit(&s.tree, &s.root, query, &mut out);
+        visit(&s.tree, &s.root, &fuzzy::Query::new(query), &mut out);
         out.sort_by(|a, b| {
             b.score
                 .cmp(&a.score)

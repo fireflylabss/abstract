@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn canonically_equivalent_filenames_match_in_both_directions() {
+    for (text, query) in [
+        ("Café.md", "Cafe\u{301}"),
+        ("Cafe\u{301}.md", "Café"),
+        ("Ação.md", "Ac\u{327}a\u{303}o"),
+    ] {
+        assert!(score(text, query).is_some(), "{text}: {query}");
+    }
+}
+
+#[test]
+fn oversized_queries_do_not_visit_candidate_positions() {
+    VISITS.with(|visits| visits.set(0));
+    assert_eq!(score(&"x".repeat(128), &"x".repeat(4096)), None);
+    assert_eq!(VISITS.with(|visits| visits.get()), 0);
+}
+
+#[test]
 fn empty_missing_and_ordered_subsequences() {
     assert_eq!(score("", ""), Some(0));
     assert_eq!(score("anything", " "), Some(0));
