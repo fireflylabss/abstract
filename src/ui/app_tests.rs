@@ -20,6 +20,9 @@ mod file_ops_tests;
 #[path = "export_tests.rs"]
 mod export_tests;
 
+#[path = "spell_update_tests.rs"]
+mod spell_update_tests;
+
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture(PathBuf);
@@ -39,9 +42,15 @@ impl Fixture {
         let mut scans = Scans::new();
         scans.start(self.0.clone());
         let state = State {
+            spelling: spelling::SpellUi::new(self.0.join("userdict")),
+            services: services::Services::new(false),
             file_ops: file_ops::FileOps::default(),
             customization: settings::Customization::new(&Settings::default()),
-            settings: Settings::default(),
+            settings: {
+                let mut settings = Settings::default();
+                settings.set_spellcheck(false);
+                settings
+            },
             root: self.0.clone(),
             tree: vec![],
             expanded: HashSet::new(),

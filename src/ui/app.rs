@@ -97,6 +97,8 @@ pub struct State {
     file_ops: file_ops::FileOps,
     export: export::ExportUi,
     attachments: attachments::Attachments,
+    spelling: spelling::SpellUi,
+    services: services::Services,
 }
 
 impl Default for State {
@@ -127,6 +129,8 @@ impl State {
         let settings_path = settings.snapshot().0;
         let sidebar_open = session.sidebar_open().unwrap_or(true);
         Self {
+            spelling: spelling::SpellUi::new(settings.snapshot().0.with_file_name("userdict")),
+            services: services::Services::new(true),
             file_ops: file_ops::FileOps::default(),
             customization: settings::Customization::new(&settings),
             settings,
@@ -239,6 +243,7 @@ impl State {
             delay,
         );
         doc.analysis.update(&doc.edit.text, doc.revision);
+        self.services.hold(path, doc.revision, &doc.edit.text);
         for effect in effects {
             if let Effect::WakeAt(due) = effect {
                 tx.wake_at(due);
@@ -327,6 +332,7 @@ impl State {
             if let Some(doc) = self.documents.get_mut(&completion.path) {
                 if completion.result.is_ok() {
                     doc.disk_hash = completion.disk_hash;
+                    self.services.saved(&completion.path, completion.revision);
                 }
                 if let Some(external) = completion.external {
                     self.file_ops
@@ -364,6 +370,8 @@ impl State {
         changed |= self.poll_attachments(tx);
         changed |= self.poll_file_ops(tx);
         changed |= self.poll_caret(now, tx);
+        changed |= self.poll_services(tx);
+        changed |= self.poll_spelling(tx);
         while let Ok(reply) = self.scans.replies.try_recv() {
             if !self.scans.generation.accepts(&reply) {
                 continue;
@@ -533,6 +541,8 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
     pane = pane.child(file_ops::notice(state, palette));
     pane = pane.child(export::notice(state, palette));
     pane = pane.child(attachments::notice(state, palette));
+    pane = pane.child(services::notice(state, palette));
+    pane = pane.child(services::crash_notice(state, palette));
     if !state.focus_mode && (state.tabs.paths().len() > 1 || state.settings.enabled("single_tab")) {
         pane = pane.child(settings::surface(
             tabs::view(state, palette),
@@ -617,28 +627,35 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
     if let Some(overlay) = file_ops::overlay(state, palette) {
         root = root.child(overlay);
     }
+    if let Some(overlay) = spelling::overlay(state, palette) {
+        root = root.child(overlay);
+    }
     root
 }
 
 pub fn run() {
+    crate::core::crash::install();
     rune::set_app_id("abstract");
     let settings = Settings::load();
     let family: &'static str = Box::leak(settings.preference("ui_font").into_boxed_str());
     let spec = AppSpec {
         fonts: FONTS,
         families: (family, "Noto Sans Mono"),
+        scenes: snapshot_scenes::ALL,
         poll: Some(State::poll),
         on_key: Some(keymap::handle),
         ..AppSpec::new("abstract", (1100., 760.), State::default, view)
     };
-    App::new(spec)
-        .window_options(rune::WindowOptions {
-            transparent: cfg!(target_os = "macos"),
-            ..Default::default()
-        })
-        .init(move || State::new(settings))
-        .on_quit(|s, _| s.shutdown())
-        .run();
+    let app = App::new(spec);
+    let handle = app.handle();
+    app.window_options(rune::WindowOptions {
+        transparent: cfg!(target_os = "macos"),
+        ..Default::default()
+    })
+    .init(move || State::new(settings))
+    .on_quit(|s, _| s.shutdown())
+    .on_ready(move |_| handle.update(|s, tx| s.services_ready(tx)))
+    .run();
 }
 
 #[cfg(test)]
@@ -666,3 +683,12 @@ pub(super) mod export;
 
 #[path = "attachments.rs"]
 pub(super) mod attachments;
+
+#[path = "spelling.rs"]
+pub(super) mod spelling;
+
+#[path = "services.rs"]
+pub(super) mod services;
+
+#[path = "snapshot_scenes.rs"]
+mod snapshot_scenes;

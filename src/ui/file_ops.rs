@@ -585,7 +585,14 @@ pub(super) fn overlay(s: &State, p: theme::Palette) -> Option<El> {
                             },
                         ),
                     )
-                    .child(if folder { col() } else { export::menu(path, p) }),
+                    .child(if folder { col() } else { export::menu(path, p) })
+                    .child(
+                        if !folder && s.active.as_ref() == Some(path) && s.settings.spellcheck() {
+                            spelling::menu(p)
+                        } else {
+                            col()
+                        },
+                    ),
             )
         }
         Mode::Rename {

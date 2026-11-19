@@ -10,6 +10,17 @@ pub fn shortcut(key: &KeyEvent, character: char) -> bool {
 }
 
 pub fn handle(state: &mut State, key: &KeyEvent, tx: &mut Tx) -> bool {
+    crate::core::crash::action("keyboard");
+    if state.update_restarting() {
+        return true;
+    }
+    if matches!(key.key, Key::Escape) && state.close_spell(tx) {
+        return true;
+    }
+    if matches!(key.key, Key::Function(7)) {
+        state.spell_suggestions(tx);
+        return true;
+    }
     if state.file_key(key, tx) {
         return true;
     }

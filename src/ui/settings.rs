@@ -49,6 +49,9 @@ impl State {
 
     fn set_preference(&mut self, p: Preference, value: &str, tx: &mut Tx) {
         self.settings.kv.set(p.key, &p.value(Some(value)));
+        if p.key == "updates" {
+            self.update_settings_changed(tx);
+        }
         if p.key == "editor_font" {
             self.customization.editor_family = prefs::FONTS
                 .iter()

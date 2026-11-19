@@ -11,7 +11,7 @@ use crate::ui::{
 };
 
 pub fn view(state: &State, palette: Palette) -> El {
-    if state.files_busy() {
+    if state.files_busy() || state.update_restarting() {
         return rune::text(t(Key::Saving))
             .key("file-operation-busy")
             .color(rgb(palette.dim))
@@ -37,6 +37,7 @@ pub fn view(state: &State, palette: Palette) -> El {
         })
         .unwrap_or_default();
     decorations.extend(state.find_spans(palette));
+    decorations.extend(state.spell_spans(palette));
     let opacity = if state.settings.glass() {
         state.settings.glass_text_opacity() as f32 / 100.
     } else {

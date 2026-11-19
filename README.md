@@ -9,7 +9,7 @@
 The `rune` branch is the staged Rune rewrite. The screenshots and packaged releases
 below show v0.1.5; the Rune build currently provides the Phase 1 skeleton and
 Phase 2a editing behaviours, Phase 2b tabs, Phase 2c find/search/links, Phase 3 settings,
-Phase 4a file operations and Phase 4b export/attachments described here.
+Phase 4a file operations, Phase 4b export/attachments and Phase 4c spellcheck/updates described here.
 
 ![abstract v0.1.5, light theme](docs/screenshot-light.png)
 
@@ -41,9 +41,8 @@ Your notes are plain `.md` files living in real folders on disk. No accounts, no
 The pure logic lives in `src/core/`, persistence in `src/io/`, and Rune views in
 `src/ui/`. Buffer, Markdown/code/footnote parsing, find, lines, smart editing, tables,
 vault, search, links, spaces, preferences, store and i18n compile now; later phases
-will wire their additional UI. Spell, updates, crash reporting and Discord sources are retained in `core/` but
-excluded from this build and their dependencies are not pulled in. Spell dictionary
-compression will also need restoring when spell is wired.
+will wire their additional UI. Spellcheck, signed updates and local crash reporting
+are enabled. Discord remains disabled and hidden: no registered application ID is configured.
 
 ## Phase 2a editing
 
@@ -99,7 +98,7 @@ Glass uses Rune's native macOS popover vibrancy behind translucent surface tints
 with the existing per-surface opacity/intensity and advanced tint/text settings.
 Other platforms keep opaque surfaces where Rune has no native material backend.
 Headless rendering shows the opaque fallback rather than desktop blur. Settings
-for unported tables, tour, exports, spelling, updates and Discord remain hidden.
+for unported tables, tour and Discord remain hidden.
 
 ## Phase 4a file operations
 
@@ -161,10 +160,23 @@ shaping, without a browser or the retired genpdf/printpdf dependency stack.
   Wiki aliases are supported. Pointer-following is not wired because the pinned
   Rune text input has no cheap pointer-to-source-offset callback.
 
-Images,
-exports, command
-palette and updater are not yet available. Settings/session/spaces file formats
+Inline editor images and the command palette are not yet available. Settings/session/spaces file formats
 remain compatible; window geometry restoration remains deferred.
+
+## Phase 4c spellcheck and local diagnostics
+
+- English and Brazilian Portuguese dictionaries check changed prose lines on a
+  background worker, with a cache capped at 2,048 lines / 2 MiB. Code, links,
+  URLs and front matter are excluded. Editor settings control spellcheck and its
+  language (automatic follows the app language; both dictionaries is also available).
+- **F7**, or **Spelling suggestions** in the editor context menu, offers replacements,
+  **Add to dictionary** (saved as `abstract/userdict` beside settings), and session-only
+  **Ignore word**. Replacements are undoable; stale worker results never decorate newer text.
+- The local panic hook saves a report and the newest pending edit under
+  `$XDG_STATE_HOME/abstract/crashes`. The next native launch offers a notice and a
+  copy-report action. Nothing is uploaded automatically. Native faults bypass the hook.
+- Discord Rich Presence is disabled, even with a retained `discord = on` setting,
+  because there is no registered application ID. Its setting stays hidden.
 
 ## Install
 
@@ -178,8 +190,12 @@ Prebuilt artifacts are attached to each [GitHub Release](https://github.com/fire
 
 ### Updates
 
-Automatic updates are not wired in the Rune Phase 1 build. Packaged v0.1.5 releases
-retain their previous updater; update package-managed installs with your package manager.
+After its first native frame, the app checks for a release at most daily when
+**Check for updates** is enabled. A non-modal notice offers release notes and,
+for supported standalone installs, **Update and restart**. Downloads are verified
+against minisign-signed SHA256 sums before installation; restart waits for saves
+and refuses unresolved conflicts. Development and package-managed installs are
+notify-only: update them the same way they were installed.
 
 ### Arch / CachyOS (AUR)
 

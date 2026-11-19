@@ -6,6 +6,8 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+- Restore background English/pt-BR spellcheck with bounded changed-line caching, editor underlines, suggestions and a personal dictionary; restore signed background updates and local crash reports. Disable Discord until a registered application ID is available.
+
 - Restore HTML/PDF export from live tab buffers with background workers, native save dialogs, progress/error notices and embedded images; add collision-safe clipboard/drop image imports. Replace the legacy PDF writer with krilla and HarfRust.
 
 - Add sidebar file operations, collision-safe Trash undo, portable filenames, and external-change detection with conflict notices.
