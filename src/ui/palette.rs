@@ -112,6 +112,7 @@ impl State {
             selected: 0,
             return_focus,
         });
+        tx.scroll_to_y("palette-results", 0.);
         tx.focus("palette-query", false);
     }
     pub fn close_palette(&mut self, tx: &mut Tx) {

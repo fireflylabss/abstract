@@ -60,6 +60,52 @@ fn follow_shortcut_in_settings_does_not_open_hidden_note_link() {
 }
 
 #[test]
+fn opening_and_switching_picker_resets_scrolling() {
+    let fixture = Fixture::new();
+    let mut rt = note_runtime(&fixture);
+    until(&mut rt, |s| !s.scanning);
+    rt.update(|s, tx| {
+        s.tree = (0..80)
+            .map(|i| vault::Node {
+                path: fixture.0.join(format!("Note {i:02}.md")),
+                name: format!("Note {i:02}"),
+                kind: vault::NodeKind::Note,
+                modified: std::time::SystemTime::UNIX_EPOCH,
+                children: vec![],
+            })
+            .collect();
+        s.open_palette(true, tx);
+        tx.instant();
+    });
+    rt.frame(1. / 60.);
+    rt.set_wheel_glide(false);
+    for reopen in [false, true] {
+        let viewport = rt.presented("palette-results").unwrap().0;
+        rt.wheel(viewport[0] + 8., viewport[1] + 8., -600.);
+        for _ in 0..10 {
+            rt.frame(1. / 60.);
+        }
+        rt.update(|s, tx| {
+            if reopen {
+                s.close_palette(tx);
+            }
+            s.open_palette(false, tx);
+            tx.instant();
+        });
+        for _ in 0..5 {
+            rt.frame(1. / 60.);
+        }
+        let first = rt
+            .presented("palette-row-0")
+            .expect("selection is mounted")
+            .0;
+        let viewport = rt.presented("palette-results").unwrap().0;
+        assert!(first[1] >= viewport[1] && first[1] + first[3] <= viewport[1] + viewport[3]);
+        assert_eq!(rt.state.palette.open.as_ref().unwrap().selected, 0);
+    }
+}
+
+#[test]
 fn pointer_can_scroll_and_open_notes_beyond_the_first_page() {
     let fixture = Fixture::new();
     let target = fixture.0.join("Note 20.md");
