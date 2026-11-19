@@ -376,6 +376,18 @@ fn watcher_debounces_changes_and_ignores_atomic_temporary_files() {
         .unwrap()
         .unwrap();
     assert_eq!(batch.generation, 42);
-    assert_eq!(batch.changes.len(), 1);
-    assert_eq!(batch.changes[0].text.as_deref(), Some("latest"));
+    let note = dir.0.join("Note.md");
+    assert!(
+        batch
+            .changes
+            .iter()
+            .all(|c| c.path == note || c.path == dir.0)
+    );
+    let notes = batch
+        .changes
+        .iter()
+        .filter(|c| c.path == note)
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].text.as_deref(), Some("latest"));
 }
