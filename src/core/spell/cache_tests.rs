@@ -59,6 +59,26 @@ fn math_is_excluded_and_context_changes_invalidate_cached_lines() {
 }
 
 #[test]
+fn repeated_large_documents_reuse_cached_lines() {
+    let text = (0..2058).map(|i| format!("wrng{i}\n")).collect::<String>();
+    let mut cache = Cache::default();
+    let engine = engine();
+    cache.check(&text, &engine, Langs::EN);
+    let misses = cache.misses;
+    let keys = cache
+        .lines
+        .keys()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    cache.check(&text, &engine, Langs::EN);
+    assert_eq!(cache.misses, misses);
+    assert_eq!(
+        cache.lines.keys().filter(|k| keys.contains(k)).count(),
+        keys.len()
+    );
+}
+
+#[test]
 fn cache_is_bounded_by_entries_and_bytes() {
     let text = (0..MAX_LINES + 10)
         .map(|i| format!("word{i}\n"))

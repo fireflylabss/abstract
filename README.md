@@ -166,7 +166,7 @@ remain compatible; window geometry restoration remains deferred.
 ## Phase 4c spellcheck and local diagnostics
 
 - English and Brazilian Portuguese dictionaries check changed prose lines on a
-  background worker, with a cache capped at 2,048 lines / 2 MiB. Code, links,
+  background worker, with a document-sized LRU cache capped at 2 MiB including entry overhead. Code, links,
   URLs and front matter are excluded. Editor settings control spellcheck and its
   language (automatic follows the app language; both dictionaries is also available).
 - **F7**, or **Spelling suggestions** in the editor context menu, offers replacements,
