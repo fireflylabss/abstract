@@ -4,6 +4,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn rollback_keeps_foreign_entries_in_a_partly_restored_directory() {
+    let dir = Dir::new();
+    let root = dir.0.join("restored");
+    fs::create_dir(&root).unwrap();
+    let owned = root.join("owned.md");
+    let foreign = root.join("foreign.md");
+    fs::write(&owned, "ours").unwrap();
+    fs::write(&foreign, "theirs").unwrap();
+    rollback(&[(root.clone(), true), (owned.clone(), false)]);
+    assert!(!owned.exists());
+    assert_eq!(fs::read_to_string(foreign).unwrap(), "theirs");
+}
+
+#[test]
 fn unchanged_rename_preserves_the_latest_save_baseline() {
     use crate::io::writer::{Snapshot, Writer, hash};
     let dir = Dir::new();

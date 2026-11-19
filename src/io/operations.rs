@@ -134,6 +134,7 @@ fn restore(backup: Backup) -> io::Result<PathBuf> {
             Err(e) => return Err(e),
             Ok(file) => file,
         };
+        let mut created = vec![(path.clone(), backup.directory)];
         let result = (|| -> io::Result<()> {
             if let Some(mut file) = file {
                 if let Some((_, Some(content))) = backup.entries.first() {
@@ -153,25 +154,33 @@ fn restore(backup: Backup) -> io::Result<PathBuf> {
                     } else {
                         &target
                     })?;
+                    created.push((target, false));
                     file.write_all(content)?;
                     file.sync_all()?;
                 } else if !rel.as_os_str().is_empty() {
                     fs::create_dir(&target)?;
+                    created.push((target, true));
                 }
             }
             Ok(())
         })();
         if let Err(error) = result {
-            if backup.directory {
-                let _ = fs::remove_dir_all(&path);
-            } else {
-                let _ = fs::remove_file(&path);
-            }
+            rollback(&created);
             return Err(error);
         }
         return Ok(path);
     }
     unreachable!()
+}
+
+fn rollback(created: &[(PathBuf, bool)]) {
+    for (path, directory) in created.iter().rev() {
+        if *directory {
+            let _ = fs::remove_dir(path);
+        } else {
+            let _ = fs::remove_file(path);
+        }
+    }
 }
 
 pub fn execute(operation: Operation) -> Result<Outcome, String> {
