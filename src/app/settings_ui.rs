@@ -1084,7 +1084,7 @@ impl AbstractApp {
                     .child(t(Key::FontHint)),
             )
             .child(font_rows)
-            .child(
+            .children(crate::discord::AVAILABLE.then(|| {
                 toggle(
                     "discord-presence",
                     t(Key::DiscordPresence),
@@ -1093,8 +1093,8 @@ impl AbstractApp {
                     window,
                     cx,
                 )
-                .on_click(cx.listener(move |this, _, _, cx| this.set_discord(!discord, cx))),
-            )
+                .on_click(cx.listener(move |this, _, _, cx| this.set_discord(!discord, cx)))
+            }))
             .child(
                 toggle(
                     "spellcheck-toggle",

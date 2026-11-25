@@ -34,8 +34,9 @@ minisign-verify = "=0.2.5"
 sha2 = "0.10"
 arboard = { version = "=3.6.1", default-features = false }
 pulldown-latex = "0.8"
-genpdf = { version = "0.2.0", features = ["images"] }
-image = "0.23"
+krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
+harfrust = "0.12"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 spellbook = "0.4"
 

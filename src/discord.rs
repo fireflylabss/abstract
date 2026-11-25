@@ -9,9 +9,13 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::i18n::{Key, t};
 
-/// Rich Presence needs a registered Discord application id; this placeholder
-/// keeps the wire format right until a real one exists.
-const CLIENT_ID: &str = "abstract";
+/// Rich Presence needs a registered Discord application id. Until one
+/// exists presence stays off whatever the setting says, and the setting is
+/// not offered.
+const CLIENT_ID: Option<&str> = None;
+
+/// Whether presence can work at all (a real application id is compiled in).
+pub(crate) const AVAILABLE: bool = CLIENT_ID.is_some();
 /// How often a disconnected worker may try the socket again.
 const RETRY: Duration = Duration::from_secs(30);
 
@@ -33,6 +37,7 @@ impl Presence {
 
     /// `false` disconnects and stops the worker entirely.
     pub fn set_enabled(&mut self, on: bool) {
+        let on = on && AVAILABLE;
         match (on, self.0.take()) {
             (true, None) => {
                 let (tx, rx) = mpsc::channel();
@@ -110,10 +115,11 @@ type Socket = std::fs::File;
 impl Ipc {
     /// First socket that opens and accepts the handshake wins.
     fn connect() -> Result<Self> {
+        let client_id = CLIENT_ID.ok_or_else(|| std::io::Error::other("Discord is disabled"))?;
         let mut last = std::io::Error::new(std::io::ErrorKind::NotFound, "no discord-ipc socket");
         for path in socket_paths() {
             match open(&path).and_then(|mut s| {
-                s.write_all(&frame(0, &handshake_json(CLIENT_ID)))?;
+                s.write_all(&frame(0, &handshake_json(client_id)))?;
                 s.flush()?;
                 Ok(Self(s))
             }) {
@@ -242,6 +248,12 @@ mod tests {
         assert_eq!(escape("a\"b\\c\nd\te"), "a\\\"b\\\\c\\nd\\te");
         assert_eq!(escape("\u{1}"), "\\u0001");
         assert_eq!(escape("puro ç ão"), "puro ç ão");
+    }
+
+    #[test]
+    fn presence_stays_off_without_an_application_id() {
+        let p = Presence::new(true);
+        assert_eq!(p.0.is_some(), AVAILABLE);
     }
 
     #[test]
