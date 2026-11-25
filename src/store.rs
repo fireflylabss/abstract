@@ -243,6 +243,24 @@ impl Settings {
         self.kv.set("smart_quotes", if on { "on" } else { "off" });
     }
 
+    /// `auto_pairs = off` stops brackets and quotes closing themselves.
+    pub fn auto_pairs(&self) -> bool {
+        self.kv.get("auto_pairs") != Some("off")
+    }
+
+    pub fn set_auto_pairs(&mut self, on: bool) {
+        self.kv.set("auto_pairs", if on { "on" } else { "off" });
+    }
+
+    /// `show_syntax = on` keeps markdown markers visible on every line.
+    pub fn show_syntax(&self) -> bool {
+        self.kv.get("show_syntax") == Some("on")
+    }
+
+    pub fn set_show_syntax(&mut self, on: bool) {
+        self.kv.set("show_syntax", if on { "on" } else { "off" });
+    }
+
     /// Blocking.
     pub fn save(&self) {
         let file = settings_file();

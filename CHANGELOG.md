@@ -6,6 +6,18 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Brackets and quotes close themselves while typing: `(`, `[`, `{`, `"` and
+  `'` insert their pair (or wrap the selection), typing the closer steps over
+  it and Backspace removes an empty pair. Off under Settings → Editor; with
+  smart quotes on, quotes keep their typographic substitution instead.
+- `Tab` / `Shift+Tab` indent and outdent the list items the selection touches.
+- `Cmd/Ctrl`+`Enter` checks or unchecks the task on the caret's line.
+- `Alt`+`Enter` follows the [[wiki-link]] (or footnote) under the caret.
+- `F7` opens the spelling suggestions for the misspelled word under the
+  caret, or the next one after it.
+- "Always show syntax" setting: markdown markers stay visible on every line.
+
 ## [0.1.5] - 2026-10-06
 
 ### Added

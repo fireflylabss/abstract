@@ -6,6 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -144,6 +145,9 @@ actions!(
         MoveLinesDown,
         DuplicateLines,
         SelectNextOccurrence,
+        ToggleTask,
+        FollowLink,
+        SpellSuggest,
     ]
 );
 
@@ -239,6 +243,10 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-d", DuplicateLines, c),
         KeyBinding::new("ctrl-d", SelectNextOccurrence, c),
         KeyBinding::new("cmd-d", SelectNextOccurrence, c),
+        KeyBinding::new("ctrl-enter", ToggleTask, c),
+        KeyBinding::new("cmd-enter", ToggleTask, c),
+        KeyBinding::new("alt-enter", FollowLink, c),
+        KeyBinding::new("f7", SpellSuggest, c),
     ]);
 }
 
@@ -307,6 +315,16 @@ pub struct LiveEditor {
     /// `(inserted range, original)` of the last substitution: a Backspace
     /// right at its end restores the straight characters.
     last_subst: Option<(Range<usize>, &'static str)>,
+    /// Brackets and quotes close themselves while typing (the setting).
+    auto_pairs: bool,
+    /// Caret offset between a pair just auto-closed: a Backspace there
+    /// removes both halves.
+    last_pair: Option<usize>,
+    /// Markdown syntax stays visible everywhere, not only under the
+    /// selection (the setting).
+    show_syntax: bool,
+    /// F7 asks the context menu to open at this window position.
+    menu_at: Rc<Cell<Option<Point<Pixels>>>>,
     /// Focus mode: dim text outside the caret's block and keep the caret
     /// centered on move (manual scroll stays free).
     focus_mode: bool,
@@ -357,6 +375,10 @@ impl LiveEditor {
             max_col: TextWidth::Medium.max_col(),
             smart_quotes: true,
             last_subst: None,
+            auto_pairs: true,
+            last_pair: None,
+            show_syntax: false,
+            menu_at: Rc::default(),
             focus_mode: false,
             dim_fade: RefCell::default(),
             col_anim: Cell::new(None),
@@ -465,6 +487,17 @@ impl LiveEditor {
     }
 
     /// Focus mode flag from the app; entering asks for a recenter.
+    pub fn set_auto_pairs(&mut self, on: bool) {
+        self.auto_pairs = on;
+    }
+
+    pub fn set_show_syntax(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.show_syntax != on {
+            self.show_syntax = on;
+            cx.notify();
+        }
+    }
+
     pub fn set_focus_mode(&mut self, on: bool, cx: &mut Context<Self>) {
         if self.focus_mode != on {
             self.focus_mode = on;
@@ -991,7 +1024,19 @@ impl LiveEditor {
 
     /// Replace the completion prefix with `target]]`.
     pub fn complete_wiki(&mut self, range: Range<usize>, target: &str, cx: &mut Context<Self>) {
-        self.edit(range, &format!("{target}]]"), None, cx);
+        // An auto-closed `]]` right after the prefix is replaced, not doubled.
+        let end = if self.buf.text()[range.end..].starts_with("]]") {
+            range.end + 2
+        } else {
+            range.end
+        };
+        let caret = range.start + target.len() + 2;
+        self.edit(
+            range.start..end,
+            &format!("{target}]]"),
+            Some(caret..caret),
+            cx,
+        );
     }
 
     /// Caret bottom-left in editor-element coordinates (popup anchor).
@@ -1020,6 +1065,7 @@ impl LiveEditor {
         self.goal_x = None;
         self.last_edit = Some(Instant::now());
         self.last_subst = None;
+        self.last_pair = None;
         cx.emit(Changed);
         cx.notify();
     }
@@ -1032,6 +1078,15 @@ impl LiveEditor {
             && r.end == self.buf.cursor()
         {
             self.edit(r, orig, None, cx);
+            return;
+        }
+        let c = self.buf.cursor();
+        if self.buf.sel().is_empty()
+            && self.last_pair == Some(c)
+            && crate::pairs::inside_empty(self.buf.text(), c)
+        {
+            let r = self.buf.prev_boundary(c)..self.buf.next_boundary(c);
+            self.edit(r, "", None, cx);
             return;
         }
         self.buf.backspace();
@@ -1286,6 +1341,83 @@ impl LiveEditor {
         bad.get(i).filter(|r| r.start <= off).cloned()
     }
 
+    /// Tab / Shift-Tab on list lines: indent or outdent every line the
+    /// selection touches. `false` when the selection has no list item.
+    fn indent(&mut self, outdent: bool, cx: &mut Context<Self>) -> bool {
+        let sel = self.buf.sel();
+        let line = self.analysis.line_of(sel.start);
+        if matches!(self.analysis.lines[line].1, Kind::Code) {
+            return false;
+        }
+        let Some((range, new, sel)) = crate::pairs::indent(self.buf.text(), sel, outdent) else {
+            return false;
+        };
+        self.edit(range, &new, Some(sel), cx);
+        true
+    }
+
+    /// Cmd/Ctrl+Enter: check or uncheck the task on the caret's line.
+    fn toggle_task(&mut self, cx: &mut Context<Self>) {
+        let cur = self.buf.cursor();
+        let line = self.line_range(cur);
+        let Some(t) = self
+            .analysis
+            .tasks
+            .iter()
+            .find(|t| line.start <= t.marker.start && t.marker.start <= line.end)
+        else {
+            return;
+        };
+        self.buf.edit(
+            t.marker.clone(),
+            if t.checked { "[ ]" } else { "[x]" },
+            None,
+        );
+        self.buf.restore_cursor(cur);
+        self.changed(cx);
+    }
+
+    /// Alt+Enter: open the wiki-link under the caret, or jump between a
+    /// footnote reference and its definition (same as Ctrl/Cmd+click).
+    fn follow_link(&mut self, cx: &mut Context<Self>) {
+        let off = self.buf.cursor();
+        let touches = |r: &Range<usize>| r.start <= off && off <= r.end;
+        if let Some(l) = self.analysis.wiki_links.iter().find(|l| touches(&l.range)) {
+            cx.emit(OpenLink(self.buf.text()[l.target.clone()].to_string()));
+        } else if let Some(f) = self.analysis.footnotes.iter().find(|f| touches(&f.range))
+            && let Some(to) = crate::footnote::target(self.buf.text(), &self.analysis.footnotes, f)
+        {
+            self.move_to(to, cx);
+        }
+    }
+
+    /// F7: open the suggestions menu for the misspelled word under the
+    /// caret, or for the next one on screen after it.
+    fn spell_suggest(&mut self, cx: &mut Context<Self>) {
+        let off = self.buf.cursor();
+        let Some(l) = self.layout.as_ref() else {
+            return;
+        };
+        let Some(word) = self
+            .misspell_at(off)
+            .or_else(|| l.misspells.iter().find(|r| r.start > off).cloned())
+        else {
+            return;
+        };
+        if !(word.start <= off && off <= word.end) {
+            self.buf.move_to(word.end);
+        }
+        let Some((p, lh)) = l.position(self.buf.cursor()) else {
+            return;
+        };
+        let origin = l.bounds.origin;
+        self.menu_at.set(Some(point(
+            origin.x + px(p.x),
+            origin.y + px(p.y - l.scroll + lh),
+        )));
+        cx.notify();
+    }
+
     /// Accept a context-menu suggestion: replace the misspelled range as one
     /// undo step; caret lands after the replacement.
     fn spell_apply(&mut self, range: Range<usize>, new: &str, cx: &mut Context<Self>) {
@@ -1396,7 +1528,35 @@ impl EntityInputHandler for LiveEditor {
         // quote or fold into `—`.
         let mut sub = None;
         let mut new = new;
-        if self.smart_quotes && new.chars().count() == 1 {
+        let typed = {
+            let mut chars = new.chars();
+            chars.next().filter(|_| chars.next().is_none())
+        };
+        // Auto-close on typed text, outside code/math/frontmatter. Quotes
+        // are left to the typographic substitution when that is on.
+        if let Some(ch) = typed
+            && self.auto_pairs
+            && self.buf.marked().is_none()
+            && !(self.smart_quotes && matches!(ch, '"' | '\''))
+        {
+            let text = self.buf.text();
+            let line = self.line_range(r.start);
+            let before = &text[line.start..r.start];
+            if !crate::smart::literal_at(&self.analysis, r.start, before)
+                && let Some((range, s, sel)) = crate::pairs::pair(text, r.clone(), ch)
+            {
+                let opened = !s.is_empty() && sel.is_empty();
+                let caret = sel.end;
+                if s.is_empty() {
+                    self.move_to(caret, cx);
+                } else {
+                    self.edit(range, &s, Some(sel), cx);
+                }
+                self.last_pair = opened.then_some(caret);
+                return;
+            }
+        }
+        if self.smart_quotes && typed.is_some() {
             let text = self.buf.text();
             let line = self.line_range(r.start);
             let before = &text[line.start..r.start];
@@ -1608,13 +1768,18 @@ impl Render for LiveEditor {
                 }
             }))
             .on_action(cx.listener(|this, _: &Tab, _, cx| {
-                if !this.table_step(true, cx) {
+                if !this.table_step(true, cx) && !this.indent(false, cx) {
                     this.insert("  ", cx);
                 }
             }))
             .on_action(cx.listener(|this, _: &Backtab, _, cx| {
-                this.table_step(false, cx);
+                if !this.table_step(false, cx) {
+                    this.indent(true, cx);
+                }
             }))
+            .on_action(cx.listener(|this, _: &ToggleTask, _, cx| this.toggle_task(cx)))
+            .on_action(cx.listener(|this, _: &FollowLink, _, cx| this.follow_link(cx)))
+            .on_action(cx.listener(|this, _: &SpellSuggest, _, cx| this.spell_suggest(cx)))
             .on_action(cx.listener(|this, _: &InsertTable, _, cx| this.insert_table(cx)))
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.restore(true, cx)))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.restore(false, cx)))
@@ -1703,6 +1868,7 @@ impl Render for LiveEditor {
                 let editor = cx.entity().downgrade();
                 move |menu, window, cx| Self::context_menu(menu, &editor, window, cx)
             })
+            .open_at(self.menu_at.clone())
     }
 }
 
@@ -2539,6 +2705,13 @@ impl Element for EditorElement {
         } else {
             usize::MAX..usize::MAX
         };
+        // "Always show syntax" reveals every marker; tables, images and
+        // math still follow the selection.
+        let syntax = if ed.show_syntax {
+            0..usize::MAX
+        } else {
+            reveal.clone()
+        };
         let text = ed.buf.text();
         let a = &ed.analysis;
         let focus = ed.focus_mode.then(|| a.focus_block(text, ed.buf.cursor()));
@@ -2712,7 +2885,7 @@ impl Element for EditorElement {
                 ));
                 std::iter::once(Seg::plain(0..0)).collect()
             } else {
-                let mut segs = a.visible(buf.clone(), &reveal);
+                let mut segs = a.visible(buf.clone(), &syntax);
                 // A displayed image replaces its source until the selection
                 // touches it.
                 for (im, _) in &line_images {

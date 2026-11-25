@@ -286,6 +286,10 @@ pub enum Key {
     // Typographic substitution
     SmartQuotes,
     SmartQuotesHint,
+    AutoPairs,
+    AutoPairsHint,
+    ShowSyntax,
+    ShowSyntaxHint,
     // Focus mode
     FocusMode,
     // Trash undo notice
@@ -516,6 +520,10 @@ impl Key {
         Key::TextWidthWide,
         Key::SmartQuotes,
         Key::SmartQuotesHint,
+        Key::AutoPairs,
+        Key::AutoPairsHint,
+        Key::ShowSyntax,
+        Key::ShowSyntaxHint,
         Key::FocusMode,
         Key::NoteTrashedUndo,
         Key::GlassSection,
@@ -759,6 +767,10 @@ fn en(k: Key) -> &'static str {
         Key::TextWidthWide => "Wide",
         Key::SmartQuotes => "Smart quotes",
         Key::SmartQuotesHint => "Typographic “quotes” and — dashes while you type.",
+        Key::AutoPairs => "Auto-close brackets and quotes",
+        Key::AutoPairsHint => "Typing an opening bracket or quote adds its closing pair.",
+        Key::ShowSyntax => "Always show syntax",
+        Key::ShowSyntaxHint => "Keep markdown markers visible on every line.",
         Key::FocusMode => "Focus mode ({MOD}+Shift+Enter)",
         Key::NoteTrashedUndo => "Note moved to trash · Undo",
         Key::GlassSection => "Glass",
@@ -1008,6 +1020,12 @@ fn pt(k: Key) -> &'static str {
         Key::TextWidthWide => "Larga",
         Key::SmartQuotes => "Aspas tipográficas",
         Key::SmartQuotesHint => "Aspas “curvas” e travessões — ao digitar.",
+        Key::AutoPairs => "Fechar parênteses e aspas",
+        Key::AutoPairsHint => {
+            "Digitar um parêntese, colchete, chave ou aspas já insere o par que fecha."
+        }
+        Key::ShowSyntax => "Sempre mostrar a sintaxe",
+        Key::ShowSyntaxHint => "Mantém os marcadores de markdown visíveis em todas as linhas.",
         Key::FocusMode => "Modo foco ({MOD}+Shift+Enter)",
         Key::NoteTrashedUndo => "Nota movida para a lixeira · Desfazer",
         Key::GlassSection => "Vidro",

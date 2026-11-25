@@ -10,7 +10,7 @@
 //! (`snap_to_window_with_margin`) and submenus flip side near edges
 //! (`PopupMenu::update_submenu_menu_anchor`).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gpui_kit::component::menu::PopupMenu;
@@ -61,15 +61,25 @@ pub(crate) struct CtxMenu<E: ParentElement + Styled + Sized> {
     // This is not in use, just for style refinement forwarding.
     _ignore_style: StyleRefinement,
     anchor: Anchor,
+    open_at: Option<Rc<Cell<Option<Point<Pixels>>>>>,
 }
 
 impl<E: ParentElement + Styled> CtxMenu<E> {
+    /// Also open the menu, from the keyboard, at the window position left
+    /// in `at` (taken on the next paint).
+    #[must_use]
+    pub(crate) fn open_at(mut self, at: Rc<Cell<Option<Point<Pixels>>>>) -> Self {
+        self.open_at = Some(at);
+        self
+    }
+
     fn new(id: impl Into<ElementId>, element: E) -> Self {
         Self {
             id: id.into(),
             element: Some(element),
             menu: None,
             anchor: Anchor::TopLeft,
+            open_at: None,
             _ignore_style: StyleRefinement::default(),
         }
     }
@@ -132,6 +142,68 @@ struct CtxMenuSharedState {
     /// Bumped per open; keys the open animation so each menu replays it.
     generation: usize,
     _subscription: Option<Subscription>,
+}
+
+/// Build the menu and show it at `position` (window coordinates).
+fn open_menu(
+    shared_state: &Rc<RefCell<CtxMenuSharedState>>,
+    builder: &Option<Rc<MenuBuilder>>,
+    position: Point<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    {
+        let mut shared_state = shared_state.borrow_mut();
+        // Clear any existing menu view to allow immediate replacement
+        // Set the new position and open the menu
+        shared_state.menu_view = None;
+        shared_state._subscription = None;
+        shared_state.position = position;
+        shared_state.open = true;
+        shared_state.generation += 1;
+    }
+
+    // Use defer to build the menu in the next frame, avoiding race conditions
+    window.defer(cx, {
+        let shared_state = shared_state.clone();
+        let builder = builder.clone();
+        move |window, cx| {
+            let menu = PopupMenu::build(window, cx, move |menu, window, cx| {
+                let Some(build) = &builder else {
+                    return menu;
+                };
+                build(menu, window, cx)
+            });
+
+            // One menu at a time: dismiss the menu opened
+            // by another trigger, if any is still around.
+            if let Some(prev) = cx
+                .try_global::<OpenMenu>()
+                .and_then(|g| g.0.upgrade())
+                .filter(|prev| prev.entity_id() != menu.entity_id())
+            {
+                prev.update(cx, |_, cx| cx.emit(DismissEvent));
+            }
+            cx.set_global(OpenMenu(menu.downgrade()));
+
+            // Set up the subscription for dismiss handling
+            let _subscription = window.subscribe(&menu, cx, {
+                let shared_state = shared_state.clone();
+                move |_, _: &DismissEvent, window, _cx| {
+                    shared_state.borrow_mut().open = false;
+                    window.refresh();
+                }
+            });
+
+            // Update the shared state with the built menu and subscription
+            {
+                let mut state = shared_state.borrow_mut();
+                state.menu_view = Some(menu.clone());
+                state._subscription = Some(_subscription);
+                window.refresh();
+            }
+        }
+    });
 }
 
 pub(crate) struct CtxMenuState {
@@ -293,13 +365,18 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for CtxMenu<E> {
 
         // Take the builder before setting up element state to avoid borrow issues
         let builder = self.menu.clone();
+        let open_at = self.open_at.clone();
 
         self.with_element_state(
             id.unwrap(),
             window,
             cx,
-            |_view, state: &mut CtxMenuState, window, _| {
+            |_view, state: &mut CtxMenuState, window, cx| {
                 let shared_state = state.shared_state.clone();
+
+                if let Some(at) = open_at.as_ref().and_then(|at| at.take()) {
+                    open_menu(&shared_state, &builder, at, window, cx);
+                }
 
                 let hitbox = hitbox.clone();
                 // When right mouse click, to build content menu, and show it at the mouse position.
@@ -308,58 +385,7 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for CtxMenu<E> {
                         && event.button == MouseButton::Right
                         && hitbox.is_hovered(window)
                     {
-                        {
-                            let mut shared_state = shared_state.borrow_mut();
-                            // Clear any existing menu view to allow immediate replacement
-                            // Set the new position and open the menu
-                            shared_state.menu_view = None;
-                            shared_state._subscription = None;
-                            shared_state.position = event.position;
-                            shared_state.open = true;
-                            shared_state.generation += 1;
-                        }
-
-                        // Use defer to build the menu in the next frame, avoiding race conditions
-                        window.defer(cx, {
-                            let shared_state = shared_state.clone();
-                            let builder = builder.clone();
-                            move |window, cx| {
-                                let menu = PopupMenu::build(window, cx, move |menu, window, cx| {
-                                    let Some(build) = &builder else {
-                                        return menu;
-                                    };
-                                    build(menu, window, cx)
-                                });
-
-                                // One menu at a time: dismiss the menu opened
-                                // by another trigger, if any is still around.
-                                if let Some(prev) = cx
-                                    .try_global::<OpenMenu>()
-                                    .and_then(|g| g.0.upgrade())
-                                    .filter(|prev| prev.entity_id() != menu.entity_id())
-                                {
-                                    prev.update(cx, |_, cx| cx.emit(DismissEvent));
-                                }
-                                cx.set_global(OpenMenu(menu.downgrade()));
-
-                                // Set up the subscription for dismiss handling
-                                let _subscription = window.subscribe(&menu, cx, {
-                                    let shared_state = shared_state.clone();
-                                    move |_, _: &DismissEvent, window, _cx| {
-                                        shared_state.borrow_mut().open = false;
-                                        window.refresh();
-                                    }
-                                });
-
-                                // Update the shared state with the built menu and subscription
-                                {
-                                    let mut state = shared_state.borrow_mut();
-                                    state.menu_view = Some(menu.clone());
-                                    state._subscription = Some(_subscription);
-                                    window.refresh();
-                                }
-                            }
-                        });
+                        open_menu(&shared_state, &builder, event.position, window, cx);
                     }
                 });
             },

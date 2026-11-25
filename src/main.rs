@@ -20,6 +20,7 @@ mod lines;
 mod links;
 mod math;
 mod md;
+mod pairs;
 mod pdf;
 #[cfg(test)]
 mod perf;

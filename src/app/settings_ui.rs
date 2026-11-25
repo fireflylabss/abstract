@@ -524,6 +524,8 @@ impl AbstractApp {
         let raw = self.settings.raw_tables();
         let updates = self.settings.updates();
         let smart_quotes = self.settings.smart_quotes();
+        let auto_pairs = self.settings.auto_pairs();
+        let show_syntax = self.settings.show_syntax();
         let font_names = cx.text_system().all_font_names();
         let current_font = fonts::resolve(self.settings.font(), &font_names);
         let font_rows =
@@ -1028,6 +1030,32 @@ impl AbstractApp {
                     this.set_smart_quotes(!smart_quotes, window, cx)
                 })),
             )
+            .child(
+                toggle(
+                    "auto-pairs",
+                    t(Key::AutoPairs),
+                    Some(t(Key::AutoPairsHint)),
+                    auto_pairs,
+                    window,
+                    cx,
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.set_auto_pairs(!auto_pairs, window, cx)
+                })),
+            )
+            .child(
+                toggle(
+                    "show-syntax",
+                    t(Key::ShowSyntax),
+                    Some(t(Key::ShowSyntaxHint)),
+                    show_syntax,
+                    window,
+                    cx,
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.set_show_syntax(!show_syntax, window, cx)
+                })),
+            )
             .child(section(t(Key::General)))
             .child(hover_bg(
                 div()
@@ -1360,14 +1388,33 @@ impl AbstractApp {
             s.spell_lang(),
             s.smart_quotes(),
         );
+        let (pairs, syntax) = (s.auto_pairs(), s.show_syntax());
         let focus = self.focus_mode;
         editor.update(cx, |ed, cx| {
             ed.set_raw_tables(raw, cx);
             ed.set_spell(spell, lang, cx);
             ed.set_smart_quotes(smart, cx);
+            ed.set_auto_pairs(pairs);
+            ed.set_show_syntax(syntax, cx);
             ed.set_focus_mode(focus, cx);
         });
         self.apply_text_width(editor, cx);
+    }
+
+    fn set_auto_pairs(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.set_auto_pairs(on);
+        for editor in self.editors() {
+            editor.update(cx, |ed, _| ed.set_auto_pairs(on));
+        }
+        self.save_settings(window, cx);
+    }
+
+    fn set_show_syntax(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.set_show_syntax(on);
+        for editor in self.editors() {
+            editor.update(cx, |ed, cx| ed.set_show_syntax(on, cx));
+        }
+        self.save_settings(window, cx);
     }
 
     fn set_smart_quotes(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
