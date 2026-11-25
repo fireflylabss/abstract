@@ -497,6 +497,12 @@ impl Render for AbstractApp {
             .on_action(
                 cx.listener(|this, _: &SearchNotes, window, cx| this.open_search(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &QuickOpen, window, cx| {
+                this.open_palette(search_ui::Mode::Notes, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &CommandPalette, window, cx| {
+                this.open_palette(search_ui::Mode::Commands, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &SearchSelection, window, cx| {
                 this.search_selection(window, cx)
             }))

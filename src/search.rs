@@ -173,6 +173,53 @@ pub(crate) fn search(root: &Path, query: &str) -> Vec<Hit> {
     scored.into_iter().map(|(h, _)| h).collect()
 }
 
+/// Fuzzy match on note names only (no file is read): the file name counts
+/// most, the path inside the space lets a folder narrow it down. Empty query
+/// lists the most recently modified notes. Best first, capped at 50; each
+/// hit's `snippet` is the note's folder inside the space.
+pub(crate) fn find_notes(root: &Path, query: &str) -> Vec<Hit> {
+    let mut files = Vec::new();
+    collect(root, &mut files);
+    files.sort_by_key(|f| std::cmp::Reverse(f.1));
+    let query = crate::fuzzy::Query::new(query);
+    let mut scored: Vec<(i64, Hit)> = Vec::new();
+    for (path, _) in files {
+        let rel = path.strip_prefix(root).unwrap_or(&path).with_extension("");
+        let title = rel
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let score = if query.is_empty() {
+            0
+        } else {
+            let by_name = query.score(&title).map(|s| s + 100);
+            let by_path = query.score(&rel.to_string_lossy());
+            match by_name.into_iter().chain(by_path).max() {
+                Some(score) => score,
+                None => continue,
+            }
+        };
+        let snippet = rel
+            .parent()
+            .map(|d| d.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        scored.push((
+            score,
+            Hit {
+                path,
+                title,
+                line: 0,
+                snippet,
+                score: 0,
+            },
+        ));
+    }
+    // Stable: equal scores keep the most recently modified first.
+    scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+    scored.truncate(50);
+    scored.into_iter().map(|(_, hit)| hit).collect()
+}
+
 /// Byte offset of the first char of 1-based `line` in `path` — cheap cursor
 /// target for jumping to a hit's line. None when unreadable.
 pub(crate) fn offset_of_line(path: &Path, line: usize) -> Option<usize> {
@@ -270,5 +317,24 @@ mod tests {
         assert_eq!(&"Héllo World"[r], "World");
         // 'İ' lowercases to 2 chars and must never match/slice wrongly.
         assert_eq!(match_range("İx", "i"), None);
+    }
+
+    #[test]
+    fn find_notes_matches_names_fuzzily() {
+        let dir = space("find-notes");
+        write(&dir, "Reunião semanal.md", "nothing", 30);
+        write(&dir, "Receitas.md", "reuniao in the body only", 20);
+        std::fs::create_dir_all(dir.join("Projetos")).unwrap();
+        write(&dir, "Projetos/Plano.md", "x", 10);
+
+        let names =
+            |q: &str| -> Vec<String> { find_notes(&dir, q).into_iter().map(|h| h.title).collect() };
+        assert_eq!(names("rnsm"), ["Reunião semanal"]);
+        assert_eq!(names("reuniao"), ["Reunião semanal"]);
+        assert_eq!(names("proj/pl"), ["Plano"]);
+        assert_eq!(names(""), ["Plano", "Receitas", "Reunião semanal"]);
+        assert!(names("zzz").is_empty());
+        assert_eq!(find_notes(&dir, "plano")[0].snippet, "Projetos");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -12,6 +12,7 @@ mod editor;
 mod find;
 mod fonts;
 mod footnote;
+mod fuzzy;
 mod glass;
 mod html;
 mod i18n;

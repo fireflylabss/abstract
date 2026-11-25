@@ -1,7 +1,22 @@
 use super::*;
 
+/// What the palette lists.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Mode {
+    /// Full-text search over note titles and bodies.
+    Content,
+    /// Fuzzy match on note names.
+    Notes,
+    /// The command list from `keymap::COMMANDS`.
+    Commands,
+}
+
 pub(super) struct SearchPalette {
+    mode: Mode,
     state: Entity<InputState>,
+    /// Indices into `COMMANDS`, best match first (`Mode::Commands`).
+    commands: Vec<usize>,
+    scroll: ScrollHandle,
     hits: Vec<crate::search::Hit>,
     selected: usize,
     generation: u64,
@@ -11,8 +26,25 @@ pub(super) struct SearchPalette {
     _task: Option<Task<()>>,
 }
 
+impl SearchPalette {
+    fn len(&self) -> usize {
+        if self.mode == Mode::Commands {
+            self.commands.len()
+        } else {
+            self.hits.len()
+        }
+    }
+}
+
 impl AbstractApp {
     pub(crate) fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_palette(Mode::Content, window, cx);
+    }
+
+    pub(crate) fn open_palette(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search.as_ref().is_some_and(|p| p.mode != mode) {
+            self.search = None;
+        }
         if let Some(p) = &mut self.search {
             // Reopening mid-exit cancels the close: the entrance replays.
             if !p.closing {
@@ -23,7 +55,13 @@ impl AbstractApp {
             cx.notify();
             return;
         }
-        let state = cx.new(|cx| InputState::new(window, cx).placeholder(t(Key::SearchPlaceholder)));
+        let state = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(t(match mode {
+                Mode::Content => Key::SearchPlaceholder,
+                Mode::Notes => Key::GoToNotePlaceholder,
+                Mode::Commands => Key::CmdPlaceholder,
+            }))
+        });
         let sub = cx.subscribe(&state, |this: &mut Self, _, ev: &InputEvent, cx| match ev {
             InputEvent::Change => this.search_changed(cx),
             InputEvent::PressEnter { .. } => {
@@ -37,7 +75,10 @@ impl AbstractApp {
         });
         state.update(cx, |s, cx| s.focus(window, cx));
         self.search = Some(SearchPalette {
+            mode,
             state: state.clone(),
+            commands: Vec::new(),
+            scroll: ScrollHandle::new(),
             hits: Vec::new(),
             selected: 0,
             generation: 0,
@@ -88,10 +129,31 @@ impl AbstractApp {
         p.generation += 1;
         let generation = p.generation;
         p.selected = 0;
+        p.scroll.scroll_to_item(0);
+        let mode = p.mode;
+        if mode == Mode::Commands {
+            let query = crate::fuzzy::Query::new(&query);
+            let mut scored: Vec<(i64, usize)> = COMMANDS
+                .iter()
+                .enumerate()
+                .filter_map(|(ix, c)| Some((query.score(c.title())?, ix)))
+                .collect();
+            // Stable: an empty query keeps the list's own order.
+            scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+            p.commands = scored.into_iter().map(|(_, ix)| ix).collect();
+            p._task = None;
+            return;
+        }
         p._task = Some(cx.spawn(async move |this, cx| {
             let hits = cx
                 .background_executor()
-                .spawn(async move { crate::search::search(&dir, &query) })
+                .spawn(async move {
+                    if mode == Mode::Notes {
+                        crate::search::find_notes(&dir, &query)
+                    } else {
+                        crate::search::search(&dir, &query)
+                    }
+                })
                 .await;
             this.update(cx, |this, cx| {
                 if let Some(p) = &mut this.search
@@ -129,19 +191,34 @@ impl AbstractApp {
 
     fn move_search(&mut self, down: bool, cx: &mut Context<Self>) {
         let Some(p) = &mut self.search else { return };
-        if p.hits.is_empty() {
+        let n = p.len();
+        if n == 0 {
             return;
         }
-        let n = p.hits.len();
         p.selected = if down {
             (p.selected + 1) % n
         } else {
             (p.selected + n - 1) % n
         };
+        p.scroll.scroll_to_item(p.selected);
         cx.notify();
     }
 
     fn open_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(p) = &self.search
+            && p.mode == Mode::Commands
+        {
+            let command = p.commands.get(p.selected).map(|&ix| &COMMANDS[ix]);
+            self.close_search(cx);
+            if let Some(command) = command {
+                let editor = self.editor.clone();
+                editor.update(cx, |ed, cx| ed.focus(window, cx));
+                // Dispatched from the editor (focused by the close), so
+                // editor commands reach it and the rest bubble to the app.
+                window.dispatch_action((command.action)(), cx);
+            }
+            return;
+        }
         let Some(hit) = self
             .search
             .as_ref()
@@ -162,7 +239,61 @@ impl AbstractApp {
             return div().into_any_element();
         };
         let closing = p.closing;
-        let mut rows = div().flex().flex_col().max_h(z(320.)).overflow_hidden();
+        let content = p.mode == Mode::Content;
+        let mut rows = div()
+            .id("palette-rows")
+            .role(Role::ListBox)
+            .flex()
+            .flex_col()
+            .max_h(z(320.))
+            .overflow_y_scroll()
+            .track_scroll(&p.scroll);
+        for (ix, &command) in p.commands.iter().enumerate() {
+            let command = &COMMANDS[command];
+            let selected = ix == p.selected;
+            let row = div()
+                .id(("command", ix))
+                .role(Role::ListBoxOption)
+                .aria_label(command.title())
+                .flex_none()
+                .px(z(10.))
+                .py(z(6.))
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(z(12.))
+                .rounded(z(6.))
+                .cursor_pointer()
+                .active(|s| s.bg(rgb(pal.active)))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    if let Some(p) = &mut this.search {
+                        p.selected = ix;
+                    }
+                    this.open_selected(window, cx);
+                }))
+                .child(
+                    div()
+                        .truncate()
+                        .text_size(z(13.))
+                        .line_height(z(17.))
+                        .text_color(rgb(if selected { pal.fg } else { pal.body }))
+                        .child(command.title()),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(z(11.))
+                        .line_height(z(15.))
+                        .text_color(rgb(pal.faint))
+                        .child(command.shortcut()),
+                );
+            let row = if selected {
+                row.bg(rgb(pal.active))
+            } else {
+                hover_bg(row, ("command", ix), None, pal.hover, window, cx)
+            };
+            rows = rows.child(row);
+        }
         for (ix, hit) in p.hits.iter().enumerate() {
             let selected = ix == p.selected;
             let title = div()
@@ -182,7 +313,7 @@ impl AbstractApp {
             } else {
                 let q = p.state.read(cx).value().to_string().trim().to_lowercase();
                 match crate::search::match_range(&hit.snippet, &q) {
-                    Some(r) if !q.is_empty() => {
+                    Some(r) if content && !q.is_empty() => {
                         let (a, b, c) = (
                             hit.snippet[..r.start].to_string(),
                             hit.snippet[r.clone()].to_string(),
@@ -207,6 +338,7 @@ impl AbstractApp {
                 .id(("hit", ix))
                 .role(Role::ListBoxOption)
                 .aria_label(hit.title.clone())
+                .flex_none()
                 .px(z(10.))
                 .py(z(6.))
                 .flex()
@@ -230,14 +362,18 @@ impl AbstractApp {
             };
             rows = rows.child(row);
         }
-        if p.hits.is_empty() {
+        if p.len() == 0 {
             rows = rows.child(
                 div()
                     .px(z(10.))
                     .py(z(8.))
                     .text_size(z(12.))
                     .text_color(rgb(pal.faint))
-                    .child(t(Key::NoNotesFound)),
+                    .child(t(if p.mode == Mode::Commands {
+                        Key::NoCommandsFound
+                    } else {
+                        Key::NoNotesFound
+                    })),
             );
         }
         div()

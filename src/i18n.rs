@@ -316,6 +316,22 @@ pub enum Key {
     GlassTextContrast,
     GlassCompositorHint,
     GlassNoBlurHint,
+    // Command palette
+    CmdPalette,
+    CmdGoToNote,
+    CmdPlaceholder,
+    GoToNotePlaceholder,
+    NoCommandsFound,
+    CmdSave,
+    CmdTheme,
+    CmdSidebar,
+    CmdNextTab,
+    CmdPrevTab,
+    CmdReopenTab,
+    CmdZoomIn,
+    CmdZoomOut,
+    CmdZoomReset,
+    CmdTour,
 }
 
 impl Key {
@@ -543,13 +559,28 @@ impl Key {
         Key::GlassTextContrast,
         Key::GlassCompositorHint,
         Key::GlassNoBlurHint,
+        Key::CmdPalette,
+        Key::CmdGoToNote,
+        Key::CmdPlaceholder,
+        Key::GoToNotePlaceholder,
+        Key::NoCommandsFound,
+        Key::CmdSave,
+        Key::CmdTheme,
+        Key::CmdSidebar,
+        Key::CmdNextTab,
+        Key::CmdPrevTab,
+        Key::CmdReopenTab,
+        Key::CmdZoomIn,
+        Key::CmdZoomOut,
+        Key::CmdZoomReset,
+        Key::CmdTour,
     ];
 }
 
 fn en(k: Key) -> &'static str {
     match k {
         Key::Sidebar => "Sidebar ({MOD}+\\)",
-        Key::Search => "Search notes ({MOD}+P)",
+        Key::Search => "Search notes ({MOD}+Shift+F)",
         Key::Theme => "Theme: {name} ({MOD}+Shift+L)",
         Key::ThemeSystem => "System",
         Key::ThemeLight => "Light",
@@ -788,13 +819,28 @@ fn en(k: Key) -> &'static str {
             "Blur strength comes from your compositor (Hyprland, KDE, picom)."
         }
         Key::GlassNoBlurHint => "GNOME has no window blur — surfaces fade to the desktop instead.",
+        Key::CmdPalette => "Command palette",
+        Key::CmdGoToNote => "Go to note",
+        Key::CmdPlaceholder => "Run a command…",
+        Key::GoToNotePlaceholder => "Go to note…",
+        Key::NoCommandsFound => "No commands found",
+        Key::CmdSave => "Save now",
+        Key::CmdTheme => "Switch theme",
+        Key::CmdSidebar => "Show or hide sidebar",
+        Key::CmdNextTab => "Next tab",
+        Key::CmdPrevTab => "Previous tab",
+        Key::CmdReopenTab => "Reopen closed tab",
+        Key::CmdZoomIn => "Zoom in",
+        Key::CmdZoomOut => "Zoom out",
+        Key::CmdZoomReset => "Reset zoom",
+        Key::CmdTour => "Show the tour",
     }
 }
 
 fn pt(k: Key) -> &'static str {
     match k {
         Key::Sidebar => "Barra lateral ({MOD}+\\)",
-        Key::Search => "Buscar notas ({MOD}+P)",
+        Key::Search => "Buscar notas ({MOD}+Shift+F)",
         Key::Theme => "Tema: {name} ({MOD}+Shift+L)",
         Key::ThemeSystem => "Sistema",
         Key::ThemeLight => "Claro",
@@ -1039,6 +1085,21 @@ fn pt(k: Key) -> &'static str {
         Key::GlassNoBlurHint => {
             "O GNOME não oferece desfoque de janela — as superfícies ficam translúcidas."
         }
+        Key::CmdPalette => "Paleta de comandos",
+        Key::CmdGoToNote => "Ir para nota",
+        Key::CmdPlaceholder => "Executar um comando…",
+        Key::GoToNotePlaceholder => "Ir para nota…",
+        Key::NoCommandsFound => "Nenhum comando encontrado",
+        Key::CmdSave => "Salvar agora",
+        Key::CmdTheme => "Alternar tema",
+        Key::CmdSidebar => "Mostrar ou esconder a barra lateral",
+        Key::CmdNextTab => "Próxima aba",
+        Key::CmdPrevTab => "Aba anterior",
+        Key::CmdReopenTab => "Reabrir aba fechada",
+        Key::CmdZoomIn => "Aumentar zoom",
+        Key::CmdZoomOut => "Diminuir zoom",
+        Key::CmdZoomReset => "Redefinir zoom",
+        Key::CmdTour => "Mostrar o tour",
     }
 }
 

@@ -6,6 +6,15 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Command palette (`Cmd/Ctrl`+`Shift`+`P`): every command with its shortcut,
+  filtered as you type; keyboard or mouse, and the list scrolls. Shortcuts
+  and the palette come from one command list.
+
+### Changed
+- `Cmd/Ctrl`+`P` now jumps to a note by name with fuzzy, accent-insensitive
+  matching. Search over note bodies stays on `Cmd/Ctrl`+`Shift`+`F`.
+
 ## [0.1.5] - 2026-10-06
 
 ### Added

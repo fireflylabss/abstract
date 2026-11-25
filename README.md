@@ -22,7 +22,8 @@ Your notes are plain `.md` files living in real folders on disk. No accounts, no
 - **Context menus** — right-click in the editor for clipboard, links, formatting, paragraph styles and inserts.
 - **Task lists** — click the checkbox to toggle; **code blocks** with syntax highlighting.
 - **Wiki-links** — `[[note]]` links with autocomplete; `Ctrl`/`Cmd`+click follows a link (creating the note if missing), and a backlinks panel lists references.
-- **Global search** — `Ctrl`/`Cmd`+`P` opens a palette over note titles and bodies; empty query lists recently edited notes.
+- **Global search** — `Ctrl`/`Cmd`+`Shift`+`F` opens a palette over note titles and bodies; empty query lists recently edited notes.
+- **Command palette** — `Ctrl`/`Cmd`+`Shift`+`P` lists every command with its shortcut; `Ctrl`/`Cmd`+`P` jumps to a note by fuzzy name (`rnsm` finds `Reunião semanal`).
 - **External-edit aware** — the space folder is watched live (inotify/FSEvents/ReadDirectoryChanges), so edits and deletions from other apps show up instantly.
 - **Session restore** — reopens your notes, window geometry and sidebar state.
 - **Cross-platform** — Linux (Wayland & X11), macOS and Windows; bundled Noto fonts for consistent rendering.
@@ -115,7 +116,9 @@ cargo build --release
 | Settings | `Ctrl+,` | `Cmd+,` |
 | Toggle sidebar | `Ctrl+\` | `Cmd+\` |
 | Delete note | `Ctrl+Shift+Backspace` | `Cmd+Shift+Backspace` |
-| Search notes | `Ctrl+P` or `Ctrl+Shift+F` | `Cmd+P` or `Cmd+Shift+F` |
+| Command palette | `Ctrl+Shift+P` | `Cmd+Shift+P` |
+| Go to note (fuzzy name) | `Ctrl+P` | `Cmd+P` |
+| Search notes | `Ctrl+Shift+F` | `Cmd+Shift+F` |
 | Find in note | `Ctrl+F` | `Cmd+F` |
 | Replace in note | `Ctrl+H` | `Cmd+Alt+F` |
 | Next / previous match | `F3` / `Shift+F3` | `Cmd+G` / `Cmd+Shift+G` |
