@@ -272,7 +272,9 @@ impl AbstractApp {
             .set_notes(&latest_per_space(&self.session_notes, active));
         self.session.set_active_tab(active);
         let session = self.session.clone();
-        cx.background_spawn(async move { session.save() }).detach();
+        let stamp = store::session_stamp();
+        cx.background_spawn(async move { session.save_at(stamp) })
+            .detach();
     }
 
     /// Debounced (500ms) bounds persistence; the final write is on quit.

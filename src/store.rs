@@ -608,11 +608,21 @@ impl Session {
         }
     }
 
-    /// Blocking. Serialized: two overlapping saves share one temp file, and
-    /// the loser's rename would fail.
+    /// Blocking.
     pub fn save(&self) {
-        static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _write = WRITE.lock().unwrap_or_else(|e| e.into_inner());
+        self.save_at(session_stamp());
+    }
+
+    /// Blocking. Background saves overlap: they are serialized because they
+    /// share one temp file, and a snapshot older than the last one written is
+    /// dropped so it cannot land on top of a newer one.
+    pub fn save_at(&self, stamp: u64) {
+        static WRITTEN: std::sync::Mutex<u64> = std::sync::Mutex::new(0);
+        let mut written = WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
+        if stamp < *written {
+            return;
+        }
+        *written = stamp;
         let file = session_file();
         if let Err(err) = write_atomic(&file, self.kv.serialize().as_bytes()) {
             eprintln!(
@@ -621,6 +631,13 @@ impl Session {
             );
         }
     }
+}
+
+/// Orders session snapshots: take one on the thread that owns the session,
+/// then hand it to `Session::save_at`.
+pub fn session_stamp() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 fn folder_line(line: &str) -> Option<(PathBuf, PathBuf)> {
