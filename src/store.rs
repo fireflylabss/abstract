@@ -230,7 +230,7 @@ impl Settings {
         self.num(&HEADING_SCALE)
     }
 
-    /// `sidebar_width = 160-480` points, before zoom.
+    /// `sidebar_width = 220-480` points, before zoom.
     pub fn sidebar_width(&self) -> f32 {
         self.num(&SIDEBAR_WIDTH)
     }
@@ -515,7 +515,7 @@ pub const EDITOR_SIZE: Num = num("editor_size", 10., 36., 1., 16.);
 pub const LINE_HEIGHT: Num = num("line_height", 1., 2.5, 0.05, 1.75);
 pub const PARAGRAPH_SPACING: Num = num("paragraph_spacing", 0., 30., 1., 0.);
 pub const HEADING_SCALE: Num = num("heading_scale", 0.7, 1.8, 0.05, 1.);
-pub const SIDEBAR_WIDTH: Num = num("sidebar_width", 160., 480., 4., 248.);
+pub const SIDEBAR_WIDTH: Num = num("sidebar_width", 220., 480., 4., 248.);
 pub const AUTOSAVE_DELAY: Num = num("autosave_delay", 0.1, 10., 0.1, 0.4);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
