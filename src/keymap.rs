@@ -208,6 +208,13 @@ pub(crate) fn bind_keys(cx: &mut App) {
             .filter(|command| !command.editor)
             .flat_map(|command| command.keys.iter().map(|keys| (command.bind)(keys, c))),
     );
+    // The palette's text input binds Cmd+Shift+F to its own Replace, which
+    // would swallow the switch to full-text search from another mode.
+    let palette_input = Some("SearchPalette > Input");
+    cx.bind_keys([
+        KeyBinding::new("cmd-shift-f", SearchNotes, palette_input),
+        KeyBinding::new("ctrl-shift-f", SearchNotes, palette_input),
+    ]);
     cx.bind_keys([
         KeyBinding::new("cmd-q", Quit, c),
         KeyBinding::new("ctrl-1", GoToTab { ix: 0, last: false }, c),

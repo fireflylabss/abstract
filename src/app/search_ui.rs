@@ -91,7 +91,7 @@ impl AbstractApp {
         cx.notify();
     }
 
-    fn close_search(&mut self, cx: &mut Context<Self>) {
+    fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Defer the unmount by the exit duration so the fade-out can play;
         // `close_gen` cancels the sweep when reopened mid-exit.
         let Some(p) = &mut self.search else { return };
@@ -101,7 +101,8 @@ impl AbstractApp {
         p.closing = true;
         p.close_gen += 1;
         let cgen = p.close_gen;
-        self.focus_editor(cx);
+        let editor = self.editor.clone();
+        editor.update(cx, |ed, cx| ed.focus(window, cx));
         cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(MOTION_OUT_MS))
@@ -209,10 +210,8 @@ impl AbstractApp {
             && p.mode == Mode::Commands
         {
             let command = p.commands.get(p.selected).map(|&ix| &COMMANDS[ix]);
-            self.close_search(cx);
+            self.close_search(window, cx);
             if let Some(command) = command {
-                let editor = self.editor.clone();
-                editor.update(cx, |ed, cx| ed.focus(window, cx));
                 // Dispatched from the editor (focused by the close), so
                 // editor commands reach it and the rest bubble to the app.
                 window.dispatch_action((command.action)(), cx);
@@ -225,10 +224,10 @@ impl AbstractApp {
             .and_then(|p| p.hits.get(p.selected))
             .map(|h| (h.path.clone(), h.line))
         else {
-            self.close_search(cx);
+            self.close_search(window, cx);
             return;
         };
-        self.close_search(cx);
+        self.close_search(window, cx);
         let restore = crate::search::offset_of_line(&hit.0, hit.1).map(|o| (o, 0.));
         self.open_path(hit.0, restore, window, cx);
     }
@@ -403,8 +402,10 @@ impl AbstractApp {
                     _ => {}
                 }
             }))
-            .on_action(cx.listener(|this, _: &input::Escape, _, cx| this.close_search(cx)))
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_search(cx)))
+            .on_action(
+                cx.listener(|this, _: &input::Escape, window, cx| this.close_search(window, cx)),
+            )
+            .on_mouse_down_out(cx.listener(|this, _, window, cx| this.close_search(window, cx)))
             .child(
                 div().p(z(4.)).child(
                     Input::new(&p.state)
