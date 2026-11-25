@@ -67,7 +67,12 @@ fn is_list(line: &str) -> bool {
 /// `None` when the block has no list item or nothing would change.
 pub fn indent(text: &str, sel: Range<usize>, outdent: bool) -> Option<Edit> {
     let start = text[..sel.start].rfind('\n').map_or(0, |i| i + 1);
-    let last = if sel.is_empty() { sel.end } else { sel.end - 1 };
+    // A selection ending right after a newline does not include the next line.
+    let last = if !sel.is_empty() && text[..sel.end].ends_with('\n') {
+        sel.end - 1
+    } else {
+        sel.end
+    };
     let end = text[last..].find('\n').map_or(text.len(), |i| last + i);
     if !text[start..end].split('\n').any(is_list) {
         return None;
@@ -188,6 +193,12 @@ mod tests {
             Some("- a|\n- b\n|")
         );
         assert_eq!(tab("| - a", true).as_deref(), Some("|- a"));
+        assert_eq!(tab("|- café|", false).as_deref(), Some("  |- café|"));
+        assert_eq!(
+            tab("|- café|\n- b", false).as_deref(),
+            Some("  |- café|\n- b")
+        );
+        assert_eq!(tab("|- a\n|- b", false).as_deref(), Some("  |- a\n|- b"));
     }
 
     #[test]
