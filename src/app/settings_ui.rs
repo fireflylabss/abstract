@@ -85,7 +85,137 @@ impl GlassControls {
     }
 }
 
+/// Numeric settings with a slider, in `TypoControls::sliders` order.
+const NUMS: [&store::Num; 6] = [
+    &store::EDITOR_SIZE,
+    &store::LINE_HEIGHT,
+    &store::PARAGRAPH_SPACING,
+    &store::HEADING_SCALE,
+    &store::SIDEBAR_WIDTH,
+    &store::AUTOSAVE_DELAY,
+];
+const N_SIZE: usize = 0;
+const N_LINE_HEIGHT: usize = 1;
+const N_PARAGRAPH: usize = 2;
+const N_HEADING: usize = 3;
+const N_SIDEBAR: usize = 4;
+const N_AUTOSAVE: usize = 5;
+
+/// Slider and colour-picker entities behind the typography, sidebar-width,
+/// autosave and accent settings.
+pub(crate) struct TypoControls {
+    sliders: [Entity<SliderState>; 6],
+    accent: Entity<ColorPickerState>,
+    /// The font list edits the editor face instead of the interface one.
+    font_editor: bool,
+    _subs: Vec<Subscription>,
+}
+
+impl TypoControls {
+    pub fn new(settings: &Settings, window: &mut Window, cx: &mut Context<AbstractApp>) -> Self {
+        let sliders = NUMS.map(|n| {
+            let v = settings.num(n);
+            cx.new(|_| {
+                // `max` first: `min` clamps against the current maximum.
+                SliderState::new()
+                    .max(n.max)
+                    .min(n.min)
+                    .step(n.step)
+                    .default_value(v)
+            })
+        });
+        let accent = cx.new(|cx| {
+            ColorPickerState::new(window, cx)
+                .default_value(rgb(settings.accent().unwrap_or(theme::ACCENTS[0])))
+        });
+        let mut subs: Vec<Subscription> = sliders
+            .iter()
+            .enumerate()
+            .map(|(ix, e)| {
+                cx.subscribe(e, move |this, _, ev: &SliderEvent, cx| {
+                    this.typo_slider(ix, ev, cx)
+                })
+            })
+            .collect();
+        subs.push(cx.subscribe(&accent, |this, _, ev: &ColorPickerEvent, cx| {
+            let ColorPickerEvent::Change(Some(c)) = ev else {
+                return;
+            };
+            // `u32::from(Rgba)` packs RRGGBBAA; settings store RRGGBB.
+            let c = (u32::from(c.to_rgb()) >> 8) & 0xff_ff_ff;
+            this.settings.set_accent(Some(c));
+            let pal = theme::with_accent(cx.palette(), Some(c));
+            cx.set_global(pal);
+            this.persist_settings(cx);
+        }));
+        Self {
+            sliders,
+            accent,
+            font_editor: false,
+            _subs: subs,
+        }
+    }
+}
+
+/// How a numeric setting reads next to its slider.
+fn num_label(ix: usize, v: f32) -> String {
+    match ix {
+        N_LINE_HEIGHT => format!("{v:.2}"),
+        N_HEADING => format!("{}%", (v * 100.).round() as i32),
+        N_AUTOSAVE => format!("{v:.1}s"),
+        _ => format!("{}", v.round() as i32),
+    }
+}
+
 impl AbstractApp {
+    /// Saves settings off-thread and repaints the app and every editor.
+    fn persist_settings(&mut self, cx: &mut Context<Self>) {
+        let s = self.settings.clone();
+        cx.background_spawn(async move { s.save() }).detach();
+        for editor in self.editors() {
+            editor.update(cx, |_, cx| cx.notify());
+        }
+        cx.notify();
+    }
+
+    /// A typography slider moved: apply live on `Change`, persist on
+    /// `Release`.
+    fn typo_slider(&mut self, ix: usize, ev: &SliderEvent, cx: &mut Context<Self>) {
+        let (v, commit) = match ev {
+            SliderEvent::Change(SliderValue::Single(v)) => (*v, false),
+            SliderEvent::Release(SliderValue::Single(v)) => (*v, true),
+            _ => return,
+        };
+        self.settings.set_num(NUMS[ix], v);
+        cx.set_global(fonts::Typo::from_settings(&self.settings));
+        if commit {
+            self.persist_settings(cx);
+        } else {
+            for editor in self.editors() {
+                editor.update(cx, |_, cx| cx.notify());
+            }
+            cx.notify();
+        }
+    }
+
+    /// Accent swatch: `None` goes back to the theme's own colours.
+    fn set_accent(&mut self, c: Option<u32>, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.set_accent(c);
+        self.save_settings(window, cx);
+    }
+
+    fn set_caret_style(&mut self, style: store::CaretStyle, cx: &mut Context<Self>) {
+        self.settings.set_caret_style(style);
+        cx.set_global(fonts::Typo::from_settings(&self.settings));
+        self.persist_settings(cx);
+    }
+
+    fn set_caret_blink(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.settings.set_caret_blink(on);
+        cx.set_global(fonts::Typo::from_settings(&self.settings));
+        self.persist_settings(cx);
+    }
+
     pub(crate) fn toggle_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.settings_open = !self.settings_open;
         if self.settings_open {
@@ -525,7 +655,15 @@ impl AbstractApp {
         let updates = self.settings.updates();
         let smart_quotes = self.settings.smart_quotes();
         let font_names = cx.text_system().all_font_names();
-        let current_font = fonts::resolve(self.settings.font(), &font_names);
+        let font_editor = self.typo_controls.font_editor;
+        let current_font = fonts::resolve(
+            if font_editor {
+                self.settings.editor_font()
+            } else {
+                self.settings.ui_font()
+            },
+            &font_names,
+        );
         let font_rows =
             div()
                 .flex()
@@ -574,6 +712,144 @@ impl AbstractApp {
                         cx,
                     )
                 }));
+        // Small bordered radio chip shared by the pickers below.
+        let chip = |id: SharedString, on: bool| {
+            div()
+                .id(id)
+                .role(Role::RadioButton)
+                .aria_selected(on)
+                .flex_1()
+                .h(z(30.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(z(6.))
+                .border_1()
+                .border_color(rgb(if on { pal.fg } else { pal.line }))
+                .cursor_pointer()
+                .text_size(z(12.))
+                .text_color(rgb(if on { pal.fg } else { pal.body }))
+                .active(|s| s.bg(rgb(pal.active)))
+        };
+        let font_targets = div().pb(z(4.)).flex().gap(z(4.)).children(
+            [(false, Key::UiFont), (true, Key::EditorFont)].map(|(editor, key)| {
+                let on = font_editor == editor;
+                let id = SharedString::from(format!("font-target-{editor}"));
+                hover_bg(
+                    chip(id.clone(), on)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.typo_controls.font_editor = editor;
+                            cx.notify();
+                        }))
+                        .child(t(key)),
+                    id,
+                    on.then_some(pal.active),
+                    pal.hover,
+                    window,
+                    cx,
+                )
+            }),
+        );
+        let caret_style = self.settings.caret_style();
+        let caret_blink = self.settings.caret_blink();
+        let carets = div()
+            .flex()
+            .gap(z(4.))
+            .children(store::CaretStyle::ALL.map(|style| {
+                let on = caret_style == style;
+                let id = SharedString::from(format!("caret-{}", style.as_str()));
+                hover_bg(
+                    chip(id.clone(), on)
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.set_caret_style(style, cx)),
+                        )
+                        .child(t(match style {
+                            store::CaretStyle::Bar => Key::CaretBar,
+                            store::CaretStyle::Block => Key::CaretBlock,
+                            store::CaretStyle::Underline => Key::CaretUnderline,
+                        })),
+                    id,
+                    on.then_some(pal.active),
+                    pal.hover,
+                    window,
+                    cx,
+                )
+            }));
+        let accent = self.settings.accent();
+        let accent_row = div()
+            .flex()
+            .items_center()
+            .gap(z(8.))
+            .child(hover_bg(
+                chip("accent-theme".into(), accent.is_none())
+                    .flex_none()
+                    .px(z(12.))
+                    .on_click(cx.listener(|this, _, window, cx| this.set_accent(None, window, cx)))
+                    .child(t(Key::GlassTintTheme)),
+                "accent-theme",
+                accent.is_none().then_some(pal.active),
+                pal.hover,
+                window,
+                cx,
+            ))
+            .children(theme::ACCENTS.map(|c| {
+                let on = accent == Some(c);
+                div()
+                    .id(SharedString::from(format!("accent-{c:06x}")))
+                    .role(Role::RadioButton)
+                    .aria_label(format!("#{c:06x}"))
+                    .aria_selected(on)
+                    .size(z(24.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .border_1()
+                    .border_color(if on { rgb(pal.fg) } else { rgba(0) })
+                    .cursor_pointer()
+                    .on_click(
+                        cx.listener(move |this, _, window, cx| {
+                            this.set_accent(Some(c), window, cx)
+                        }),
+                    )
+                    .child(div().size(z(16.)).rounded_full().bg(rgb(c)))
+            }))
+            .child(ColorPicker::new(&self.typo_controls.accent));
+        let num_row = |ix: usize, key: Key| {
+            let state = &self.typo_controls.sliders[ix];
+            div()
+                .px(z(8.))
+                .py(z(8.))
+                .mx(z(-8.))
+                .id(NUMS[ix].key)
+                .flex()
+                .items_center()
+                .gap(z(12.))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(z(13.))
+                        .text_color(rgb(pal.body))
+                        .child(t(key)),
+                )
+                .child(
+                    Slider::new(state)
+                        .horizontal()
+                        .w(z(110.))
+                        .bg(rgb(pal.fg))
+                        .text_color(rgb(pal.fg)),
+                )
+                .child(
+                    div()
+                        .w(z(34.))
+                        .flex()
+                        .justify_end()
+                        .text_size(z(12.))
+                        .text_color(rgb(pal.dim))
+                        .child(num_label(ix, self.settings.num(NUMS[ix]))),
+                )
+        };
         let widths = div()
             .flex()
             .gap(z(4.))
@@ -860,6 +1136,9 @@ impl AbstractApp {
             .child(swatches(false, window, cx))
             .child(sub(t(Key::DarkTheme)))
             .child(swatches(true, window, cx))
+            .child(sub(t(Key::Accent)))
+            .child(accent_row)
+            .child(num_row(N_SIDEBAR, Key::SidebarWidth))
             .child(sub(t(Key::GlassSection)))
             .child(
                 toggle(
@@ -1015,6 +1294,25 @@ impl AbstractApp {
             )
             .child(sub(t(Key::TextWidth)))
             .child(widths)
+            .child(num_row(N_SIZE, Key::EditorSize))
+            .child(num_row(N_LINE_HEIGHT, Key::LineHeight))
+            .child(num_row(N_PARAGRAPH, Key::ParagraphSpacing))
+            .child(num_row(N_HEADING, Key::HeadingScale))
+            .child(sub(t(Key::CaretStyle)))
+            .child(carets)
+            .child(
+                toggle(
+                    "caret-blink",
+                    t(Key::CaretBlink),
+                    None,
+                    caret_blink,
+                    window,
+                    cx,
+                )
+                .on_click(
+                    cx.listener(move |this, _, _, cx| this.set_caret_blink(!caret_blink, cx)),
+                ),
+            )
             .child(
                 toggle(
                     "smart-quotes",
@@ -1074,6 +1372,7 @@ impl AbstractApp {
                 )
                 .on_click(cx.listener(move |this, _, _, cx| this.set_updates(!updates, cx))),
             )
+            .child(num_row(N_AUTOSAVE, Key::AutosaveDelay))
             .child(sub(t(Key::Font)))
             .child(
                 div()
@@ -1083,6 +1382,7 @@ impl AbstractApp {
                     .text_color(rgb(pal.dim))
                     .child(t(Key::FontHint)),
             )
+            .child(font_targets)
             .child(font_rows)
             .child(
                 toggle(
@@ -1286,7 +1586,11 @@ impl AbstractApp {
     }
     /// `font` picker in General: applies the family live, then persists it.
     fn set_font(&mut self, family: &'static str, window: &mut Window, cx: &mut Context<Self>) {
-        self.settings.set_font(family);
+        if self.typo_controls.font_editor {
+            self.settings.set_editor_font(family);
+        } else {
+            self.settings.set_ui_font(family);
+        }
         fonts::apply(&self.settings, cx);
         self.save_settings(window, cx);
     }

@@ -16,8 +16,9 @@ impl AbstractApp {
         if self.active == Some(ix) {
             self.save = SaveState::Pending;
         }
+        let delay = self.settings.autosave_delay();
         let task = cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(SAVE_DEBOUNCE).await;
+            cx.background_executor().timer(delay).await;
             // Path and text are captured now, not when the timer was set.
             // A tab retargeted meanwhile (sidebar click) no longer owns this
             // `file`, so the write is skipped — the slot's own flush wrote it.

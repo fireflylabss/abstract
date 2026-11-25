@@ -454,11 +454,12 @@ pub fn apply(settings: &Settings, appearance: WindowAppearance, cx: &mut App) {
             WindowAppearance::Light | WindowAppearance::VibrantLight
         ),
     };
-    cx.set_global(if light {
+    let pal = if light {
         named(&LIGHTS, settings.light_theme()).palette
     } else {
         named(&DARKS, settings.dark_theme()).palette
-    });
+    };
+    cx.set_global(with_accent(pal, settings.accent()));
     Theme::change(
         if light {
             ThemeMode::Light
@@ -468,6 +469,19 @@ pub fn apply(settings: &Settings, appearance: WindowAppearance, cx: &mut App) {
         None,
         cx,
     );
+}
+
+/// Presets offered next to "theme" in Settings → Appearance.
+pub const ACCENTS: [u32; 5] = [0x6ea8fe, 0x5fc88f, 0xb392f0, 0xf0736b, 0xe5b454];
+
+/// `pal` with the caret, selection and note callout recoloured to `accent`.
+pub fn with_accent(mut pal: Palette, accent: Option<u32>) -> Palette {
+    if let Some(c) = accent {
+        pal.caret = c;
+        pal.callout[0] = c;
+        pal.selection = (c << 8) | 0x40;
+    }
+    pal
 }
 
 /// Channel-wise lerp of the `n` low bytes of a packed color.
@@ -533,7 +547,18 @@ pub(crate) fn lerp(a: &Palette, b: &Palette, t: f32) -> Palette {
 
 #[cfg(test)]
 mod tests {
-    use super::{DARK, DARKS, LIGHT, LIGHTS, NORD, lerp, named};
+    use super::{DARK, DARKS, LIGHT, LIGHTS, NORD, lerp, named, with_accent};
+
+    #[test]
+    fn accent_recolours_caret_selection_and_note_callout() {
+        assert_eq!(with_accent(DARK, None), DARK);
+        let p = with_accent(DARK, Some(0x6ea8fe));
+        assert_eq!(p.caret, 0x6ea8fe);
+        assert_eq!(p.callout[0], 0x6ea8fe);
+        assert_eq!(p.selection, 0x6ea8fe40);
+        assert_eq!(p.callout[1], DARK.callout[1]);
+        assert_eq!(p.bg, DARK.bg);
+    }
 
     #[test]
     fn named_palettes_have_unique_ids_and_a_fallback() {

@@ -297,10 +297,11 @@ impl AbstractApp {
         .flex_1()
         .min_h_0();
 
+        let sidebar_w = self.settings.sidebar_width();
         let (from, to) = if self.sidebar_visible() {
-            (0., SIDEBAR_W)
+            (0., sidebar_w)
         } else {
-            (SIDEBAR_W, 0.)
+            (sidebar_w, 0.)
         };
         let pal = cx.palette();
         let space_name = SharedString::from(spaces::name_of(&self.dir));
@@ -316,7 +317,7 @@ impl AbstractApp {
             .child(
                 div()
                     .relative()
-                    .w(z(SIDEBAR_W))
+                    .w(z(sidebar_w))
                     .h_full()
                     .flex()
                     .flex_col()

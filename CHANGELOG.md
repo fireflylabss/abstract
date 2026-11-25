@@ -6,6 +6,14 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Settings: accent colour (theme, five presets or a custom colour) for the
+  caret, selection and note callouts; separate interface and editor fonts;
+  editor font size, line height, paragraph spacing and heading scale;
+  sidebar width; cursor style (bar, block, underline) and blinking; autosave
+  delay. Everything applies live, and settings files from older versions
+  keep working (`font` still sets both typefaces until one is changed).
+
 ## [0.1.5] - 2026-10-06
 
 ### Added

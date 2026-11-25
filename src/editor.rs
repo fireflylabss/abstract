@@ -19,17 +19,19 @@ use gpui_kit::base::motion::Interpolate;
 
 use crate::attach::Incoming;
 use crate::buffer::Buffer;
-use crate::fonts::Fonts;
+use crate::fonts::{Fonts, Typo};
 use crate::glass;
 use crate::i18n::{Key, t};
 use crate::md::{self, Analysis, Analyzer, Kind};
 use crate::spell::{self, SpellLang};
+use crate::store::CaretStyle;
 use crate::table::{self as pipe, Align};
 use crate::theme::Palette;
 use crate::zoom::{factor, z};
 
 const PAD_X: f32 = 48.;
 const PAD_TOP: f32 = 28.;
+const CARET_BLINK: std::time::Duration = std::time::Duration::from_millis(530);
 const GRID_FS: f32 = 15.;
 const GRID_LH: f32 = 22.;
 const GRID_PAD_X: f32 = 12.;
@@ -314,6 +316,11 @@ pub struct LiveEditor {
     dim_fade: RefCell<DimFade>,
     /// Column-cap tween `(from, to, started)` while `max_col` glides.
     col_anim: Cell<Option<(f32, f32, Instant)>>,
+    /// Caret blink: the phase, the selection it was last restarted for and
+    /// the ticking task (`None` while blinking is off).
+    blink_on: bool,
+    blink_sel: Range<usize>,
+    _blink: Option<Task<()>>,
 }
 
 impl EventEmitter<Changed> for LiveEditor {}
@@ -360,6 +367,9 @@ impl LiveEditor {
             focus_mode: false,
             dim_fade: RefCell::default(),
             col_anim: Cell::new(None),
+            blink_on: true,
+            blink_sel: 0..0,
+            _blink: None,
         };
         // Dictionaries inflate + parse off the UI thread; underlines appear
         // when the engine lands (a repaint on `cx.notify`).
@@ -462,6 +472,26 @@ impl LiveEditor {
             self.smart_quotes = on;
             cx.notify();
         }
+    }
+
+    /// Shows the caret and (re)starts the blink timer, or stops it when the
+    /// setting is off.
+    fn restart_blink(&mut self, blink: bool, cx: &mut Context<Self>) {
+        self.blink_on = true;
+        self._blink = blink.then(|| {
+            cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(CARET_BLINK).await;
+                    let alive = this.update(cx, |ed, cx| {
+                        ed.blink_on = !ed.blink_on;
+                        cx.notify();
+                    });
+                    if alive.is_err() {
+                        break;
+                    }
+                }
+            })
+        });
     }
 
     /// Focus mode flag from the app; entering asks for a recenter.
@@ -2318,8 +2348,10 @@ fn cut(segs: Vec<Range<usize>>, hole: &Range<usize>) -> Vec<Range<usize>> {
     out
 }
 
-fn metrics(kind: Kind) -> (f32, f32, f32, f32) {
-    // (font size, line height, space above, space below)
+/// `(font size, line height, space above, space below)` for a line of
+/// `kind`. The table is tuned for the default typography (16pt body at
+/// 1.75); `typo` rescales it, and the defaults reproduce it exactly.
+fn metrics_at(kind: Kind, typo: &Typo, zf: f32) -> (f32, f32, f32, f32) {
     let (fs, lh, above, below) = match kind {
         Kind::Heading(1) => (32., 42., 22., 6.),
         Kind::Heading(2) => (25., 34., 18., 4.),
@@ -2329,8 +2361,20 @@ fn metrics(kind: Kind) -> (f32, f32, f32, f32) {
         Kind::Table => (14., 24., 0., 0.),
         _ => (16., 28., 0., 0.),
     };
-    let zf = factor();
-    (fs * zf, lh * zf, above * zf, below * zf)
+    let h = if matches!(kind, Kind::Heading(_)) {
+        typo.heading_scale
+    } else {
+        1.
+    };
+    let k = zf * typo.size / 16.;
+    let fs = fs * h * k;
+    // Tight line heights never let rows of a big heading overlap.
+    let lh = (lh * h * k * typo.line_height / 1.75).max(fs * 1.1);
+    (fs, lh, above * k, below * k)
+}
+
+fn metrics(kind: Kind, typo: &Typo) -> (f32, f32, f32, f32) {
+    metrics_at(kind, typo, factor())
 }
 
 fn hsla(c: u32) -> Hsla {
@@ -2366,7 +2410,7 @@ fn run(
         // platforms without Georgia (Arch ships DejaVu/Noto, not Times).
         SharedString::from("Georgia")
     } else {
-        style.fonts.sans.clone()
+        style.fonts.prose.clone()
     });
     if math {
         f.fallbacks = Some(FontFallbacks::from_fonts(vec![
@@ -2512,6 +2556,7 @@ impl Element for EditorElement {
         let pal = *cx.global::<Palette>();
         let zf = factor();
         let fonts = cx.global::<Fonts>().clone();
+        let typo = *cx.global::<Typo>();
         let (text_alpha, text_contrast) = cx
             .try_global::<glass::Glass>()
             .map_or((1., false), |g| (g.text_alpha(), g.text_contrast()));
@@ -2615,7 +2660,7 @@ impl Element for EditorElement {
                 )
             });
             let accent = callout.map(|c| c.0);
-            let (fs, lh, above, below) = metrics(*kind);
+            let (fs, lh, above, below) = metrics(*kind, &typo);
             // In the checked band? (top within one viewport of the scroll
             // window; `lh` is the minimum possible bottom margin).
             let spell_in_view = {
@@ -2885,6 +2930,13 @@ impl Element for EditorElement {
                     x += ((col_w - indent - f32::from(wrapped.width())) / 2.).max(0.);
                 }
             }
+            // Paragraph spacing follows prose paragraphs only: list items,
+            // blank lines and blocks keep their rhythm.
+            let below = if *kind == Kind::Body && item.is_none() && !display.is_empty() {
+                below + typo.paragraph_spacing * zf
+            } else {
+                below
+            };
             y = top + rows_h + below;
             lines.push(LineBox {
                 buf: buf.clone(),
@@ -2969,17 +3021,36 @@ impl Element for EditorElement {
         };
         let zf = factor();
         let pal = *cx.global::<Palette>();
-        let (focus, sel, cursor, caret, finds, find_current) = {
+        let typo = *cx.global::<Typo>();
+        let (focus, sel, cursor, caret, finds, find_current, caret_next, mut caret_shown) = {
             let ed = self.0.read(cx);
+            let cursor = ed.buf.cursor();
+            // The character a block/underline caret sits on.
+            let next = ed.buf.text()[cursor..]
+                .chars()
+                .next()
+                .filter(|c| *c != '\n')
+                .map(|c| cursor + c.len_utf8());
             (
                 ed.focus.clone(),
                 ed.buf.sel(),
-                ed.buf.cursor(),
+                cursor,
                 ed.caret,
                 ed.finds.clone(),
                 ed.find_current,
+                next,
+                ed.blink_on,
             )
         };
+        // A moved caret (or a changed setting) shows at once and restarts
+        // the blink phase.
+        let restart_blink = {
+            let ed = self.0.read(cx);
+            ed.blink_sel != sel || ed._blink.is_some() != typo.blink
+        };
+        if restart_blink || !typo.blink {
+            caret_shown = true;
+        }
         let focused = focus.is_focused(window);
         window.handle_input(&focus, ElementInputHandler::new(bounds, self.0.clone()), cx);
 
@@ -3240,12 +3311,33 @@ impl Element for EditorElement {
                 }
             }
 
-            if focused && let (Some(p), Some((_, lh))) = (next_caret, target) {
+            if focused
+                && caret_shown
+                && let (Some(p), Some((t, lh))) = (next_caret, target)
+            {
                 let h = (lh * 0.72).max(16.);
-                window.paint_quad(fill(
-                    Bounds::new(at(p.x, p.y + (lh - h) / 2.), size(z(2.), px(h))),
-                    hsla(pal.caret),
-                ));
+                // Width of the character under the caret, else about one
+                // "n" at this line's size.
+                let cell = caret_next
+                    .and_then(|n| layout.position(n))
+                    .filter(|(n, _)| n.y == t.y && n.x > t.x)
+                    .map_or(h * 0.45, |(n, _)| n.x - t.x);
+                let top = p.y + (lh - h) / 2.;
+                let (bounds, color) = match typo.caret {
+                    CaretStyle::Bar => (
+                        Bounds::new(at(p.x, top), size(z(2.), px(h))),
+                        hsla(pal.caret),
+                    ),
+                    CaretStyle::Block => (
+                        Bounds::new(at(p.x, top), size(px(cell), px(h))),
+                        hsla(pal.caret).opacity(0.4),
+                    ),
+                    CaretStyle::Underline => (
+                        Bounds::new(at(p.x, top + h - 2. * zf), size(px(cell), z(2.))),
+                        hsla(pal.caret),
+                    ),
+                };
+                window.paint_quad(fill(bounds, color));
             }
         });
 
@@ -3255,5 +3347,48 @@ impl Element for EditorElement {
             ed.caret = next_caret;
             ed.layout = Some(layout);
         });
+        if restart_blink {
+            self.0.update(cx, |ed, cx| {
+                ed.blink_sel = sel.clone();
+                ed.restart_blink(typo.blink, cx);
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod typo_tests {
+    use super::{Kind, Typo, metrics_at};
+    use crate::store::{CaretStyle, KeyVals, Settings};
+
+    fn typo(src: &str) -> Typo {
+        Typo::from_settings(&Settings {
+            kv: KeyVals::parse(src),
+        })
+    }
+
+    #[test]
+    fn default_typography_keeps_the_tuned_metrics() {
+        let t = typo("");
+        assert_eq!(t.caret, CaretStyle::Bar);
+        assert_eq!(metrics_at(Kind::Body, &t, 1.), (16., 28., 0., 0.));
+        assert_eq!(metrics_at(Kind::Heading(1), &t, 1.), (32., 42., 22., 6.));
+        assert_eq!(metrics_at(Kind::Code, &t, 1.), (14., 23., 0., 0.));
+    }
+
+    #[test]
+    fn size_line_height_and_heading_scale_rescale_metrics() {
+        let t = typo("editor_size = 20\nline_height = 1.4\nheading_scale = 1.5\n");
+        let (fs, lh, ..) = metrics_at(Kind::Body, &t, 1.);
+        assert_eq!(fs, 20.);
+        assert!((lh - 28.).abs() < 0.01);
+        let (h1, ..) = metrics_at(Kind::Heading(1), &t, 1.);
+        assert!((h1 - 60.).abs() < 0.01);
+        // Code scales with the body size but not with the heading scale.
+        assert_eq!(metrics_at(Kind::Code, &t, 1.).0, 17.5);
+        // A very tight line height never drops below the glyph height.
+        let tight = typo("line_height = 1\nheading_scale = 1.8\n");
+        let (fs, lh, ..) = metrics_at(Kind::Heading(1), &tight, 1.);
+        assert!(lh >= fs);
     }
 }

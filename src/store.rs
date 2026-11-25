@@ -173,8 +173,107 @@ impl Settings {
         self.kv.get("font").unwrap_or(crate::assets::SANS)
     }
 
-    pub fn set_font(&mut self, name: &str) {
-        self.kv.set("font", name);
+    /// `ui_font = <family>` — interface typeface; falls back to the older
+    /// shared `font` key.
+    pub fn ui_font(&self) -> &str {
+        self.kv.get("ui_font").unwrap_or_else(|| self.font())
+    }
+
+    pub fn set_ui_font(&mut self, name: &str) {
+        self.kv.set("ui_font", name);
+    }
+
+    /// `editor_font = <family>` — prose typeface in the editor; falls back
+    /// to the older shared `font` key.
+    pub fn editor_font(&self) -> &str {
+        self.kv.get("editor_font").unwrap_or_else(|| self.font())
+    }
+
+    pub fn set_editor_font(&mut self, name: &str) {
+        self.kv.set("editor_font", name);
+    }
+
+    /// `accent = theme|RRGGBB` — recolours the caret, selection and note
+    /// callouts; `None` keeps the palette's own colours.
+    pub fn accent(&self) -> Option<u32> {
+        let v = self.kv.get("accent")?.trim_start_matches('#');
+        (v.len() == 6)
+            .then(|| u32::from_str_radix(v, 16).ok())
+            .flatten()
+    }
+
+    pub fn set_accent(&mut self, c: Option<u32>) {
+        let v = c.map_or_else(
+            || "theme".to_string(),
+            |c| format!("{:06x}", c & 0xff_ff_ff),
+        );
+        self.kv.set("accent", &v);
+    }
+
+    /// `editor_size = 10-36` body text size in points, before zoom.
+    pub fn editor_size(&self) -> f32 {
+        self.num(&EDITOR_SIZE)
+    }
+
+    /// `line_height = 1.0-2.5` body line height as a multiple of the size.
+    pub fn line_height(&self) -> f32 {
+        self.num(&LINE_HEIGHT)
+    }
+
+    /// `paragraph_spacing = 0-30` extra points below each paragraph.
+    pub fn paragraph_spacing(&self) -> f32 {
+        self.num(&PARAGRAPH_SPACING)
+    }
+
+    /// `heading_scale = 0.7-1.8` multiplies heading sizes.
+    pub fn heading_scale(&self) -> f32 {
+        self.num(&HEADING_SCALE)
+    }
+
+    /// `sidebar_width = 160-480` points, before zoom.
+    pub fn sidebar_width(&self) -> f32 {
+        self.num(&SIDEBAR_WIDTH)
+    }
+
+    /// `autosave_delay = 0.1-10` seconds of quiet before a note is written.
+    pub fn autosave_delay(&self) -> std::time::Duration {
+        std::time::Duration::from_millis((self.num(&AUTOSAVE_DELAY) * 1000.).round() as u64)
+    }
+
+    /// A numeric setting, clamped to its range; missing or malformed values
+    /// read as the default.
+    pub fn num(&self, n: &Num) -> f32 {
+        self.kv
+            .get(n.key)
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite())
+            .map_or(n.default, |v| v.clamp(n.min, n.max))
+    }
+
+    pub fn set_num(&mut self, n: &Num, v: f32) {
+        let v = format!("{:.2}", v.clamp(n.min, n.max));
+        let v = v.trim_end_matches('0').trim_end_matches('.');
+        self.kv.set(n.key, v);
+    }
+
+    /// `caret_style = bar|block|underline`.
+    pub fn caret_style(&self) -> CaretStyle {
+        self.kv
+            .get("caret_style")
+            .map_or(CaretStyle::Bar, CaretStyle::parse)
+    }
+
+    pub fn set_caret_style(&mut self, style: CaretStyle) {
+        self.kv.set("caret_style", style.as_str());
+    }
+
+    /// `caret_blink = on` blinks the caret; steady by default.
+    pub fn caret_blink(&self) -> bool {
+        self.kv.get("caret_blink") == Some("on")
+    }
+
+    pub fn set_caret_blink(&mut self, on: bool) {
+        self.kv.set("caret_blink", if on { "on" } else { "off" });
     }
 
     /// `raw_tables = on` shows tables as their Markdown source instead of a
@@ -389,6 +488,61 @@ impl Settings {
     pub fn set_glass_text_contrast(&mut self, on: bool) {
         self.kv
             .set("glass_text_contrast", if on { "on" } else { "off" });
+    }
+}
+
+/// A numeric setting: its key, range, slider step and default.
+#[derive(Clone, Copy, Debug)]
+pub struct Num {
+    pub key: &'static str,
+    pub min: f32,
+    pub max: f32,
+    pub step: f32,
+    pub default: f32,
+}
+
+const fn num(key: &'static str, min: f32, max: f32, step: f32, default: f32) -> Num {
+    Num {
+        key,
+        min,
+        max,
+        step,
+        default,
+    }
+}
+
+pub const EDITOR_SIZE: Num = num("editor_size", 10., 36., 1., 16.);
+pub const LINE_HEIGHT: Num = num("line_height", 1., 2.5, 0.05, 1.75);
+pub const PARAGRAPH_SPACING: Num = num("paragraph_spacing", 0., 30., 1., 0.);
+pub const HEADING_SCALE: Num = num("heading_scale", 0.7, 1.8, 0.05, 1.);
+pub const SIDEBAR_WIDTH: Num = num("sidebar_width", 160., 480., 4., 248.);
+pub const AUTOSAVE_DELAY: Num = num("autosave_delay", 0.1, 10., 0.1, 0.4);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CaretStyle {
+    #[default]
+    Bar,
+    Block,
+    Underline,
+}
+
+impl CaretStyle {
+    pub const ALL: [Self; 3] = [Self::Bar, Self::Block, Self::Underline];
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "block" => Self::Block,
+            "underline" => Self::Underline,
+            _ => Self::Bar,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Bar => "bar",
+            Self::Block => "block",
+            Self::Underline => "underline",
+        }
     }
 }
 
@@ -611,6 +765,36 @@ mod tests {
         assert_eq!(again.kv.get("future-key"), Some("1 2"));
         // One `theme` line only.
         assert_eq!(text.matches("theme").count(), 1);
+    }
+
+    #[test]
+    fn typography_settings_default_clamp_and_fall_back() {
+        let mut s = Settings {
+            kv: KeyVals::parse(
+                "font = Georgia\neditor_size = 99\nline_height = nope\naccent = #6EA8FE\n",
+            ),
+        };
+        // An older file's single `font` still drives both faces.
+        assert_eq!(s.ui_font(), "Georgia");
+        assert_eq!(s.editor_font(), "Georgia");
+        s.set_editor_font("Menlo");
+        assert_eq!(s.ui_font(), "Georgia");
+        assert_eq!(s.editor_font(), "Menlo");
+        assert_eq!(s.editor_size(), EDITOR_SIZE.max);
+        assert_eq!(s.line_height(), LINE_HEIGHT.default);
+        assert_eq!(s.sidebar_width(), 248.);
+        assert_eq!(s.autosave_delay(), std::time::Duration::from_millis(400));
+        assert_eq!(s.accent(), Some(0x6ea8fe));
+        s.set_accent(None);
+        assert_eq!(s.accent(), None);
+        s.set_num(&LINE_HEIGHT, 1.5);
+        assert_eq!(s.kv.get("line_height"), Some("1.5"));
+        s.set_num(&SIDEBAR_WIDTH, 1000.);
+        assert_eq!(s.kv.get("sidebar_width"), Some("480"));
+        assert_eq!(s.caret_style(), CaretStyle::Bar);
+        assert!(!s.caret_blink());
+        s.set_caret_style(CaretStyle::Underline);
+        assert_eq!(s.caret_style(), CaretStyle::Underline);
     }
 
     #[test]

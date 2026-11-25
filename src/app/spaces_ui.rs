@@ -364,7 +364,7 @@ impl AbstractApp {
             .top(z(38. + 6. * ps.progress))
             .opacity(ps.progress)
             .left(z(8.))
-            .w(z(SIDEBAR_W - 16.))
+            .w(z(self.settings.sidebar_width() - 16.))
             .bg(glass::bg(pal.menu_bg, Surface::Menus, cx))
             .border_1()
             .border_color(rgb(pal.menu_border))

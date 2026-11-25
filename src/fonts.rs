@@ -1,11 +1,12 @@
-//! The user-chosen font family for UI and prose text: an app-global
-//! snapshot render code copies out of `cx.global()`, like `Palette`.
-//! Persisted as `font = <family>` in settings.
+//! The user-chosen font families (interface and editor prose) and the
+//! editor's typography: app-global snapshots render code copies out of
+//! `cx.global()`, like `Palette`. Persisted as `ui_font` / `editor_font`
+//! (older files: one shared `font`) plus the numeric keys in `store`.
 
 use gpui_kit::*;
 
 use crate::assets::{MONO, SANS};
-use crate::store::Settings;
+use crate::store::{CaretStyle, Settings};
 
 /// Virtual family resolved by the platform text system to the OS UI font
 /// (SF on macOS, Segoe UI on Windows, …).
@@ -37,15 +38,45 @@ pub(crate) const CANDIDATES: &[&str] = &[
     "Courier New",
 ];
 
-/// UI and prose typeface (`sans`) plus the code/table one (`mono`) —
-/// code always stays on the bundled mono.
+/// Interface typeface (`sans`), editor prose (`prose`) and the code/table
+/// one (`mono`) — code always stays on the bundled mono.
 #[derive(Clone)]
 pub(crate) struct Fonts {
     pub sans: SharedString,
+    pub prose: SharedString,
     pub mono: SharedString,
 }
 
 impl Global for Fonts {}
+
+/// Editor typography and caret look, before the zoom factor.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Typo {
+    /// Body size in points.
+    pub size: f32,
+    /// Body line height as a multiple of `size`.
+    pub line_height: f32,
+    /// Extra points below each paragraph.
+    pub paragraph_spacing: f32,
+    pub heading_scale: f32,
+    pub caret: CaretStyle,
+    pub blink: bool,
+}
+
+impl Global for Typo {}
+
+impl Typo {
+    pub fn from_settings(s: &Settings) -> Self {
+        Self {
+            size: s.editor_size(),
+            line_height: s.line_height(),
+            paragraph_spacing: s.paragraph_spacing(),
+            heading_scale: s.heading_scale(),
+            caret: s.caret_style(),
+            blink: s.caret_blink(),
+        }
+    }
+}
 
 /// Canonical spelling for `name`: the bundled pair and `SYSTEM` always
 /// resolve; anything else must appear in `available` (case-insensitive),
@@ -77,14 +108,17 @@ pub(crate) fn choices(available: &[String]) -> Vec<&'static str> {
         .collect()
 }
 
-/// Resolve `settings.font()` against installed families and set `Fonts`.
+/// Resolve the chosen families against installed ones and set `Fonts`
+/// and `Typo`.
 pub(crate) fn apply(settings: &Settings, cx: &mut App) {
     let available = cx.text_system().all_font_names();
-    let sans = resolve(settings.font(), &available);
-    cx.set_global(Fonts {
-        sans: sans.into(),
+    let fonts = Fonts {
+        sans: resolve(settings.ui_font(), &available).into(),
+        prose: resolve(settings.editor_font(), &available).into(),
         mono: MONO.into(),
-    });
+    };
+    cx.set_global(fonts);
+    cx.set_global(Typo::from_settings(settings));
 }
 
 #[cfg(test)]

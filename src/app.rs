@@ -54,9 +54,6 @@ pub(crate) fn guard<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-const SIDEBAR_W: f32 = 248.;
-const SAVE_DEBOUNCE: Duration = Duration::from_millis(400);
-
 /// Marks the synthetic sidebar row that hosts the new-folder input. Starts
 /// with a dot so a real file can never collide.
 const NEW_FOLDER_ROW: &str = ".abstract-new-folder";
@@ -303,6 +300,8 @@ pub(crate) struct AbstractApp {
     trash_undo_gen: usize,
     /// Slider/picker entities backing the Glass settings section.
     glass_controls: settings_ui::GlassControls,
+    /// Sliders and the accent picker behind the typography settings.
+    typo_controls: settings_ui::TypoControls,
     /// Whether the Glass "Advanced" disclosure is open; transient.
     glass_adv: bool,
 }
@@ -329,6 +328,7 @@ impl AbstractApp {
         });
         let presence = crate::discord::Presence::new(settings.discord());
         let glass_controls = settings_ui::GlassControls::new(&settings, window, cx);
+        let typo_controls = settings_ui::TypoControls::new(&settings, window, cx);
 
         let mut app = Self {
             spaces: Spaces {
@@ -392,6 +392,7 @@ impl AbstractApp {
             trash_undo: None,
             trash_undo_gen: 0,
             glass_controls,
+            typo_controls,
             glass_adv: false,
         };
         app.sidebar_open = app.session.sidebar_open().unwrap_or(true);
