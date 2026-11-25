@@ -7,14 +7,15 @@ const TAB_BAR_H: f32 = 34.;
 impl AbstractApp {
     /// The tab strip above the editor: one pill per open note — title,
     /// unsaved dot, close button on hover — scrolled sideways when it
-    /// overflows. `None` while nothing is open; in focus mode it collapses
+    /// overflows. `None` while nothing is open, or with a single note open
+    /// unless the `single_tab` setting is on; in focus mode it collapses
     /// its height and fades out over the sidebar slide.
     pub(crate) fn render_tabs(
         &self,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        if self.tabs.is_empty() {
+        if self.tabs.is_empty() || (self.tabs.len() == 1 && !self.settings.single_tab()) {
             return None;
         }
         let pal = cx.palette();

@@ -286,6 +286,8 @@ pub enum Key {
     // Typographic substitution
     SmartQuotes,
     SmartQuotesHint,
+    SingleTab,
+    SingleTabHint,
     // Focus mode
     FocusMode,
     // Trash undo notice
@@ -516,6 +518,8 @@ impl Key {
         Key::TextWidthWide,
         Key::SmartQuotes,
         Key::SmartQuotesHint,
+        Key::SingleTab,
+        Key::SingleTabHint,
         Key::FocusMode,
         Key::NoteTrashedUndo,
         Key::GlassSection,
@@ -759,6 +763,8 @@ fn en(k: Key) -> &'static str {
         Key::TextWidthWide => "Wide",
         Key::SmartQuotes => "Smart quotes",
         Key::SmartQuotesHint => "Typographic “quotes” and — dashes while you type.",
+        Key::SingleTab => "Always show the tab bar",
+        Key::SingleTabHint => "Keep the tab bar visible with only one note open.",
         Key::FocusMode => "Focus mode ({MOD}+Shift+Enter)",
         Key::NoteTrashedUndo => "Note moved to trash · Undo",
         Key::GlassSection => "Glass",
@@ -1008,6 +1014,8 @@ fn pt(k: Key) -> &'static str {
         Key::TextWidthWide => "Larga",
         Key::SmartQuotes => "Aspas tipográficas",
         Key::SmartQuotesHint => "Aspas “curvas” e travessões — ao digitar.",
+        Key::SingleTab => "Sempre mostrar a barra de abas",
+        Key::SingleTabHint => "Mantém a barra de abas visível com só uma nota aberta.",
         Key::FocusMode => "Modo foco ({MOD}+Shift+Enter)",
         Key::NoteTrashedUndo => "Nota movida para a lixeira · Desfazer",
         Key::GlassSection => "Vidro",

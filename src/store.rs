@@ -243,6 +243,16 @@ impl Settings {
         self.kv.set("smart_quotes", if on { "on" } else { "off" });
     }
 
+    /// `single_tab = on` keeps the tab bar visible with one note open;
+    /// by default it only appears from the second tab on.
+    pub fn single_tab(&self) -> bool {
+        self.kv.get("single_tab") == Some("on")
+    }
+
+    pub fn set_single_tab(&mut self, on: bool) {
+        self.kv.set("single_tab", if on { "on" } else { "off" });
+    }
+
     /// Blocking.
     pub fn save(&self) {
         let file = settings_file();
@@ -782,6 +792,16 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "two");
         assert!(!dir.join("nested").join(".out.txt.abstract-tmp").exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn single_tab_defaults_off_and_roundtrips() {
+        let mut s = Settings::default();
+        assert!(!s.single_tab());
+        s.set_single_tab(true);
+        assert!(s.single_tab());
+        s.set_single_tab(false);
+        assert!(!s.single_tab());
     }
 
     #[test]

@@ -6,6 +6,10 @@ All notable changes to abstract are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The tab bar is hidden while a single note is open and appears from the
+  second tab on; "Always show the tab bar" in Settings keeps it visible.
+
 ## [0.1.5] - 2026-10-06
 
 ### Added

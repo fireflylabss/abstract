@@ -524,6 +524,7 @@ impl AbstractApp {
         let raw = self.settings.raw_tables();
         let updates = self.settings.updates();
         let smart_quotes = self.settings.smart_quotes();
+        let single_tab = self.settings.single_tab();
         let font_names = cx.text_system().all_font_names();
         let current_font = fonts::resolve(self.settings.font(), &font_names);
         let font_rows =
@@ -1026,6 +1027,20 @@ impl AbstractApp {
                 )
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.set_smart_quotes(!smart_quotes, window, cx)
+                })),
+            )
+            .child(
+                toggle(
+                    "single-tab",
+                    t(Key::SingleTab),
+                    Some(t(Key::SingleTabHint)),
+                    single_tab,
+                    window,
+                    cx,
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.settings.set_single_tab(!single_tab);
+                    this.save_settings(window, cx);
                 })),
             )
             .child(section(t(Key::General)))
